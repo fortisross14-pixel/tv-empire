@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react'
 import { T } from './theme'
-import { MARKETS, MARKETING_TIERS, RESEARCH, MOVIES } from './constants'
+import {
+  MARKETS, MARKETING_TIERS, RESEARCH, MOVIES, SLOT_TYPES,
+} from './constants'
 import {
   initGame,
   emptyPlanned,
@@ -11,7 +13,11 @@ import {
   canResearch,
   canPromote,
   promotedMarket,
-  buildRoster,
+  buildMarketRoster,
+  activeRoster,
+  tickContracts,
+  hireTalent,
+  fireTalent,
   fameLabel,
   uid,
   fmtM,
@@ -23,89 +29,110 @@ import { SlotEditor } from './components/SlotEditor'
 import { ResultsView } from './components/ResultsView'
 import { AwardsView } from './components/AwardsView'
 import { ResearchPanel } from './components/ResearchPanel'
-import { SectionTitle, Pill } from './components/ui'
+import { TalentScreen } from './components/TalentScreen'
+import { SectionTitle } from './components/ui'
 
 const QLABEL = ['Q1', 'Q2', 'Q3', 'Q4']
 
 export default function App() {
   const [game, setGame] = useState({ phase: 'setup' })
-  const [editingSlot, setEditingSlot] = useState(null) // index or null
+  const [editingSlotIdx, setEditingSlotIdx] = useState(null)
+  const [view, setView] = useState('plan') // 'plan' | 'talent' | 'research'
 
-  // ─── SETUP ────────────────────────────────────────────────────────────
+  // ─── SETUP ───────────────────────────────────────────────────────────
   const startGame = (setup) => {
     setGame(initGame(setup))
+    setView('plan')
   }
 
-  // ─── PLANNING ────────────────────────────────────────────────────────
-  const openSlot = (i) => setEditingSlot(i)
-  const closeSlot = () => setEditingSlot(null)
+  // ─── SLOT EDITING ────────────────────────────────────────────────────
+  const openSlot = (i) => setEditingSlotIdx(i)
+  const closeSlot = () => setEditingSlotIdx(null)
 
   const saveSlot = (draft) => {
     setGame((g) => {
-      const slots = g.slots.slice()
-      slots[editingSlot] = draft
-      return { ...g, slots }
+      const plans = g.plans.slice()
+      plans[editingSlotIdx] = draft
+      return { ...g, plans }
     })
-    setEditingSlot(null)
+    setEditingSlotIdx(null)
   }
 
   const clearSlot = () => {
     setGame((g) => {
-      const slots = g.slots.slice()
-      slots[editingSlot] = emptyPlanned()
-      return { ...g, slots }
+      const plans = g.plans.slice()
+      const slotTypeId = g.station.slotIds[editingSlotIdx]
+      plans[editingSlotIdx] = emptyPlanned(slotTypeId)
+      return { ...g, plans }
     })
-    setEditingSlot(null)
+    setEditingSlotIdx(null)
   }
 
-  // Set of director/star ids already booked in OTHER slots
+  // Set of director/star ids already booked in OTHER slots this cycle
   const bookedTalent = useMemo(() => {
-    if (!game.slots) return new Set()
+    if (!game.plans) return new Set()
     const s = new Set()
-    game.slots.forEach((slot, i) => {
-      if (i === editingSlot) return
-      if (slot.directorId) s.add(slot.directorId)
-      if (slot.starId) s.add(slot.starId)
+    game.plans.forEach((p, i) => {
+      if (i === editingSlotIdx) return
+      if (p.directorId) s.add(p.directorId)
+      if (p.starId)     s.add(p.starId)
     })
     return s
-  }, [game.slots, editingSlot])
+  }, [game.plans, editingSlotIdx])
 
-  // Total planned cost for the cycle preview
+  // Total cost of planned cycle
   const cycleCost = useMemo(() => {
-    if (!game.slots) return 0
-    return game.slots.reduce((sum, slot) => {
-      if (!slot.categoryId && !slot.movieId) return sum
-      return sum + programCost(slot, game.station.market, game.research)
+    if (!game.plans) return 0
+    return game.plans.reduce((sum, p) => {
+      if (!p.categoryId && !p.movieId) return sum
+      return sum + programCost(p, game.station, game.research)
     }, 0)
-  }, [game.slots, game.station, game.research])
+  }, [game.plans, game.station, game.research])
 
-  const filledSlotCount = useMemo(() => {
-    if (!game.slots) return 0
-    return game.slots.filter((s) => s.categoryId || s.movieId).length
-  }, [game.slots])
+  const filledCount = useMemo(() => {
+    if (!game.plans) return 0
+    return game.plans.filter((p) => p.categoryId || p.movieId).length
+  }, [game.plans])
+
+  // Per-cycle permanent-contract charges (preview)
+  const permanentCharge = useMemo(() => {
+    if (!game.station) return 0
+    const tally = (list) => (list || []).reduce((a, h) => a + (h.permanent ? (h.perCycleCharge || 0) : 0), 0)
+    return tally(game.station.hiredDirectors) + tally(game.station.hiredStars)
+  }, [game.station])
 
   // ─── AIR THE CYCLE ────────────────────────────────────────────────────
   const airCycle = () => {
-    if (filledSlotCount === 0) return
+    if (filledCount === 0) return
     if (cycleCost > game.station.cash) return
 
-    const planned = game.slots
-      .filter((s) => s.categoryId || s.movieId)
-      .map((s) => ({ ...s, id: uid() }))
+    const planned = game.plans
+      .filter((p) => p.categoryId || p.movieId)
+      .map((p) => ({ ...p, id: uid() }))
 
-    const results = runCycle(planned, game.station, game.research)
+    const results = runCycle(planned, game.station, game.research, game.cycleIdx)
 
     setGame((g) => {
-      const newCash = g.station.cash - results.totals.cost + results.totals.revenue
-      const newFame = Math.max(0, g.station.fame + results.totals.fameDelta)
-      const station = { ...g.station, cash: newCash, fame: newFame }
+      // Tick contracts AFTER airing — they used up one cycle
+      const ticked = tickContracts(g.station)
+      const stationAfterTick = {
+        ...g.station,
+        hiredDirectors: ticked.hiredDirectors,
+        hiredStars: ticked.hiredStars,
+      }
+
+      const newCash = stationAfterTick.cash
+        - results.totals.cost
+        + results.totals.revenue
+        - ticked.perCycleCharge   // charge permanent contracts
+      const newFame = Math.max(0, stationAfterTick.fame + results.totals.fameDelta)
+      const station = { ...stationAfterTick, cash: newCash, fame: newFame }
 
       // Track shows eligible for renewal (quality >= 7, not movies)
       const newOwned = [...g.ownedShows]
       results.shows.forEach((sh) => {
         if (sh.movieId) return
         if (sh.quality >= 7) {
-          // remove existing entry with same name (renewal upgrade)
           const idx = newOwned.findIndex((o) => o.name === sh.name)
           const rec = {
             id: sh.id,
@@ -113,6 +140,7 @@ export default function App() {
             categoryId: sh.categoryId,
             topicId: sh.topicId,
             ipId: sh.ipId,
+            slotTypeId: sh.slotTypeId,
             lastQuality: sh.quality,
             lastHype: sh.hype,
             lastRating: sh.rating,
@@ -123,6 +151,14 @@ export default function App() {
         }
       })
 
+      const logLines = [
+        ...g.log,
+        `Y${g.year} ${QLABEL[g.cycleIdx]} aired — net ${fmtM(results.totals.net)}, fame ${results.totals.fameDelta >= 0 ? '+' : ''}${results.totals.fameDelta.toFixed(1)}`,
+      ]
+      if (ticked.perCycleCharge > 0) {
+        logLines.push(`💼 Permanent contracts: ${fmtM(-ticked.perCycleCharge)} this cycle`)
+      }
+
       return {
         ...g,
         station,
@@ -130,10 +166,7 @@ export default function App() {
         yearShows: [...g.yearShows, ...results.shows],
         ownedShows: newOwned,
         phase: 'results',
-        log: [
-          ...g.log,
-          `Y${g.year} ${QLABEL[g.cycleIdx]} aired — net ${fmtM(results.totals.net)}, fame ${results.totals.fameDelta >= 0 ? '+' : ''}${results.totals.fameDelta.toFixed(1)}`,
-        ],
+        log: logLines,
       }
     })
   }
@@ -144,7 +177,6 @@ export default function App() {
       const wasQ4 = g.cycleIdx === 3
       if (wasQ4) {
         const awards = buildAwards(g.yearShows, g.station)
-        // apply awards bonuses immediately
         let cash = g.station.cash
         let fame = g.station.fame
         awards.wins.forEach((w) => {
@@ -162,11 +194,11 @@ export default function App() {
           phase: 'awards',
         }
       }
-      // Normal cycle advance
+      // Normal cycle advance — reset plans for next cycle, slot types persist
       return {
         ...g,
         cycleIdx: g.cycleIdx + 1,
-        slots: Array(g.numSlots).fill(null).map(() => emptyPlanned()),
+        plans: g.station.slotIds.map(id => emptyPlanned(id)),
         lastResults: null,
         phase: 'plan',
       }
@@ -179,8 +211,8 @@ export default function App() {
       year: g.year + 1,
       cycleIdx: 0,
       yearShows: [],
-      slots: Array(g.numSlots).fill(null).map(() => emptyPlanned()),
-      roster: buildRoster(g.scoutLevel),
+      plans: g.station.slotIds.map(id => emptyPlanned(id)),
+      marketRoster: buildMarketRoster(g.station, g.scoutLevel),
       awards: null,
       lastResults: null,
       phase: 'plan',
@@ -209,30 +241,54 @@ export default function App() {
 
     setGame((g) => {
       const research = applyResearch(g.research, id)
-      let numSlots = g.numSlots
-      let slots = g.slots
       let scoutLevel = g.scoutLevel
-      let roster = g.roster
+      let marketRoster = g.marketRoster
 
-      if (item.effect.numSlots && item.effect.numSlots > numSlots) {
-        const add = item.effect.numSlots - numSlots
-        numSlots = item.effect.numSlots
-        slots = [...slots, ...Array(add).fill(null).map(() => emptyPlanned())]
-      }
       if (item.effect.refreshRoster) {
         scoutLevel += 1
-        roster = buildRoster(scoutLevel)
+        marketRoster = buildMarketRoster(g.station, scoutLevel)
       }
 
       return {
         ...g,
         research,
-        numSlots,
-        slots,
         scoutLevel,
-        roster,
+        marketRoster,
         station: { ...g.station, cash: g.station.cash - item.cost },
         log: [...g.log, `🔬 Researched ${item.label}`],
+      }
+    })
+  }
+
+  // ─── TALENT MANAGEMENT ────────────────────────────────────────────────
+  const onHire = (role, talent, contractTypeId) => {
+    setGame((g) => {
+      const result = hireTalent(g.station, role, talent, contractTypeId)
+      if (result.error) {
+        return { ...g, log: [...g.log, `⚠ ${result.error}`] }
+      }
+      // remove from market roster
+      const marketRoster = {
+        directors: g.marketRoster.directors.filter(d => !(role === 'director' && d.id === talent.id)),
+        stars:     g.marketRoster.stars.filter(s => !(role === 'star' && s.id === talent.id)),
+      }
+      return {
+        ...g,
+        station: result.station,
+        marketRoster,
+        log: [...g.log, `✍ Signed ${talent.name} (${contractTypeId}) for ${fmtM(result.charged)}`],
+      }
+    })
+  }
+
+  const onFire = (role, talentId) => {
+    setGame((g) => {
+      const result = fireTalent(g.station, role, talentId)
+      if (result.error) return { ...g, log: [...g.log, `⚠ ${result.error}`] }
+      return {
+        ...g,
+        station: result.station,
+        log: [...g.log, `🚪 Fired talent (penalty ${fmtM(result.charged)})`],
       }
     })
   }
@@ -244,16 +300,35 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: T.bg, color: T.text, paddingBottom: 40 }}>
-      <TopBar game={game} />
+      <TopBar game={game} view={view} setView={setView} />
 
-      {game.phase === 'plan' && (
+      {game.phase === 'plan' && view === 'plan' && (
         <PlanView
           game={game}
           cycleCost={cycleCost}
-          filledSlotCount={filledSlotCount}
+          permanentCharge={permanentCharge}
+          filledCount={filledCount}
           onOpenSlot={openSlot}
           onAir={airCycle}
-          onResearch={buyResearch}
+        />
+      )}
+
+      {game.phase === 'plan' && view === 'talent' && (
+        <TalentScreen
+          station={game.station}
+          marketRoster={game.marketRoster}
+          onHire={onHire}
+          onFire={onFire}
+          onBack={() => setView('plan')}
+        />
+      )}
+
+      {game.phase === 'plan' && view === 'research' && (
+        <ResearchView
+          research={game.research}
+          cash={game.station.cash}
+          onBuy={buyResearch}
+          onBack={() => setView('plan')}
         />
       )}
 
@@ -276,12 +351,14 @@ export default function App() {
         />
       )}
 
-      {editingSlot !== null && game.phase === 'plan' && (
+      {editingSlotIdx !== null && game.phase === 'plan' && view === 'plan' && (
         <SlotEditor
-          initial={game.slots[editingSlot]}
+          initial={game.plans[editingSlotIdx]}
+          slotTypeId={game.station.slotIds[editingSlotIdx]}
+          cycleIdx={game.cycleIdx}
           station={game.station}
           research={game.research}
-          roster={game.roster}
+          roster={activeRoster(game.station)}
           movies={MOVIES}
           takenTalent={bookedTalent}
           ownedShows={game.ownedShows}
@@ -295,32 +372,69 @@ export default function App() {
 }
 
 // ─── TOP BAR ────────────────────────────────────────────────────────────
-function TopBar({ game }) {
+function TopBar({ game, view, setView }) {
   const m = MARKETS[game.station.market]
+  const isInPlanFlow = game.phase === 'plan'
   return (
     <div
       style={{
-        display: 'flex',
-        gap: 14,
-        padding: '14px 18px',
-        borderBottom: `1px solid ${T.border}`,
         background: T.surface,
-        flexWrap: 'wrap',
-        alignItems: 'center',
+        borderBottom: `1px solid ${T.border}`,
       }}
     >
-      <div style={{ flex: '1 1 200px' }}>
-        <div style={{ fontFamily: 'Bebas Neue', fontSize: 22, letterSpacing: 1, lineHeight: 1 }}>
-          {game.station.name}
+      <div
+        style={{
+          display: 'flex', gap: 14, padding: '14px 18px',
+          flexWrap: 'wrap', alignItems: 'center',
+        }}
+      >
+        <div style={{ flex: '1 1 200px' }}>
+          <div style={{ fontFamily: 'Bebas Neue', fontSize: 22, letterSpacing: 1, lineHeight: 1 }}>
+            {game.station.name}
+          </div>
+          <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
+            {m.label} · {fameLabel(game.station.fame)}
+          </div>
         </div>
-        <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
-          {m.label} · {fameLabel(game.station.fame)}
-        </div>
+        <Stat label="YEAR" value={`${game.year} · ${QLABEL[game.cycleIdx]}`} />
+        <Stat label="FAME" value={game.station.fame.toFixed(1)} accent={T.gold} />
+        <Stat label="CASH" value={fmtM(game.station.cash)} accent={T.green} />
       </div>
-      <Stat label="YEAR" value={`${game.year} · ${QLABEL[game.cycleIdx]}`} />
-      <Stat label="FAME" value={game.station.fame.toFixed(1)} accent={T.gold} />
-      <Stat label="CASH" value={fmtM(game.station.cash)} accent={T.green} />
+      {isInPlanFlow && (
+        <div style={{
+          display: 'flex', gap: 4, padding: '0 12px',
+          borderTop: `1px solid ${T.border}`,
+        }}>
+          <NavTab label="Programming" active={view === 'plan'} onClick={() => setView('plan')} />
+          <NavTab
+            label={`Talent (${(game.station.hiredDirectors?.length || 0) + (game.station.hiredStars?.length || 0)})`}
+            active={view === 'talent'} onClick={() => setView('talent')} />
+          <NavTab label="Research" active={view === 'research'} onClick={() => setView('research')} />
+        </div>
+      )}
     </div>
+  )
+}
+
+function NavTab({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        color: active ? T.accent : T.muted,
+        fontFamily: 'Bebas Neue',
+        fontSize: 14,
+        letterSpacing: '.1em',
+        padding: '10px 14px',
+        cursor: 'pointer',
+        borderBottom: `2px solid ${active ? T.accent : 'transparent'}`,
+        marginBottom: -1,
+      }}
+    >
+      {label}
+    </button>
   )
 }
 
@@ -344,115 +458,89 @@ function Stat({ label, value, accent }) {
 }
 
 // ─── PLAN VIEW ──────────────────────────────────────────────────────────
-function PlanView({ game, cycleCost, filledSlotCount, onOpenSlot, onAir, onResearch }) {
-  const canAir = filledSlotCount > 0 && cycleCost <= game.station.cash
+function PlanView({ game, cycleCost, permanentCharge, filledCount, onOpenSlot, onAir }) {
+  const totalCost = cycleCost + permanentCharge
+  const canAir = filledCount > 0 && totalCost <= game.station.cash
   const m = MARKETS[game.station.market]
 
   return (
-    <div
-      style={{
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 18 }}>
+      <SectionTitle>Programming Slate · {QLABEL[game.cycleIdx]} Year {game.year}</SectionTitle>
+      <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0,1fr) 280px',
-        gap: 18,
-        padding: 18,
-        maxWidth: 1200,
-        margin: '0 auto',
-      }}
-      className="plan-grid"
-    >
-      <div>
-        <SectionTitle>Programming Slate · {QLABEL[game.cycleIdx]} Year {game.year}</SectionTitle>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: 12,
-          }}
-        >
-          {game.slots.map((slot, i) => (
-            <SlotCard key={i} slot={slot} idx={i} onClick={() => onOpenSlot(i)} station={game.station} research={game.research} />
-          ))}
-        </div>
-
-        <div
-          style={{
-            marginTop: 24,
-            padding: 16,
-            background: T.surface,
-            border: `1px solid ${T.border}`,
-            borderRadius: 8,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontSize: 10, color: T.muted, letterSpacing: 1.5 }}>CYCLE COST</div>
-              <div
-                style={{
-                  fontFamily: 'DM Mono',
-                  fontSize: 22,
-                  color: cycleCost > game.station.cash ? T.red : T.text,
-                }}
-              >
-                {fmtM(cycleCost)}
-              </div>
-              <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
-                {filledSlotCount} of {game.numSlots} slots planned
-              </div>
-            </div>
-            <button
-              className={`cta ${canAir ? 'green' : 'danger'}`}
-              disabled={!canAir}
-              onClick={onAir}
-              style={{ minWidth: 180 }}
-            >
-              ▶ AIR THE CYCLE
-            </button>
-          </div>
-          {cycleCost > game.station.cash && (
-            <div style={{ marginTop: 10, fontSize: 11, color: T.red }}>
-              Not enough cash — trim a slot or pick cheaper talent.
-            </div>
-          )}
-          {filledSlotCount === 0 && (
-            <div style={{ marginTop: 10, fontSize: 11, color: T.muted }}>
-              Plan at least one program to air the cycle.
-            </div>
-          )}
-        </div>
-
-        <ActivityLog log={game.log} />
+        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+        gap: 12,
+      }}>
+        {game.plans.map((p, i) => {
+          const slotTypeId = game.station.slotIds[i]
+          return (
+            <SlotCard
+              key={i}
+              plan={p}
+              idx={i}
+              slotTypeId={slotTypeId}
+              cycleIdx={game.cycleIdx}
+              station={game.station}
+              research={game.research}
+              onClick={() => onOpenSlot(i)}
+            />
+          )
+        })}
       </div>
 
-      <div>
-        <ResearchPanel
-          research={game.research}
-          cash={game.station.cash}
-          onBuy={onResearch}
-        />
-        <div
-          style={{
-            marginTop: 16,
-            padding: 14,
-            background: T.surface,
-            border: `1px solid ${T.border}`,
-            borderRadius: 8,
-            fontSize: 11,
-            color: T.muted,
-            lineHeight: 1.6,
-          }}
-        >
-          <div style={{ color: T.text, fontSize: 12, marginBottom: 6, fontWeight: 600 }}>
-            {m.label}
-          </div>
-          Audience cap: {(m.audCap / 1e6).toFixed(1)}M<br />
-          Rev / viewer: ${m.revPerViewer.toFixed(2)}<br />
-          Marketing reach: {m.marketingMult.toFixed(1)}×<br />
-          {canPromote(game.station) && (
-            <div style={{ marginTop: 8, color: T.gold }}>
-              Eligible to expand at year-end.
+      <div style={{
+        marginTop: 24, padding: 16,
+        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <div style={{ fontSize: 10, color: T.muted, letterSpacing: 1.5 }}>CYCLE COST</div>
+            <div style={{
+              fontFamily: 'DM Mono', fontSize: 22,
+              color: totalCost > game.station.cash ? T.red : T.text,
+            }}>
+              {fmtM(totalCost)}
             </div>
-          )}
+            <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
+              {filledCount} of {game.plans.length} slots planned
+              {permanentCharge > 0 && ` · ${fmtM(permanentCharge)} contracts`}
+            </div>
+          </div>
+          <button
+            className={`cta ${canAir ? 'green' : 'danger'}`}
+            disabled={!canAir}
+            onClick={onAir}
+            style={{ minWidth: 180 }}
+          >▶ AIR THE CYCLE</button>
         </div>
+        {totalCost > game.station.cash && (
+          <div style={{ marginTop: 10, fontSize: 11, color: T.red }}>
+            Not enough cash — trim a slot or pick cheaper marketing.
+          </div>
+        )}
+        {filledCount === 0 && (
+          <div style={{ marginTop: 10, fontSize: 11, color: T.muted }}>
+            Plan at least one program to air the cycle.
+          </div>
+        )}
+      </div>
+
+      <ActivityLog log={game.log} />
+
+      <div style={{
+        marginTop: 18, padding: 14,
+        background: T.surface, border: `1px solid ${T.border}`,
+        borderRadius: 8, fontSize: 11, color: T.muted, lineHeight: 1.6,
+      }}>
+        <div style={{ color: T.text, fontSize: 12, marginBottom: 6, fontWeight: 600 }}>
+          {m.label}
+        </div>
+        Audience cap: {(m.audCap).toFixed(1)}M · Rev / viewer: ${m.revPerViewer.toFixed(2)} · Marketing reach: {m.marketingMult.toFixed(1)}×
+        {canPromote(game.station) && (
+          <div style={{ marginTop: 8, color: T.gold }}>
+            Eligible to expand at year-end.
+          </div>
+        )}
       </div>
     </div>
   )
@@ -461,31 +549,37 @@ function PlanView({ game, cycleCost, filledSlotCount, onOpenSlot, onAir, onResea
 function ActivityLog({ log }) {
   const tail = log.slice(-6).reverse()
   return (
-    <div
-      style={{
-        marginTop: 18,
-        padding: 14,
-        background: T.surface,
-        border: `1px solid ${T.border}`,
-        borderRadius: 8,
-      }}
-    >
-      <div style={{ fontSize: 10, letterSpacing: 1.5, color: T.muted, marginBottom: 8 }}>
-        ACTIVITY
-      </div>
+    <div style={{
+      marginTop: 18, padding: 14,
+      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+    }}>
+      <div style={{ fontSize: 10, letterSpacing: 1.5, color: T.muted, marginBottom: 8 }}>ACTIVITY</div>
       {tail.map((line, i) => (
-        <div
-          key={i}
-          style={{
-            fontFamily: 'DM Mono',
-            fontSize: 11,
-            color: i === 0 ? T.text : T.muted,
-            padding: '3px 0',
-          }}
-        >
+        <div key={i} style={{
+          fontFamily: 'DM Mono', fontSize: 11,
+          color: i === 0 ? T.text : T.muted, padding: '3px 0',
+        }}>
           {line}
         </div>
       ))}
+    </div>
+  )
+}
+
+// ─── RESEARCH VIEW (full screen wrapper around ResearchPanel) ───────────
+function ResearchView({ research, cash, onBuy, onBack }) {
+  return (
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: 18 }}>
+      <button
+        onClick={onBack}
+        style={{
+          background: 'transparent', border: `1px solid ${T.border}`,
+          color: T.muted, padding: '8px 14px', borderRadius: 5,
+          fontSize: 11, fontWeight: 600, marginBottom: 16,
+        }}
+      >← Back to Programming</button>
+      <SectionTitle>Research & Development</SectionTitle>
+      <ResearchPanel research={research} cash={cash} onBuy={onBuy} />
     </div>
   )
 }

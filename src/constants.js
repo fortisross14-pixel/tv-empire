@@ -333,3 +333,174 @@ export const RESEARCH = [
   { id: 'sequel_boost', label: 'Renewal Power',        desc: 'Renewed shows get +0.5 quality.', cost: 6, effect: { sequelBonus: 0.5 } },
   { id: 'ip_negot',     label: 'IP Negotiators',       desc: '−20% on IP licensing costs.', cost: 8, effect: { ipDiscount: 0.8 } },
 ]
+
+// ─── SLOT TYPES ──────────────────────────────────────────────────────────────
+// Each station's lineup is a list of typed slots. Each slot has a focus
+// audience and "preferred" categories that get a small audience boost when
+// you program something matching. Mismatches don't fail — they just don't
+// get the bonus. Slot types are unlocked via research (Pass 2).
+export const SLOT_TYPES = {
+  morning: {
+    id: 'morning',
+    label: 'Morning',
+    icon: '☀',
+    desc: 'Pre-work, kids, casual viewers. Family + light news land best.',
+    prefersCategory: ['family', 'news', 'contest'],
+    audienceMult: 0.85,           // smaller audience pool, but cheaper
+    costMult: 0.85,
+    matchBonus: 0.6,              // hype bonus when you match a preferred category
+  },
+  prime: {
+    id: 'prime',
+    label: 'Prime Time',
+    icon: '🌆',
+    desc: 'The big window. Series, reality, and movies thrive here.',
+    prefersCategory: ['series', 'reality', 'movie'],
+    audienceMult: 1.15,
+    costMult: 1.0,
+    matchBonus: 0.9,
+  },
+  weekend: {
+    id: 'weekend',
+    label: 'Weekend',
+    icon: '🏈',
+    desc: 'Sports and movies own the weekend. Big events, casual viewing.',
+    prefersCategory: ['sports', 'movie', 'family'],
+    audienceMult: 1.05,
+    costMult: 0.95,
+    matchBonus: 0.8,
+  },
+  // — Researchable slots (unlocked in Pass 2 research tree) —
+  news: {
+    id: 'news',
+    label: 'Daily News',
+    icon: '📰',
+    desc: 'A nightly news block. Heavy news preference; reality flops here.',
+    prefersCategory: ['news'],
+    audienceMult: 0.9,
+    costMult: 0.8,
+    matchBonus: 1.2,
+  },
+  prime2: {
+    id: 'prime2',
+    label: 'Prime Time II',
+    icon: '🌃',
+    desc: 'A second prime window — same audience as prime.',
+    prefersCategory: ['series', 'reality', 'movie'],
+    audienceMult: 1.1,
+    costMult: 1.0,
+    matchBonus: 0.9,
+  },
+  latenight: {
+    id: 'latenight',
+    label: 'Late Night',
+    icon: '🌙',
+    desc: 'Adults-only window. Talk shows, mature comedy, edgy content.',
+    prefersCategory: ['latenight', 'series'],
+    audienceMult: 0.65,
+    costMult: 0.7,
+    matchBonus: 1.1,
+  },
+  weekend2: {
+    id: 'weekend2',
+    label: 'Weekend II',
+    icon: '🎬',
+    desc: 'A second weekend slot — sports, movies, family events.',
+    prefersCategory: ['sports', 'movie', 'family'],
+    audienceMult: 1.0,
+    costMult: 0.95,
+    matchBonus: 0.8,
+  },
+}
+
+// Default slots a brand-new station has (pre-research)
+export const DEFAULT_SLOT_IDS = ['morning', 'prime', 'weekend']
+
+// ─── SEASONAL PREFERENCES ────────────────────────────────────────────────────
+// `[slotTypeId][quarterIdx]` → { categoryId? topicId? bonusH? bonusQ?, label }
+// Drives the "this quarter wants…" hint shown on each slot card. If the player
+// programs something matching, they get a hype bonus that quarter.
+// quarterIdx: 0=Q1 winter, 1=Q2 spring, 2=Q3 summer, 3=Q4 holiday.
+export const SEASONAL_PREFS = {
+  morning: [
+    { categoryId: 'news',    topicId: 'local',     label: 'New Year news cycle',         bonusH: 0.6 },
+    { categoryId: 'family',  topicId: 'edu',       label: 'Spring kids programming',     bonusH: 0.7 },
+    { categoryId: 'family',  topicId: 'animated',  label: 'Summer family content',       bonusH: 0.8 },
+    { categoryId: 'family',  topicId: 'live',      label: 'Holiday family specials',     bonusH: 0.9 },
+  ],
+  prime: [
+    { categoryId: 'series',  topicId: 'drama',     label: 'Prestige drama season',       bonusH: 0.8 },
+    { categoryId: 'reality', topicId: 'love',      label: 'Spring romance reality',      bonusH: 0.7 },
+    { categoryId: 'reality', topicId: 'adventure', label: 'Summer adventure reality',    bonusH: 0.9 },
+    { categoryId: 'movie',   topicId: null,        label: 'Holiday movie specials',      bonusH: 1.0 },
+  ],
+  weekend: [
+    { categoryId: 'sports',  topicId: 'live',      label: 'Winter sports season',        bonusH: 0.9 },
+    { categoryId: 'sports',  topicId: 'live',      label: 'Spring playoff fever',        bonusH: 1.0 },
+    { categoryId: 'sports',  topicId: 'doc',       label: 'Summer doc marathon',         bonusH: 0.6 },
+    { categoryId: 'movie',   topicId: null,        label: 'Holiday romantic movies',     bonusH: 0.9 },
+  ],
+  news: [
+    { categoryId: 'news', topicId: 'global',   label: 'World affairs focus',     bonusH: 0.5 },
+    { categoryId: 'news', topicId: 'local',    label: 'Local elections',         bonusH: 0.7 },
+    { categoryId: 'news', topicId: 'reporter', label: 'Summer field stories',    bonusH: 0.5 },
+    { categoryId: 'news', topicId: 'bigtopic', label: 'Year-in-review specials', bonusH: 0.9 },
+  ],
+  prime2: [
+    { categoryId: 'series',  topicId: 'crime',     label: 'Crime drama winter',     bonusH: 0.7 },
+    { categoryId: 'series',  topicId: 'comedy',    label: 'Spring comedies',        bonusH: 0.6 },
+    { categoryId: 'reality', topicId: 'competition', label: 'Summer competitions',  bonusH: 0.9 },
+    { categoryId: 'series',  topicId: 'fantasy',   label: 'Holiday fantasy event',  bonusH: 1.0 },
+  ],
+  latenight: [
+    { categoryId: 'latenight', topicId: 'talk',    label: 'Awards season talk',     bonusH: 0.7 },
+    { categoryId: 'latenight', topicId: 'comedy',  label: 'Spring stand-up tour',   bonusH: 0.8 },
+    { categoryId: 'latenight', topicId: 'variety', label: 'Summer variety',         bonusH: 0.7 },
+    { categoryId: 'latenight', topicId: 'talk',    label: 'Year-end interviews',    bonusH: 0.9 },
+  ],
+  weekend2: [
+    { categoryId: 'sports', topicId: 'analysis', label: 'Winter sports analysis',  bonusH: 0.6 },
+    { categoryId: 'sports', topicId: 'live',     label: 'Spring tournaments',      bonusH: 1.0 },
+    { categoryId: 'movie',  topicId: null,       label: 'Summer blockbusters',     bonusH: 0.9 },
+    { categoryId: 'family', topicId: 'animated', label: 'Holiday animated event',  bonusH: 0.8 },
+  ],
+}
+
+// ─── DEFAULT-AVAILABLE TOPICS PER FOCUS ──────────────────────────────────────
+// At game start, you ONLY have access to:
+//  - Your specialty category (all topics in it that aren't `advancedTopic: true`)
+//  - General-news ('global'), default movies, default contest quiz
+//  - Family 'live' if your focus is family-friendly
+// Everything else is locked behind research (Pass 2).
+//
+// Returns the list of available {categoryId, topicId} pairs given a focus.
+// Movie category counts as fully available (movies are licensed individually).
+export function defaultUnlocks(focusId) {
+  // [categoryId, topicId | '*' for all topics in that cat]
+  const baseAll = [
+    ['news',  'global'],   // every station gets baseline global news
+    ['movie', '*'],        // movies always available
+  ]
+  const byFocus = {
+    news:    [['news', '*'], ['contest', 'quiz']],
+    reality: [['reality', '*'], ['contest', 'prize']],
+    series:  [['series', '*'], ['latenight', 'talk']],
+    sports:  [['sports', 'analysis'], ['sports', 'doc'], ['contest', 'physical']],
+    family:  [['family', '*'], ['contest', 'quiz']],
+    general: [['series', 'comedy'], ['reality', 'general'], ['family', 'live'], ['contest', 'quiz']],
+  }
+  return [...baseAll, ...(byFocus[focusId] || [])]
+}
+
+// ─── TALENT CONTRACT TYPES ───────────────────────────────────────────────────
+// `cost` here is a multiplier on talent's base cost-per-cycle.
+// "Permanent" charges base cost every cycle but if you fire them you pay 5×.
+export const CONTRACT_TYPES = [
+  { id: 'c1',  label: '1 cycle',     cycles: 1,  costMult: 1.0,  desc: 'One-shot. Pay once.' },
+  { id: 'c2',  label: '2 cycles',    cycles: 2,  costMult: 1.9,  desc: 'Slight discount.' },
+  { id: 'c4',  label: '4 cycles',    cycles: 4,  costMult: 3.6,  desc: '−10% per cycle.' },
+  { id: 'c8',  label: '8 cycles',    cycles: 8,  costMult: 6.8,  desc: '−15% per cycle.' },
+  { id: 'cP',  label: 'Permanent',   cycles: -1, costMult: 0.85, desc: 'Pay each cycle. Firing costs 5× one cycle.' },
+]
+export const FIRE_PENALTY_MULT = 5
+
