@@ -28,7 +28,7 @@ import { SlotCard } from './components/SlotCard'
 import { SlotEditor } from './components/SlotEditor'
 import { ResultsView } from './components/ResultsView'
 import { AwardsView } from './components/AwardsView'
-import { ResearchPanel } from './components/ResearchPanel'
+import { ResearchScreen } from './components/ResearchScreen'
 import { TalentScreen } from './components/TalentScreen'
 import { SectionTitle } from './components/ui'
 
@@ -240,22 +240,41 @@ export default function App() {
     if (!canResearch(id, game.research)) return
 
     setGame((g) => {
-      const research = applyResearch(g.research, id)
+      const result = applyResearch(g.research, id)
+      const research = result.research
+
+      // Mutate station + plans if research adds a slot
+      let station = { ...g.station, cash: g.station.cash - item.cost }
+      let plans = g.plans
+      let log = [...g.log, `🔬 Researched ${item.label}`]
+
+      if (result.addSlotType) {
+        // Don't add duplicate slots of the same type (idempotency safety)
+        if (!(station.slotIds || []).includes(result.addSlotType)) {
+          station = { ...station, slotIds: [...(station.slotIds || []), result.addSlotType] }
+          plans = [...plans, emptyPlanned(result.addSlotType)]
+          const st = SLOT_TYPES[result.addSlotType]
+          log.push(`🆕 New ${st?.label || 'slot'} added to schedule`)
+        }
+      }
+
+      // Refresh roster if applicable
       let scoutLevel = g.scoutLevel
       let marketRoster = g.marketRoster
-
-      if (item.effect.refreshRoster) {
+      if (result.refreshRoster) {
         scoutLevel += 1
-        marketRoster = buildMarketRoster(g.station, scoutLevel)
+        marketRoster = buildMarketRoster(station, scoutLevel)
+        log.push(`🔍 Talent market refreshed`)
       }
 
       return {
         ...g,
         research,
+        station,
+        plans,
         scoutLevel,
         marketRoster,
-        station: { ...g.station, cash: g.station.cash - item.cost },
-        log: [...g.log, `🔬 Researched ${item.label}`],
+        log,
       }
     })
   }
@@ -324,8 +343,9 @@ export default function App() {
       )}
 
       {game.phase === 'plan' && view === 'research' && (
-        <ResearchView
+        <ResearchScreen
           research={game.research}
+          station={game.station}
           cash={game.station.cash}
           onBuy={buyResearch}
           onBack={() => setView('plan')}
@@ -566,20 +586,5 @@ function ActivityLog({ log }) {
   )
 }
 
-// ─── RESEARCH VIEW (full screen wrapper around ResearchPanel) ───────────
-function ResearchView({ research, cash, onBuy, onBack }) {
-  return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: 18 }}>
-      <button
-        onClick={onBack}
-        style={{
-          background: 'transparent', border: `1px solid ${T.border}`,
-          color: T.muted, padding: '8px 14px', borderRadius: 5,
-          fontSize: 11, fontWeight: 600, marginBottom: 16,
-        }}
-      >← Back to Programming</button>
-      <SectionTitle>Research & Development</SectionTitle>
-      <ResearchPanel research={research} cash={cash} onBuy={onBuy} />
-    </div>
-  )
-}
+// ─── END ─────────────────────────────────────────────────────────────────
+

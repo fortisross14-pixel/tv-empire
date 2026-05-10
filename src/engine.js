@@ -504,16 +504,39 @@ export function buildAwards(yearShows, station) {
 }
 
 // ─── RESEARCH STATE HELPERS ──────────────────────────────────────────────────
+/** Apply a research item's effects to the research-state object.
+ * Returns a NEW research-state. Effects that touch the station (addSlot)
+ * are NOT applied here — the caller (App.jsx) handles those; this returns
+ * a flag in the result so the caller knows what to do.
+ *
+ * Returns: { research, addSlotType: 'slotTypeId' | null, refreshRoster: bool }
+ */
 export function applyResearch(researchState, researchId) {
   const r = RESEARCH.find(x => x.id === researchId)
-  if (!r) return researchState
+  if (!r) return { research: researchState, addSlotType: null, refreshRoster: false }
+
   const next = { ...researchState }
   next.unlocked = [...(researchState.unlocked || []), researchId]
+  next.contentUnlocks = [...(researchState.contentUnlocks || [])]
+
+  let addSlotType = null
+  let refreshRoster = false
+
   Object.entries(r.effect || {}).forEach(([k, v]) => {
-    if (k === 'refreshRoster') return  // handled by caller
+    if (k === 'refreshRoster') { refreshRoster = true; return }
+    if (k === 'addSlot') { addSlotType = v; return }
+    if (k === 'unlockContent') {
+      // v is array of [catId, topicId] pairs — append each, deduping
+      for (const pair of v) {
+        const exists = next.contentUnlocks.some(p => p[0] === pair[0] && p[1] === pair[1])
+        if (!exists) next.contentUnlocks.push(pair)
+      }
+      return
+    }
+    // numeric / passive effect — overwrite
     next[k] = v
   })
-  return next
+  return { research: next, addSlotType, refreshRoster }
 }
 
 export function canResearch(researchId, researchState) {

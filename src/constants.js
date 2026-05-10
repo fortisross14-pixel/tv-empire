@@ -69,6 +69,7 @@ export const CATEGORIES = {
       { id: 'talk',    label: 'Talk Show',     q: 0.3, h: 0.6 },
       { id: 'comedy',  label: 'Stand-Up Hour', q: 0.4, h: 0.5 },
       { id: 'variety', label: 'Variety Hour',  q: 0.2, h: 0.7 },
+      { id: 'mature',  label: 'Adult / Edgy',  q: 0.5, h: 1.1 },
     ],
   },
   sports: {
@@ -325,13 +326,181 @@ export const COMPETITORS = {
 }
 
 // ─── RESEARCH TREE ───────────────────────────────────────────────────────────
+// ─── RESEARCH TREE ───────────────────────────────────────────────────────────
+// Three groups: SLOTS (add a programming slot of a specific type), CONTENT
+// (unlock new categories & topics), OPERATIONS (passive economic boosts).
+//
+// `effect` keys handled by the engine:
+//   addSlot: 'slotTypeId'              → push a new slot of that type
+//   unlockContent: [[catId, topicId], ...] → add to research.contentUnlocks
+//   marketingDiscount: number          → multiply marketing costs
+//   ipDiscount: number                 → multiply IP licensing costs
+//   sequelBonus: number                → +X quality on renewed shows
+//   refreshRoster: true                → handled by App.jsx (reroll market roster)
 export const RESEARCH = [
-  { id: 'slot4',        label: '4th Program Slot',     desc: 'Air four programs per cycle.', cost: 8,  effect: { numSlots: 4 } },
-  { id: 'slot5',        label: '5th Program Slot',     desc: 'Air five programs per cycle.', cost: 18, effect: { numSlots: 5 }, requires: ['slot4'] },
-  { id: 'scout1',       label: 'Talent Scout',         desc: 'Refresh the talent roster (extra options now).', cost: 4, effect: { refreshRoster: true }, repeatable: true },
-  { id: 'mktg_eff',     label: 'Marketing Efficiency', desc: '−25% on marketing campaign costs.', cost: 10, effect: { marketingDiscount: 0.75 } },
-  { id: 'sequel_boost', label: 'Renewal Power',        desc: 'Renewed shows get +0.5 quality.', cost: 6, effect: { sequelBonus: 0.5 } },
-  { id: 'ip_negot',     label: 'IP Negotiators',       desc: '−20% on IP licensing costs.', cost: 8, effect: { ipDiscount: 0.8 } },
+  // ─── SLOTS ─────────────────────────────────────────────────────────────────
+  {
+    id: 'slot_news', group: 'slots',
+    label: 'News Slot', icon: '📰',
+    desc: 'Add a daily news block. High match bonus for news.',
+    cost: 10,
+    effect: { addSlot: 'news' },
+  },
+  {
+    id: 'slot_prime2', group: 'slots',
+    label: 'Prime Time II', icon: '🌃',
+    desc: 'Add a second prime-time window — series, reality, movies thrive here.',
+    cost: 22,
+    effect: { addSlot: 'prime2' },
+  },
+  {
+    id: 'slot_latenight', group: 'slots',
+    label: 'Late Night Slot', icon: '🌙',
+    desc: 'A small late-night slot — adults, talk, edgy content. Lower audience but cheap.',
+    cost: 12,
+    effect: { addSlot: 'latenight' },
+  },
+  {
+    id: 'slot_weekend2', group: 'slots',
+    label: 'Weekend II', icon: '🎬',
+    desc: 'A second weekend slot — sports, movies, family events.',
+    cost: 18,
+    effect: { addSlot: 'weekend2' },
+  },
+
+  // ─── CONTENT — ENTER NEW CATEGORIES ────────────────────────────────────────
+  {
+    id: 'content_news_dept', group: 'content',
+    label: 'News Department', icon: '📰',
+    desc: 'Unlock News (local + global) if you don\'t have it.',
+    cost: 6,
+    effect: { unlockContent: [['news', 'local'], ['news', 'global']] },
+  },
+  {
+    id: 'content_reality_dept', group: 'content',
+    label: 'Reality Department', icon: '👁',
+    desc: 'Unlock Reality (general + competition).',
+    cost: 8,
+    effect: { unlockContent: [['reality', 'general'], ['reality', 'competition']] },
+  },
+  {
+    id: 'content_series_dept', group: 'content',
+    label: 'Series Department', icon: '📺',
+    desc: 'Unlock Scripted Series (drama + comedy).',
+    cost: 12,
+    effect: { unlockContent: [['series', 'drama'], ['series', 'comedy']] },
+  },
+  {
+    id: 'content_latenight_dept', group: 'content',
+    label: 'Late Night Department', icon: '🎤',
+    desc: 'Unlock Late Night (talk + comedy + variety).',
+    cost: 7,
+    effect: { unlockContent: [['latenight', 'talk'], ['latenight', 'comedy'], ['latenight', 'variety']] },
+  },
+  {
+    id: 'content_sports_dept', group: 'content',
+    label: 'Sports Department', icon: '🏆',
+    desc: 'Unlock Sports analysis + documentaries. Live coverage requires further research.',
+    cost: 15,
+    effect: { unlockContent: [['sports', 'analysis'], ['sports', 'doc']] },
+  },
+  {
+    id: 'content_family_dept', group: 'content',
+    label: 'Family Department', icon: '👨‍👩‍👧',
+    desc: 'Unlock Family programming (animated + live-action).',
+    cost: 6,
+    effect: { unlockContent: [['family', 'animated'], ['family', 'live']] },
+  },
+  {
+    id: 'content_contest_dept', group: 'content',
+    label: 'Contest Department', icon: '🎯',
+    desc: 'Unlock Contest shows (quiz + physical).',
+    cost: 5,
+    effect: { unlockContent: [['contest', 'quiz'], ['contest', 'physical']] },
+  },
+
+  // ─── CONTENT — DEEPEN AN EXISTING CATEGORY ────────────────────────────────
+  {
+    id: 'content_news_field', group: 'content',
+    label: 'Field Reporting', icon: '🎙',
+    desc: 'News: unlocks Field Reporter and Big-Topic Specials.',
+    cost: 8,
+    effect: { unlockContent: [['news', 'reporter'], ['news', 'bigtopic']] },
+  },
+  {
+    id: 'content_reality_lifestyle', group: 'content',
+    label: 'Lifestyle Programming', icon: '💕',
+    desc: 'Reality: unlocks Adventure / Survival and Dating / Love.',
+    cost: 7,
+    effect: { unlockContent: [['reality', 'adventure'], ['reality', 'love']] },
+  },
+  {
+    id: 'content_series_genres', group: 'content',
+    label: 'Genre Expansion', icon: '🎭',
+    desc: 'Series: unlocks Action, Fantasy/Sci-Fi, and Crime/Procedural.',
+    cost: 14,
+    effect: { unlockContent: [['series', 'action'], ['series', 'fantasy'], ['series', 'crime']] },
+  },
+  {
+    id: 'content_latenight_mature', group: 'content',
+    label: 'Mature Content License', icon: '🔞',
+    desc: 'Late Night: unlocks Adult / Edgy comedy. Big hype, small audience.',
+    cost: 10,
+    effect: { unlockContent: [['latenight', 'mature']] },
+  },
+  {
+    id: 'content_sports_live', group: 'content',
+    label: 'Live Coverage Rights', icon: '🏟',
+    desc: 'Sports: unlocks LIVE GAME COVERAGE — the highest revenue sports content.',
+    cost: 35,
+    requires: ['content_sports_dept'],
+    effect: { unlockContent: [['sports', 'live']] },
+  },
+  {
+    id: 'content_family_edu', group: 'content',
+    label: 'Educational Programming', icon: '🎓',
+    desc: 'Family: unlocks Educational shows (high quality, lower hype).',
+    cost: 5,
+    effect: { unlockContent: [['family', 'edu']] },
+  },
+  {
+    id: 'content_contest_prize', group: 'content',
+    label: 'Big-Prize Productions', icon: '💰',
+    desc: 'Contest: unlocks Big Prize Show — high hype, expensive prizes.',
+    cost: 8,
+    effect: { unlockContent: [['contest', 'prize']] },
+  },
+
+  // ─── OPERATIONS — PASSIVE BOOSTS ──────────────────────────────────────────
+  {
+    id: 'ops_scout', group: 'ops',
+    label: 'Talent Scout', icon: '🔍',
+    desc: 'Refresh the market talent roster with new options. Repeatable.',
+    cost: 4,
+    repeatable: true,
+    effect: { refreshRoster: true },
+  },
+  {
+    id: 'ops_mktg_eff', group: 'ops',
+    label: 'Marketing Efficiency', icon: '📢',
+    desc: '−25% on all marketing campaign costs.',
+    cost: 10,
+    effect: { marketingDiscount: 0.75 },
+  },
+  {
+    id: 'ops_sequel_boost', group: 'ops',
+    label: 'Renewal Power', icon: '🔄',
+    desc: 'Renewed shows get +0.5 quality.',
+    cost: 6,
+    effect: { sequelBonus: 0.5 },
+  },
+  {
+    id: 'ops_ip_negot', group: 'ops',
+    label: 'IP Negotiators', icon: '📜',
+    desc: '−20% on IP licensing costs.',
+    cost: 8,
+    effect: { ipDiscount: 0.8 },
+  },
 ]
 
 // ─── SLOT TYPES ──────────────────────────────────────────────────────────────
@@ -467,27 +636,27 @@ export const SEASONAL_PREFS = {
 }
 
 // ─── DEFAULT-AVAILABLE TOPICS PER FOCUS ──────────────────────────────────────
-// At game start, you ONLY have access to:
-//  - Your specialty category (all topics in it that aren't `advancedTopic: true`)
-//  - General-news ('global'), default movies, default contest quiz
-//  - Family 'live' if your focus is family-friendly
-// Everything else is locked behind research (Pass 2).
-//
-// Returns the list of available {categoryId, topicId} pairs given a focus.
-// Movie category counts as fully available (movies are licensed individually).
+// At game start you only have a SLICE of your focus category — enough to
+// program shows, but expansion (advanced topics, other categories) requires
+// research. Movies are always available (you license each one individually).
+// Returns array of [categoryId, topicId | '*' for all topics].
 export function defaultUnlocks(focusId) {
-  // [categoryId, topicId | '*' for all topics in that cat]
   const baseAll = [
-    ['news',  'global'],   // every station gets baseline global news
-    ['movie', '*'],        // movies always available
+    ['movie', '*'],   // movies always available — they're licensed per-film
   ]
   const byFocus = {
-    news:    [['news', '*'], ['contest', 'quiz']],
-    reality: [['reality', '*'], ['contest', 'prize']],
-    series:  [['series', '*'], ['latenight', 'talk']],
-    sports:  [['sports', 'analysis'], ['sports', 'doc'], ['contest', 'physical']],
-    family:  [['family', '*'], ['contest', 'quiz']],
-    general: [['series', 'comedy'], ['reality', 'general'], ['family', 'live'], ['contest', 'quiz']],
+    // News stations: local + global. Field reporting and big-topic specials need research.
+    news:    [['news', 'local'], ['news', 'global']],
+    // Reality: general + competition. Adventure and dating are lifestyle expansions.
+    reality: [['reality', 'general'], ['reality', 'competition']],
+    // Series: drama + comedy. Crime, action, fantasy need research (genre expansion).
+    series:  [['series', 'drama'], ['series', 'comedy']],
+    // Sports: analysis + docs only. Live game rights are EXPENSIVE and require research.
+    sports:  [['sports', 'analysis'], ['sports', 'doc']],
+    // Family: animated + live. Educational requires research.
+    family:  [['family', 'animated'], ['family', 'live']],
+    // General: a small dish from each — nothing deep. Player must specialize via research.
+    general: [['series', 'comedy'], ['reality', 'general'], ['contest', 'quiz']],
   }
   return [...baseAll, ...(byFocus[focusId] || [])]
 }
