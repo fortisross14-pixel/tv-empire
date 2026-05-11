@@ -120,7 +120,7 @@ export function SetupScreen({ onStart }) {
           </button>
 
           <div style={{ fontSize: 10, color: T.muted, textAlign: 'center', marginTop: 10 }}>
-            Year 1 · Q1 begins immediately
+            Year 1 · January begins immediately
           </div>
         </div>
 

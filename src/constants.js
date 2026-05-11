@@ -468,6 +468,416 @@ export const STARS = [
   { id: 's_localhostess',  name: 'Theresa Gomez',       specialty: 'contest',  tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
 ]
 
+// ─── WRITERS POOL ────────────────────────────────────────────────────────────
+// Writers create scripts (1 month to draft). Writers are PERMANENT-CONTRACT
+// only — no fixed-length deals. `skill` is 0..1 and feeds script base quality
+// & initial hype. Salary tiers: Legendary/Epic = $1.2M/mo, Rare/Uncommon =
+// $0.6M/mo, Common = $0.3M/mo. `cost` is the monthly salary for the permanent
+// hire (treat it like star.cost when building the contract record).
+export const WRITERS = [
+  // News writers
+  { id: 'w_newsguru',     name: 'Aaron Sorking',       specialty: 'news',     tier: 'Legendary', skill: 0.85, cost: 1.2 },
+  { id: 'w_newslead',     name: 'Megan Khoury',        specialty: 'news',     tier: 'Epic',      skill: 0.70, cost: 1.2 },
+  { id: 'w_newsrare',     name: 'Daniel Park',         specialty: 'news',     tier: 'Rare',      skill: 0.55, cost: 0.6 },
+  { id: 'w_newsuncomm',   name: 'Hannah Cole',         specialty: 'news',     tier: 'Uncommon',  skill: 0.40, cost: 0.6 },
+  { id: 'w_newscomm',     name: 'Local Beat Writer',   specialty: 'news',     tier: 'Common',    skill: 0.25, cost: 0.3 },
+
+  // Reality writers
+  { id: 'w_realityguru',  name: 'Sasha Vandermeer',    specialty: 'reality',  tier: 'Legendary', skill: 0.80, cost: 1.2 },
+  { id: 'w_realitylead',  name: 'Brock Steinman',      specialty: 'reality',  tier: 'Epic',      skill: 0.68, cost: 1.2 },
+  { id: 'w_realityrare',  name: 'Quinn Reyes',         specialty: 'reality',  tier: 'Rare',      skill: 0.50, cost: 0.6 },
+  { id: 'w_realityuncm',  name: 'Tara Bishop',         specialty: 'reality',  tier: 'Uncommon',  skill: 0.38, cost: 0.6 },
+  { id: 'w_realitycomm',  name: 'Reality Stringer',    specialty: 'reality',  tier: 'Common',    skill: 0.22, cost: 0.3 },
+
+  // Series writers (the prestige pool)
+  { id: 'w_seriesgod1',   name: 'Vincent Galleria',    specialty: 'series',   tier: 'Legendary', skill: 0.95, cost: 1.2 },
+  { id: 'w_seriesgod2',   name: 'Maya Lindqvist',      specialty: 'series',   tier: 'Legendary', skill: 0.90, cost: 1.2 },
+  { id: 'w_serieslead1',  name: 'David Chen-Holloway', specialty: 'series',   tier: 'Epic',      skill: 0.75, cost: 1.2 },
+  { id: 'w_serieslead2',  name: 'Priya Iyer',          specialty: 'series',   tier: 'Epic',      skill: 0.72, cost: 1.2 },
+  { id: 'w_seriesrare',   name: 'Jake Morrison',       specialty: 'series',   tier: 'Rare',      skill: 0.55, cost: 0.6 },
+  { id: 'w_seriesuncm',   name: 'Naomi Kessler',       specialty: 'series',   tier: 'Uncommon',  skill: 0.40, cost: 0.6 },
+  { id: 'w_seriescomm',   name: 'Spec-Script Writer',  specialty: 'series',   tier: 'Common',    skill: 0.25, cost: 0.3 },
+
+  // Late night writers
+  { id: 'w_latelegend',   name: 'Conan Robbie',        specialty: 'latenight',tier: 'Legendary', skill: 0.82, cost: 1.2 },
+  { id: 'w_lateepic',     name: 'Lorne Marshall',      specialty: 'latenight',tier: 'Epic',      skill: 0.70, cost: 1.2 },
+  { id: 'w_laterare',     name: 'Tina Hsu',            specialty: 'latenight',tier: 'Rare',      skill: 0.52, cost: 0.6 },
+  { id: 'w_latecomm',     name: 'Open-Mic Joker',      specialty: 'latenight',tier: 'Common',    skill: 0.25, cost: 0.3 },
+
+  // Sports writers (for docs / analysis — live games don't need scripts)
+  { id: 'w_sportslead',   name: 'Bill Simmonsen',      specialty: 'sports',   tier: 'Epic',      skill: 0.70, cost: 1.2 },
+  { id: 'w_sportsrare',   name: 'Erika Donovan',       specialty: 'sports',   tier: 'Rare',      skill: 0.50, cost: 0.6 },
+  { id: 'w_sportscomm',   name: 'Stat Sheet Reader',   specialty: 'sports',   tier: 'Common',    skill: 0.25, cost: 0.3 },
+
+  // Family writers
+  { id: 'w_familylegend', name: 'Bex Goldsmith',       specialty: 'family',   tier: 'Legendary', skill: 0.78, cost: 1.2 },
+  { id: 'w_familyepic',   name: 'Rashid Petrov',       specialty: 'family',   tier: 'Epic',      skill: 0.65, cost: 1.2 },
+  { id: 'w_familyrare',   name: 'Olivia Tran',         specialty: 'family',   tier: 'Rare',      skill: 0.48, cost: 0.6 },
+  { id: 'w_familycomm',   name: 'Family Hour Writer',  specialty: 'family',   tier: 'Common',    skill: 0.22, cost: 0.3 },
+
+  // Kids writers
+  { id: 'w_kidslegend',   name: 'Mr. Rogerson',        specialty: 'kids',     tier: 'Legendary', skill: 0.80, cost: 1.2 },
+  { id: 'w_kidsepic',     name: 'Tracy Bluebird',      specialty: 'kids',     tier: 'Epic',      skill: 0.65, cost: 1.2 },
+  { id: 'w_kidsrare',     name: 'Marcus Lin',          specialty: 'kids',     tier: 'Rare',      skill: 0.48, cost: 0.6 },
+  { id: 'w_kidsuncm',     name: 'Puppet-Show Scribe',  specialty: 'kids',     tier: 'Uncommon',  skill: 0.35, cost: 0.6 },
+  { id: 'w_kidscomm',     name: 'Cartoon Junior',      specialty: 'kids',     tier: 'Common',    skill: 0.22, cost: 0.3 },
+
+  // Contest writers
+  { id: 'w_contestlead',  name: 'Heidi Klamm',         specialty: 'contest',  tier: 'Epic',      skill: 0.68, cost: 1.2 },
+  { id: 'w_contestrare',  name: 'Wally Tendulkar',     specialty: 'contest',  tier: 'Rare',      skill: 0.50, cost: 0.6 },
+  { id: 'w_contestcomm',  name: 'Game-Show Hack',      specialty: 'contest',  tier: 'Common',    skill: 0.22, cost: 0.3 },
+]
+
+// Cap on simultaneously-employed writers. New game starts with 1 free writer.
+export const WRITERS_CAP = 10
+
+// Hype decay multiplier each time a script is used to produce a program.
+export const SCRIPT_HYPE_DECAY = 0.80
+
+// Hype clamp
+export const SCRIPT_HYPE_MIN = 5
+export const SCRIPT_HYPE_MAX = 100
+
+// ─── PRODUCTION DESIGN TIERS ─────────────────────────────────────────────────
+// Each program build picks ONE prod-design tier. Affinity per category determines
+// quality bonus or penalty. Cost is paid as part of production.
+export const PROD_DESIGN_TIERS = [
+  {
+    id: 'pd_realnormal',
+    label: 'Real World Normal',
+    desc: 'Existing locations, minimal redress. Cheap and authentic.',
+    cost: 0.4,            // M, applied per production cycle
+    qBonus: 0.0,
+    prefers: ['news', 'reality', 'sports'],     // good fit → +0.6 quality, +0.4 hype
+    dislikes: ['series', 'family'],             // bad fit → -0.4 quality, +25% cost
+  },
+  {
+    id: 'pd_realluxury',
+    label: 'Real World Luxury',
+    desc: 'High-end locations, premium dressing, careful lighting.',
+    cost: 2.0,
+    qBonus: 0.4,
+    prefers: ['series', 'latenight', 'family'],
+    dislikes: ['kids', 'reality'],
+  },
+  {
+    id: 'pd_adhoc',
+    label: 'Ad-Hoc Design',
+    desc: 'Custom-built sets, controlled environment, full creative freedom.',
+    cost: 5.5,
+    qBonus: 0.7,
+    prefers: ['series', 'family', 'kids', 'contest'],
+    dislikes: ['news', 'sports'],
+  },
+]
+
+// ─── SFX TIERS ───────────────────────────────────────────────────────────────
+export const SFX_TIERS = [
+  {
+    id: 'sfx_none',
+    label: 'None',
+    desc: 'No special effects. Practical only.',
+    cost: 0,
+    qBonus: 0,
+    prefers: ['news', 'latenight', 'sports'],
+    dislikes: [],
+  },
+  {
+    id: 'sfx_punctual',
+    label: 'Punctual',
+    desc: 'Selective effects for emphasis. Tasteful, restrained.',
+    cost: 1.5,
+    qBonus: 0.3,
+    prefers: ['series', 'reality', 'family', 'contest'],
+    dislikes: ['news'],
+  },
+  {
+    id: 'sfx_heavy',
+    label: 'Heavy',
+    desc: 'Spectacle-driven, CGI-forward, big set pieces.',
+    cost: 5.0,
+    qBonus: 0.6,
+    prefers: ['series', 'family', 'kids'],
+    dislikes: ['news', 'latenight', 'reality'],
+  },
+]
+
+// Quality / cost penalty/bonus modifiers per affinity outcome
+export const AFFINITY_GOOD_Q = 0.6
+export const AFFINITY_GOOD_H = 0.4
+export const AFFINITY_BAD_Q  = -0.4
+export const AFFINITY_BAD_COST_MULT = 1.25
+export const AFFINITY_NORMAL_Q = 0
+export const AFFINITY_NORMAL_H = 0
+
+// ─── PRODUCTION METHOD per content type ──────────────────────────────────────
+// Determines program build timing & cost flow.
+//   - 'instant'    → movies. No script. Ready next tick after editing cost.
+//   - 'live'       → news, sports, contest. 1 mo prep + live cost each airing.
+//   - 'preproduced'→ series, reality, latenight, family, kids. Production runs
+//                    for ceil(airingMonths/2), min 1. Full prod cost paid
+//                    upfront. Transmission cost during airing is cheap.
+export const PRODUCTION_METHODS = {
+  news:      'live',
+  sports:    'live',
+  contest:   'live',
+  series:    'preproduced',
+  reality:   'preproduced',
+  latenight: 'preproduced',
+  family:    'preproduced',
+  kids:      'preproduced',
+  // movies are instant — handled by special case (no categoryId at build)
+}
+
+// Cost split — fraction of full programCost that becomes the live/airing recurring cost
+// for live-method content vs prep cost.
+export const LIVE_PREP_FRACTION    = 0.25  // prep paid once at build start
+export const LIVE_AIRING_FRACTION  = 0.75  // split evenly across each airing
+// For preproduced content: full cost paid upfront. Transmission cost during airing:
+export const PREPRODUCED_TRANSMISSION_FRACTION = 0.10  // very cheap to air after prod done
+// For movies (instant): the upfront editing/distribution cost
+export const MOVIE_EDITING_FRACTION = 1.00 // movies have a flat cost — full upfront
+
+// Estimation range shown during build (true Q/H is hidden until first airing)
+export const ESTIMATION_RANGE = 0.08   // ±8%
+
+// ─── MUSIC TIERS ─────────────────────────────────────────────────────────────
+// Music drives ART quality strongly and gives a small NARRATIVE bump (mood,
+// pacing). No category affinity — it's a pure quality boost that scales with
+// cost.
+export const MUSIC_TIERS = [
+  {
+    id: 'mus_basic',
+    label: 'Basic Melodies',
+    desc: 'Stock loops and simple cues. Functional, forgettable.',
+    cost: 0,
+    artBonus: 0,
+    narrativeBonus: 0,
+  },
+  {
+    id: 'mus_existing',
+    label: 'Existing Music',
+    desc: 'License recognizable tracks. Adds character and recall.',
+    cost: 1.0,
+    artBonus: 0.8,
+    narrativeBonus: 0.3,
+  },
+  {
+    id: 'mus_composer',
+    label: 'Hire Composer / Band',
+    desc: 'Original score commissioned for the program. Distinctive identity.',
+    cost: 4.0,
+    artBonus: 2.0,
+    narrativeBonus: 0.6,
+  },
+]
+
+// ─── QUALITY COMPONENT WEIGHTS PER CATEGORY ──────────────────────────────────
+// Each category weighs the four quality components differently. Weights sum
+// to 1.0 so the final quality stays in 0..10.
+// Components: narrative, art, innovation, technical.
+export const CATEGORY_QUALITY_WEIGHTS = {
+  news:      { narrative: 0.50, art: 0.10, innovation: 0.15, technical: 0.25 },
+  sports:    { narrative: 0.15, art: 0.15, innovation: 0.35, technical: 0.35 },
+  contest:   { narrative: 0.20, art: 0.20, innovation: 0.45, technical: 0.15 },
+  reality:   { narrative: 0.30, art: 0.25, innovation: 0.35, technical: 0.10 },
+  series:    { narrative: 0.45, art: 0.30, innovation: 0.15, technical: 0.10 },
+  latenight: { narrative: 0.40, art: 0.20, innovation: 0.30, technical: 0.10 },
+  family:    { narrative: 0.35, art: 0.35, innovation: 0.20, technical: 0.10 },
+  kids:      { narrative: 0.40, art: 0.40, innovation: 0.15, technical: 0.05 },
+  // movie path doesn't use component breakdown for review purposes (movies
+  // skip reviews) but a fallback weight is still useful.
+  movie:     { narrative: 0.35, art: 0.30, innovation: 0.15, technical: 0.20 },
+}
+
+// ─── REVIEW SENTENCE TEMPLATES ───────────────────────────────────────────────
+// Each template has a condition function that takes (components, rating, networkName)
+// and returns true if it applies; and a `quote` template using {network} as
+// the placeholder for the network name.
+//
+// `bucket` groups templates by overall reception so we can pick from a
+// matching pool. The score from `score(components)` is used to pick the best
+// within the bucket.
+//
+// Components: { narrative, art, innovation, technical } 0..10
+// rating: 0..10 overall live rating
+export const REVIEW_TEMPLATES = [
+  // ── MASTERPIECES (rating >= 8.5) ─────────────────────────────────────────
+  {
+    bucket: 'masterpiece',
+    quote: '{network} has created a masterpiece. Every department firing at once.',
+    test: (c, r) => r >= 8.5 && minComp(c) >= 7.0,
+  },
+  {
+    bucket: 'masterpiece',
+    quote: 'This is outstanding TV. A new high water mark for the medium.',
+    test: (c, r) => r >= 8.5 && avgComp(c) >= 7.5,
+  },
+  {
+    bucket: 'masterpiece',
+    quote: 'A landmark production. Critics are already calling it the show of the year.',
+    test: (c, r) => r >= 9.0,
+  },
+
+  // ── HITS WITH ONE STANDOUT COMPONENT ─────────────────────────────────────
+  {
+    bucket: 'hit-narrative',
+    quote: "You can't press pause. A gripping story that doesn't let go.",
+    test: (c, r) => r >= 7.0 && dominant(c) === 'narrative' && c.narrative >= 7.5,
+  },
+  {
+    bucket: 'hit-narrative',
+    quote: 'Writing this sharp is rare. Every line earns its place on screen.',
+    test: (c, r) => r >= 7.0 && c.narrative >= 8.0,
+  },
+  {
+    bucket: 'hit-art',
+    quote: 'A visual marvel. {network} clearly invested where it counts.',
+    test: (c, r) => r >= 7.0 && dominant(c) === 'art' && c.art >= 7.5,
+  },
+  {
+    bucket: 'hit-art',
+    quote: 'Every frame is a painting. The cinematography alone is worth tuning in.',
+    test: (c, r) => r >= 7.0 && c.art >= 8.0,
+  },
+  {
+    bucket: 'hit-innovation',
+    quote: 'Genuinely inventive — this could redefine the genre.',
+    test: (c, r) => r >= 7.0 && dominant(c) === 'innovation' && c.innovation >= 7.5,
+  },
+  {
+    bucket: 'hit-innovation',
+    quote: "We haven't seen something this fresh in years.",
+    test: (c, r) => r >= 7.0 && c.innovation >= 8.0,
+  },
+  {
+    bucket: 'hit-technical',
+    quote: 'Technically flawless. The production values raise the entire format.',
+    test: (c, r) => r >= 7.0 && dominant(c) === 'technical' && c.technical >= 7.5,
+  },
+  {
+    bucket: 'hit-technical',
+    quote: 'Polished to a mirror shine. A textbook on how to mount a broadcast.',
+    test: (c, r) => r >= 7.0 && c.technical >= 8.0,
+  },
+
+  // ── HITS WITH BALANCED STRENGTH ──────────────────────────────────────────
+  {
+    bucket: 'hit-balanced',
+    quote: 'A confident, well-rounded production. {network} should be proud.',
+    test: (c, r) => r >= 7.0 && minComp(c) >= 6.0,
+  },
+  {
+    bucket: 'hit-balanced',
+    quote: 'No weak link in the chain. Worth the slot.',
+    test: (c, r) => r >= 7.0 && stdComp(c) <= 1.0,
+  },
+
+  // ── ONE STRENGTH, OTHERS WEAK (rating 6.0–7.0) ───────────────────────────
+  {
+    bucket: 'lopsided-narrative',
+    quote: 'A compelling story, but the rest of the package struggles to keep up.',
+    test: (c, r) => r >= 6.0 && r < 7.5 && c.narrative >= 7.0 && (c.art < 5.0 || c.technical < 5.0),
+  },
+  {
+    bucket: 'lopsided-art',
+    quote: 'Visual marvel with limitations in other areas. Pretty but thin.',
+    test: (c, r) => r >= 6.0 && r < 7.5 && c.art >= 7.0 && (c.narrative < 5.0 || c.innovation < 5.0),
+  },
+  {
+    bucket: 'lopsided-innovation',
+    quote: 'A bold idea in search of better execution.',
+    test: (c, r) => r >= 6.0 && r < 7.5 && c.innovation >= 7.0 && minComp(c) < 5.0,
+  },
+  {
+    bucket: 'lopsided-technical',
+    quote: 'Polished but hollow. The craft is there; the substance is missing.',
+    test: (c, r) => r >= 6.0 && r < 7.5 && c.technical >= 7.0 && c.narrative < 5.0,
+  },
+
+  // ── AVERAGE (rating 5.0–7.0) ─────────────────────────────────────────────
+  {
+    bucket: 'average',
+    quote: 'Nothing special. Watchable, forgettable.',
+    test: (c, r) => r >= 5.0 && r < 7.0 && avgComp(c) >= 4.5 && avgComp(c) < 6.5,
+  },
+  {
+    bucket: 'average',
+    quote: 'One more {kind} on a crowded schedule.',
+    test: (c, r) => r >= 5.0 && r < 7.0,
+  },
+  {
+    bucket: 'average',
+    quote: 'Competent but anonymous. {network} needs to take more risks.',
+    test: (c, r) => r >= 5.0 && r < 7.0 && c.innovation < 5.0,
+  },
+  {
+    bucket: 'average',
+    quote: 'Solid enough for the slot. Hard to recommend, hard to dismiss.',
+    test: (c, r) => r >= 5.5 && r < 7.0,
+  },
+
+  // ── WEAK (rating 4.0–5.0) ───────────────────────────────────────────────
+  {
+    bucket: 'weak',
+    quote: 'Misses more than it hits. Several departments need a rethink.',
+    test: (c, r) => r >= 4.0 && r < 5.0,
+  },
+  {
+    bucket: 'weak',
+    quote: "Doesn't quite work — and you can feel it from the first minute.",
+    test: (c, r) => r >= 4.0 && r < 5.0,
+  },
+  {
+    bucket: 'weak',
+    quote: 'A rough draft that should have stayed on the cutting room floor.',
+    test: (c, r) => r >= 4.0 && r < 5.0 && minComp(c) < 4.0,
+  },
+
+  // ── FLOPS (rating < 4.0) ────────────────────────────────────────────────
+  {
+    bucket: 'flop',
+    quote: "We're sure {network} isn't happy with the end product.",
+    test: (c, r) => r < 4.0 && avgComp(c) < 4.0,
+  },
+  {
+    bucket: 'flop',
+    quote: '{network} should rethink what their strategy is with this show.',
+    test: (c, r) => r < 4.0 && c.innovation < 3.5,
+  },
+  {
+    bucket: 'flop',
+    quote: 'Painful to sit through. Painful to write about.',
+    test: (c, r) => r < 3.5,
+  },
+  {
+    bucket: 'flop',
+    quote: 'Cancel it. Quickly.',
+    test: (c, r) => r < 3.0,
+  },
+
+  // ── ABSOLUTE FALLBACKS (always match) ────────────────────────────────────
+  {
+    bucket: 'fallback',
+    quote: 'A mixed bag — moments of promise, stretches of mediocrity.',
+    test: () => true,
+  },
+]
+
+// helpers used by review templates
+function minComp(c) { return Math.min(c.narrative, c.art, c.innovation, c.technical) }
+function avgComp(c) { return (c.narrative + c.art + c.innovation + c.technical) / 4 }
+function dominant(c) {
+  const entries = [['narrative', c.narrative], ['art', c.art], ['innovation', c.innovation], ['technical', c.technical]]
+  entries.sort((a, b) => b[1] - a[1])
+  return entries[0][0]
+}
+function stdComp(c) {
+  const a = avgComp(c)
+  const sq = [c.narrative, c.art, c.innovation, c.technical].map(x => (x - a) ** 2)
+  return Math.sqrt(sq.reduce((x, y) => x + y, 0) / 4)
+}
+
 // ─── IP CATALOG ──────────────────────────────────────────────────────────────
 export const IPS = [
   { id: 'ip_galaxywars',  name: 'Galaxy Wars',         tier: 'Legendary', q: 1.5, h: 3.0, cost: 18,  fits: ['series', 'movie', 'family'] },

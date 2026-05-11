@@ -18,6 +18,13 @@ import {
   STAFF_ROLES, STAFF_EFFECTS, STAFF_FIRST_NAMES, STAFF_LAST_NAMES,
   SEARCH_TIERS, STAFF_MONTHLY_SALARY,
   IP_LICENSE_TERMS, NETWORK_CAMPAIGNS,
+  WRITERS, WRITERS_CAP, SCRIPT_HYPE_DECAY, SCRIPT_HYPE_MIN, SCRIPT_HYPE_MAX,
+  PROD_DESIGN_TIERS, SFX_TIERS, PRODUCTION_METHODS,
+  AFFINITY_GOOD_Q, AFFINITY_GOOD_H, AFFINITY_BAD_Q, AFFINITY_BAD_COST_MULT,
+  LIVE_PREP_FRACTION, LIVE_AIRING_FRACTION,
+  PREPRODUCED_TRANSMISSION_FRACTION, MOVIE_EDITING_FRACTION,
+  ESTIMATION_RANGE,
+  MUSIC_TIERS, CATEGORY_QUALITY_WEIGHTS, REVIEW_TEMPLATES,
 } from './constants.js'
 
 // ─── MATH HELPERS ────────────────────────────────────────────────────────────
@@ -35,7 +42,10 @@ export const uid = () => `p${Date.now().toString(36)}_${(_uid++).toString(36)}`
 // ─── LOOKUPS ────────────────────────────────────────────────────────────────
 export const findDirector = id => DIRECTORS.find(d => d.id === id) || null
 export const findStar     = id => STARS.find(s => s.id === id) || null
+export const findWriter   = id => WRITERS.find(w => w.id === id) || null
 export const findIP       = id => IPS.find(i => i.id === id) || null
+export const findProdDesign = id => PROD_DESIGN_TIERS.find(p => p.id === id) || null
+export const findSfx        = id => SFX_TIERS.find(s => s.id === id) || null
 export const findMovie    = id => MOVIES.find(m => m.id === id) || null
 export const findFocus    = id => FOCUSES.find(f => f.id === id) || null
 export const findLeague   = id => SPORTS_LEAGUES.find(l => l.id === id) || null
@@ -110,9 +120,16 @@ export function tickContracts(station) {
     return { ...h, monthsLeft: Math.max(0, h.monthsLeft - 1) }
   }).filter(h => h.permanent || h.monthsLeft > 0)
 
+  // Writers are always permanent. Each one always charges its perMonthCharge.
+  const tickWriters = (list) => list.map(h => {
+    charge += h.perMonthCharge || 0
+    return h
+  })
+
   return {
     hiredDirectors: tick(station.hiredDirectors || []),
     hiredStars:     tick(station.hiredStars     || []),
+    hiredWriters:   tickWriters(station.hiredWriters || []),
     perMonthCharge: r1(charge),
   }
 }
@@ -167,6 +184,882 @@ export function fireTalent(station, role, talentId) {
     hiredStars:     role === 'star'     ? filter(station.hiredStars)     : station.hiredStars,
   }
   return { station: newStation, charged: penalty, error: null }
+}
+
+// ─── WRITERS ──────────────────────────────────────────────────────────────────
+// Writers are PERMANENT-only contracts. There's a hard cap (WRITERS_CAP = 10).
+// Each writer has a `specialty` (matches a category id) and a `skill` (0..1).
+// Hiring upfront cost == 1 month of salary (cost). Firing penalty mirrors
+// other permanent contracts (perMonthCharge * FIRE_PENALTY_MULT).
+
+export function hireWriter(station, writer) {
+  const list = station.hiredWriters || []
+  if (list.length >= WRITERS_CAP) {
+    return { station, charged: 0, error: `Writer cap reached (${WRITERS_CAP})` }
+  }
+  if (list.find(h => h.talentId === writer.id)) {
+    return { station, charged: 0, error: 'Already hired' }
+  }
+  const upfront = r1(writer.cost) // 1 month signing
+  if (station.cash < upfront) return { station, charged: 0, error: 'Not enough cash' }
+
+  const record = {
+    talentId: writer.id,
+    role: 'writer',
+    contractType: 'permanent',
+    permanent: true,
+    monthsLeft: null,
+    perMonthCharge: r1(writer.cost),
+    upfrontPaid: r1(upfront),
+  }
+  const newStation = {
+    ...station,
+    cash: r1(station.cash - upfront),
+    hiredWriters: [...list, record],
+  }
+  return { station: newStation, charged: r1(upfront), error: null }
+}
+
+export function fireWriter(station, writerId) {
+  const list = station.hiredWriters || []
+  const rec = list.find(h => h.talentId === writerId)
+  if (!rec) return { station, charged: 0, error: 'Not hired' }
+
+  // Refuse to fire if writer is mid-draft
+  const busy = (station.scripts || []).some(s => s.writerId === writerId && s.status === 'drafting')
+  if (busy) return { station, charged: 0, error: 'Writer is drafting a script — wait or archive it first' }
+
+  const writer = findWriter(writerId)
+  const penalty = r1((rec.perMonthCharge || writer?.cost || 0) * FIRE_PENALTY_MULT)
+  const newStation = {
+    ...station,
+    cash: r1(station.cash - penalty),
+    hiredWriters: list.filter(h => h.talentId !== writerId),
+  }
+  return { station: newStation, charged: penalty, error: null }
+}
+
+/** Writers currently employed (full writer records, not hire records). */
+export function activeWriters(station) {
+  return (station.hiredWriters || [])
+    .map(h => findWriter(h.talentId)).filter(Boolean)
+}
+
+/** Per-month salary total for writers (all permanent). */
+export function writerSalaryTotal(station) {
+  return r1((station.hiredWriters || []).reduce((a, h) => a + (h.perMonthCharge || 0), 0))
+}
+
+/** Builds the public market of writers (those exposed by their tier rarity). */
+export function buildWriterMarket(station, scoutLevel = 0) {
+  const bonus = scoutLevel * 0.15
+  const expose = (list) => list.filter(t => Math.random() < clamp(TIER_EXPOSURE[t.tier] + bonus, 0, 1))
+  const hired = new Set((station.hiredWriters || []).map(h => h.talentId))
+  return expose(WRITERS).filter(w => !hired.has(w.id))
+}
+
+// ─── SCRIPTS ──────────────────────────────────────────────────────────────────
+// A script is created by a writer over 1 month. While drafting, the writer is
+// locked. On completion, hype is rolled from writer skill + IP bonus + noise.
+// Scripts are reusable: every use decays hype by SCRIPT_HYPE_DECAY (×0.80).
+// Refreshing a script costs 1 month of writer time (writer locked) and
+// restores hype to the original rolled value. Only archived scripts can be
+// deleted permanently.
+//
+// Script shape:
+//   { id, name, writerId, categoryId, topicId, ipId,
+//     status: 'drafting' | 'ready' | 'archived',
+//     monthsRemaining,         // for drafting/refresh; 0 when ready
+//     baseQuality,             // 0..10, rolled at creation, used for est Q/H later
+//     hype, originalHype,      // 0..100; current vs the value rolled at completion
+//     timesUsed,
+//     refreshing: bool         // true when monthsRemaining counts down a refresh
+//   }
+
+function rollScriptHype(writer, ipId) {
+  const skillPart = (writer?.skill || 0.3) * 60       // 18..60
+  const ip = findIP(ipId)
+  const ipPart = ip ? (ip.h || 0) * 6                 // up to ~20 for legendary
+                    : 0
+  const noise = rnd(-10, 10)
+  const total = skillPart + ipPart + noise + 18       // base offset so even low writers can produce usable scripts
+  return r1(clamp(total, SCRIPT_HYPE_MIN, SCRIPT_HYPE_MAX))
+}
+
+function rollScriptQuality(writer, ipId) {
+  const skillPart = (writer?.skill || 0.3) * 7        // 2.1..7
+  const ip = findIP(ipId)
+  const ipPart = ip ? (ip.q || 0) * 0.6 : 0           // up to ~1.2
+  const noise = rnd(-0.5, 0.5)
+  return r1(clamp(skillPart + ipPart + noise + 1.5, 1, 10))
+}
+
+/** Begin drafting a new script. Writer must be hired and not already busy. */
+export function beginScript(station, opts) {
+  const { writerId, name, categoryId, topicId, ipId = null } = opts || {}
+  const writer = findWriter(writerId)
+  if (!writer) return { station, error: 'Writer not found' }
+  const hired = (station.hiredWriters || []).find(h => h.talentId === writerId)
+  if (!hired) return { station, error: 'Writer is not employed' }
+
+  const busy = (station.scripts || []).some(s => s.writerId === writerId && s.status === 'drafting')
+  if (busy) return { station, error: 'Writer is already drafting' }
+
+  if (!categoryId || !topicId || !name?.trim()) {
+    return { station, error: 'Pick a category, topic, and name' }
+  }
+
+  // IP usage gate: must own a current license for that IP. (Validated by UI
+  // already, but defensive-check here too.)
+  if (ipId) {
+    const lic = (station.ipLicenses || []).find(l => l.ipId === ipId)
+    if (!lic) return { station, error: 'No active license for that IP' }
+  }
+
+  const script = {
+    id: uid(),
+    name: name.trim(),
+    writerId,
+    categoryId,
+    topicId,
+    ipId,
+    status: 'drafting',
+    monthsRemaining: 1,
+    baseQuality: 0,        // rolled on completion
+    hype: 0,
+    originalHype: 0,
+    timesUsed: 0,
+    refreshing: false,
+  }
+  return {
+    station: { ...station, scripts: [...(station.scripts || []), script] },
+    error: null,
+  }
+}
+
+/** Refresh a ready (or archived) script — restores hype to original. Costs 1 mo of writer time. */
+export function refreshScript(station, scriptId) {
+  const scripts = station.scripts || []
+  const idx = scripts.findIndex(s => s.id === scriptId)
+  if (idx < 0) return { station, error: 'Script not found' }
+  const s = scripts[idx]
+  if (s.status === 'drafting') return { station, error: 'Already drafting' }
+
+  // Need a free writer specialised in this category (or any free writer? we keep
+  // it simple: the *original* writer if free, else any hired writer not busy.)
+  const hired = (station.hiredWriters || [])
+  if (hired.length === 0) return { station, error: 'No writers employed' }
+
+  const original = hired.find(h => h.talentId === s.writerId)
+  const busyIds = new Set(scripts.filter(x => x.status === 'drafting').map(x => x.writerId))
+
+  let useWriterId = null
+  if (original && !busyIds.has(s.writerId)) {
+    useWriterId = s.writerId
+  } else {
+    const free = hired.find(h => !busyIds.has(h.talentId))
+    if (!free) return { station, error: 'All writers busy' }
+    useWriterId = free.talentId
+  }
+
+  const next = {
+    ...s,
+    writerId: useWriterId,
+    status: 'drafting',
+    monthsRemaining: 1,
+    refreshing: true,
+  }
+  const newScripts = scripts.slice()
+  newScripts[idx] = next
+  return { station: { ...station, scripts: newScripts }, error: null }
+}
+
+/** Move a ready or drafting script to archived. Archived scripts can be deleted later. */
+export function archiveScript(station, scriptId) {
+  const scripts = station.scripts || []
+  const idx = scripts.findIndex(s => s.id === scriptId)
+  if (idx < 0) return { station, error: 'Script not found' }
+  const s = scripts[idx]
+  const next = { ...s, status: 'archived', monthsRemaining: 0, refreshing: false }
+  const newScripts = scripts.slice()
+  newScripts[idx] = next
+  return { station: { ...station, scripts: newScripts }, error: null }
+}
+
+/** Permanently remove an archived script. Only allowed from 'archived' state. */
+export function deleteArchivedScript(station, scriptId) {
+  const scripts = station.scripts || []
+  const s = scripts.find(x => x.id === scriptId)
+  if (!s) return { station, error: 'Script not found' }
+  if (s.status !== 'archived') return { station, error: 'Only archived scripts can be deleted' }
+  return { station: { ...station, scripts: scripts.filter(x => x.id !== scriptId) }, error: null }
+}
+
+/** Per-month tick: decrement drafting/refresh counters; finish drafts → 'ready'. */
+export function tickScripts(station) {
+  const scripts = station.scripts || []
+  const completed = []
+  const newScripts = scripts.map(s => {
+    if (s.status !== 'drafting') return s
+    const left = Math.max(0, (s.monthsRemaining || 0) - 1)
+    if (left > 0) return { ...s, monthsRemaining: left }
+    // Completed
+    const writer = findWriter(s.writerId)
+    const isRefresh = !!s.refreshing
+    let baseQuality = s.baseQuality
+    let originalHype = s.originalHype
+    if (!isRefresh) {
+      // First-time completion: roll base quality & original hype
+      baseQuality = rollScriptQuality(writer, s.ipId)
+      originalHype = rollScriptHype(writer, s.ipId)
+    }
+    const finished = {
+      ...s,
+      status: 'ready',
+      monthsRemaining: 0,
+      refreshing: false,
+      baseQuality,
+      originalHype,
+      hype: originalHype,    // refresh restores to original
+    }
+    completed.push(finished)
+    return finished
+  })
+  return { scripts: newScripts, completed }
+}
+
+/** Apply a "used" event (called when a script is bound into a program build later in stage b).
+ *  Decays current hype by SCRIPT_HYPE_DECAY. */
+export function consumeScript(station, scriptId) {
+  const scripts = station.scripts || []
+  const idx = scripts.findIndex(s => s.id === scriptId)
+  if (idx < 0) return { station, error: 'Script not found' }
+  const s = scripts[idx]
+  if (s.status !== 'ready') return { station, error: 'Script not ready' }
+  const next = {
+    ...s,
+    timesUsed: (s.timesUsed || 0) + 1,
+    hype: r1(clamp(s.hype * SCRIPT_HYPE_DECAY, SCRIPT_HYPE_MIN, SCRIPT_HYPE_MAX)),
+  }
+  const newScripts = scripts.slice()
+  newScripts[idx] = next
+  return { station: { ...station, scripts: newScripts }, error: null }
+}
+
+// ─── PROGRAMS ─────────────────────────────────────────────────────────────────
+// A program is the built artifact. It sits on the shelf until scheduled into
+// a slot. Each program has one of three lifecycles:
+//   - 'instant'     → movies. No script. Editing cost upfront. Ready instantly.
+//   - 'live'        → news/sports/contest. 1 mo prep + per-airing cost. Script needed.
+//   - 'preproduced' → series/reality/etc. ceil(runMonths/2) mo prod, min 1.
+//                     Full prod cost upfront. Cheap per-airing transmission cost.
+//
+// Shape:
+// {
+//   id, name, type,
+//   scriptId | null,                    null only for movies
+//   movieId | null,                     for movies
+//   sportsLeagueId | null,              if airing live sports
+//   categoryId, topicId, ipId,
+//   directorId, starId,
+//   prodDesignId, sfxId,
+//   audioId, subsId, videoId,
+//   marketingId,
+//   plannedRunMonths,                   how long it was designed to air
+//   status: 'producing' | 'shelf' | 'finished',
+//   prodMonthsRemaining, prodMonthsTotal,
+//   prepCostPaid,                       what's been deducted to start prod
+//   airingCost,                         what to charge per airing
+//   editingCost,                        for instant (movies)
+//   // q/h
+//   estQ, estH, estQRange:[lo,hi], estHRange:[lo,hi],
+//   trueQ, trueH,                       hidden until first airing
+//   revealed: bool,
+//   // tracking
+//   airingsCount, totalAudience, totalRevenue, totalCost,
+// }
+
+/** Affinity outcome for a tier vs a content category: 'good' | 'normal' | 'bad'. */
+export function affinityOutcome(tier, categoryId) {
+  if (!tier || !categoryId) return 'normal'
+  if ((tier.prefers || []).includes(categoryId)) return 'good'
+  if ((tier.dislikes || []).includes(categoryId)) return 'bad'
+  return 'normal'
+}
+
+/** Aggregated affinity modifiers from prod-design + sfx for a given category. */
+export function affinityMods(prodDesignId, sfxId, categoryId) {
+  const pd = findProdDesign(prodDesignId)
+  const sfx = findSfx(sfxId)
+  let qDelta = 0, hDelta = 0, costMult = 1
+  for (const tier of [pd, sfx]) {
+    if (!tier) continue
+    qDelta += tier.qBonus || 0
+    const outcome = affinityOutcome(tier, categoryId)
+    if (outcome === 'good') { qDelta += AFFINITY_GOOD_Q; hDelta += AFFINITY_GOOD_H }
+    else if (outcome === 'bad') { qDelta += AFFINITY_BAD_Q; costMult *= AFFINITY_BAD_COST_MULT }
+  }
+  return { qDelta, hDelta, costMult }
+}
+
+/** Production method for a candidate program build. */
+export function productionMethodFor(opts) {
+  if (opts.movieId) return 'instant'
+  return PRODUCTION_METHODS[opts.categoryId] || 'preproduced'
+}
+
+/** How many production months a program needs given its method + planned airing length. */
+export function productionMonthsFor(method, plannedRunMonths) {
+  if (method === 'instant') return 0
+  if (method === 'live') return 1
+  // preproduced: half the airing, minimum 1
+  return Math.max(1, Math.ceil(plannedRunMonths / 2))
+}
+
+/** Compute total expected program cost (excluding ongoing live/transmission costs).
+ *  Uses existing programCost helper for the bulk number; layered with affinity. */
+export function programBuildCost(opts, station, research, year) {
+  // Build a "planned" shape compatible with the existing programCost() helper.
+  const planned = {
+    slotTypeId: opts.slotTypeId || 'prime',
+    name: opts.name,
+    categoryId: opts.categoryId,
+    topicId: opts.topicId,
+    directorId: opts.directorId,
+    starId: opts.starId,
+    ipId: opts.ipId,
+    marketingId: opts.marketingId,
+    movieId: opts.movieId || null,
+    sportsRunLeagueId: opts.sportsLeagueId || null,
+    runMonths: opts.plannedRunMonths || 1,
+    seqSeason: 1,
+    audioId: opts.audioId,
+    subsId: opts.subsId,
+    videoId: opts.videoId,
+  }
+  const baseCost = programCost(planned, station, research, year)
+  // Movies: licensed films don't carry our production tiers. Cost is just
+  // the film cost + marketing + tech (already in baseCost).
+  if (opts.movieId) return r1(baseCost)
+  // Add the prod-design + SFX + music tier flat costs
+  const pd = findProdDesign(opts.prodDesignId)
+  const sfx = findSfx(opts.sfxId)
+  const music = MUSIC_TIERS.find(m => m.id === opts.musicId)
+  const tierCost = (pd?.cost || 0) + (sfx?.cost || 0) + (music?.cost || 0)
+  // Apply affinity cost multiplier (bad fits raise cost)
+  const aff = affinityMods(opts.prodDesignId, opts.sfxId, opts.categoryId)
+  const total = (baseCost + tierCost) * aff.costMult
+  return r1(total)
+}
+
+/** Find a music tier by id. */
+export const findMusic = id => MUSIC_TIERS.find(m => m.id === id) || null
+
+/** Split the affinityMods qDelta into art (prod-design contribution) and
+ *  technical (sfx contribution). Both also pump up by tier intrinsic qBonus.
+ *  Returns { artDelta, technicalDelta, costMult }. */
+function affinityComponents(prodDesignId, sfxId, categoryId) {
+  const pd = findProdDesign(prodDesignId)
+  const sfx = findSfx(sfxId)
+  let artDelta = 0
+  let technicalDelta = 0
+  let costMult = 1
+  if (pd) {
+    artDelta += pd.qBonus || 0
+    const outcome = affinityOutcome(pd, categoryId)
+    if (outcome === 'good') artDelta += AFFINITY_GOOD_Q
+    else if (outcome === 'bad') { artDelta += AFFINITY_BAD_Q; costMult *= AFFINITY_BAD_COST_MULT }
+  }
+  if (sfx) {
+    // SFX splits 60/40 between technical and art
+    const sfxBoost = (sfx.qBonus || 0)
+    technicalDelta += sfxBoost * 0.6
+    artDelta += sfxBoost * 0.4
+    const outcome = affinityOutcome(sfx, categoryId)
+    if (outcome === 'good') { technicalDelta += AFFINITY_GOOD_Q * 0.6; artDelta += AFFINITY_GOOD_Q * 0.4 }
+    else if (outcome === 'bad') { technicalDelta += AFFINITY_BAD_Q * 0.6; artDelta += AFFINITY_BAD_Q * 0.4; costMult *= AFFINITY_BAD_COST_MULT }
+  }
+  return { artDelta, technicalDelta, costMult }
+}
+
+/** Roll a program's full quality components + hype.
+ *
+ *  Components (0..10 each):
+ *    - narrative   : writing, script, IP, star performance
+ *    - art         : visual + audio appeal — prod-design, music, star, SFX
+ *    - innovation  : director vision, writer creativity, format freshness
+ *    - technical   : audio/subs/video, SFX rigor
+ *
+ *  Overall Q is then weighted by CATEGORY_QUALITY_WEIGHTS[categoryId].
+ *  Returns { narrative, art, innovation, technical, q, h }.
+ *
+ *  Movies/sports take a shortcut path because their identity is mostly
+ *  predetermined; we still produce components so the UI can display them,
+ *  but movies will skip the review modal anyway. */
+function rollProgramComponents(opts, station, research) {
+  // ── MOVIE PATH ──────────────────────────────────────────────────────────
+  // Movies arrive finished. Only marketing + tech tiers can nudge the score;
+  // our prod-design/SFX/music tier choices don't apply.
+  if (opts.movieId) {
+    const m = findMovie(opts.movieId)
+    const mkt = findMarketing(opts.marketingId)
+    const tech = techBonus(opts.audioId, opts.subsId, opts.videoId)
+    const q = clamp((m?.q || 5) + (mkt?.q || 0) + tech.q, 0, 10)
+    const h = clamp((m?.h || 5) + (mkt?.h || 0) + tech.h, 0, 10)
+    // Synthesize components clustered around q so UI is consistent
+    return {
+      narrative: r1(clamp(q + rnd(-0.5, 0.5), 0, 10)),
+      art: r1(clamp(q + rnd(-0.3, 0.5), 0, 10)),
+      innovation: r1(clamp(q + rnd(-0.7, 0.3), 0, 10)),
+      technical: r1(clamp(q + tech.q * 0.5 + rnd(-0.4, 0.4), 0, 10)),
+      q: r1(q), h: r1(h),
+    }
+  }
+
+  // ── SPORTS PATH ─────────────────────────────────────────────────────────
+  if (opts.sportsLeagueId) {
+    const lg = findLeague(opts.sportsLeagueId)
+    const mkt = findMarketing(opts.marketingId)
+    const tech = techBonus(opts.audioId, opts.subsId, opts.videoId)
+    const aff = affinityComponents(opts.prodDesignId, opts.sfxId, opts.categoryId)
+    const music = findMusic(opts.musicId)
+    const dir = findDirector(opts.directorId)
+    const star = findStar(opts.starId)
+
+    // Sports-specific component model
+    // Narrative — commentators (star/dir) — small but matters
+    const narrative = clamp(
+      (lg?.baseQ || 5) * 0.3
+      + (star ? star.q * (star.specialty === 'sports' ? 1 : 0.5) * 0.6 : 0)
+      + (dir ? dir.q * (dir.specialty === 'sports' ? 1 : 0.5) * 0.4 : 0)
+      + rnd(-0.5, 0.5)
+    , 0, 10)
+    // Art — graphics, themes, music; secondary
+    const art = clamp(
+      (lg?.baseQ || 5) * 0.3
+      + aff.artDelta
+      + (music?.artBonus || 0)
+      + rnd(-0.4, 0.4)
+    , 0, 10)
+    // Innovation — director's vision + freshness of format
+    const innovation = clamp(
+      (lg?.baseQ || 5) * 0.4
+      + (dir ? dir.q * (dir.specialty === 'sports' ? 1 : 0.5) * 0.5 : 0)
+      + rnd(-0.5, 0.5)
+    , 0, 10)
+    // Technical — the actual broadcast
+    const technical = clamp(
+      (lg?.baseQ || 5) * 0.6
+      + aff.technicalDelta
+      + tech.q * 1.5
+      + rnd(-0.3, 0.3)
+    , 0, 10)
+    const h = clamp((lg?.baseH || 5) + (mkt?.h || 0) + tech.h, 0, 10)
+    const q = weightedQuality({ narrative, art, innovation, technical }, opts.categoryId)
+    return {
+      narrative: r1(narrative), art: r1(art), innovation: r1(innovation), technical: r1(technical),
+      q: r1(q), h: r1(h),
+    }
+  }
+
+  // ── STANDARD PATH (script-based) ────────────────────────────────────────
+  const script = (station.scripts || []).find(s => s.id === opts.scriptId)
+  const cat = CATEGORIES[opts.categoryId]
+  const topic = cat?.topics?.find(t => t.id === opts.topicId)
+  const dir = findDirector(opts.directorId)
+  const star = findStar(opts.starId)
+  const ip = opts.ipId ? findIP(opts.ipId) : null
+  const mkt = findMarketing(opts.marketingId)
+  const tech = techBonus(opts.audioId, opts.subsId, opts.videoId)
+  const aff = affinityComponents(opts.prodDesignId, opts.sfxId, opts.categoryId)
+  const music = findMusic(opts.musicId)
+  const writer = script ? findWriter(script.writerId) : null
+
+  const baseQ = (cat?.base_q || 5) + (topic?.q || 0)
+  const baseH = (cat?.base_h || 5) + (topic?.h || 0)
+
+  const dirMatch = dir && dir.specialty === opts.categoryId ? 1.0 : 0.5
+  const starMatch = star && star.specialty === opts.categoryId ? 1.0 : 0.5
+
+  // ── NARRATIVE ──────────────────────────────────────────────────────────
+  // The writer's skill carries the most weight here, via the script.
+  const writerNarr = writer ? writer.skill * 5.5 * (writer.specialty === opts.categoryId ? 1 : 0.6) : 0
+  const scriptNarr = script ? (script.baseQuality - 5) * 0.5 : 0
+  const starNarr = star ? star.q * starMatch * 0.6 : 0
+  const ipNarr = ip ? (ip.q || 0) * 0.7 : 0
+  const musicNarr = music?.narrativeBonus || 0
+  const narrative = clamp(
+    baseQ * 0.45 + writerNarr + scriptNarr + starNarr + ipNarr + musicNarr + rnd(-0.4, 0.4)
+  , 0, 10)
+
+  // ── ART ─────────────────────────────────────────────────────────────────
+  // Prod-design and music drive this most. Star contributes presence.
+  const dirArt = dir ? dir.q * dirMatch * 0.4 : 0
+  const starArt = star ? star.q * starMatch * 0.4 : 0
+  const ipArt = ip ? (ip.q || 0) * 0.3 : 0
+  const musicArt = music?.artBonus || 0
+  const art = clamp(
+    baseQ * 0.35 + aff.artDelta + dirArt + starArt + ipArt + musicArt + rnd(-0.4, 0.4)
+  , 0, 10)
+
+  // ── INNOVATION ─────────────────────────────────────────────────────────
+  // Director's creative vision + writer freshness. New IPs add a touch.
+  const dirInnov = dir ? dir.q * dirMatch * 0.7 : 0
+  const writerInnov = writer ? writer.skill * 2.5 * (writer.specialty === opts.categoryId ? 1 : 0.6) : 0
+  const ipInnov = ip ? (ip.q || 0) * 0.4 : 0
+  const innovation = clamp(
+    baseQ * 0.35 + dirInnov + writerInnov + ipInnov + rnd(-0.5, 0.5)
+  , 0, 10)
+
+  // ── TECHNICAL ──────────────────────────────────────────────────────────
+  // Audio/subs/video tiers drive this, plus SFX rigor.
+  const technical = clamp(
+    baseQ * 0.4 + aff.technicalDelta + tech.q * 1.6 + rnd(-0.3, 0.3)
+  , 0, 10)
+
+  // Weighted overall Q
+  const q = weightedQuality({ narrative, art, innovation, technical }, opts.categoryId)
+
+  // ── HYPE ───────────────────────────────────────────────────────────────
+  // Hype is its own track — script hype, star+director hype, IP hype, marketing.
+  const scriptH = script ? (script.hype / 100) * 3 : 0
+  const dirH = dir ? dir.h * dirMatch : 0
+  const starH = star ? star.h * starMatch : 0
+  const ipH = ip ? (ip.h || 0) : 0
+  const h = clamp(baseH + scriptH + dirH + starH + ipH + (mkt?.h || 0) + tech.h + rnd(-0.4, 0.4), 0, 10)
+
+  return {
+    narrative: r1(narrative),
+    art: r1(art),
+    innovation: r1(innovation),
+    technical: r1(technical),
+    q: r1(q),
+    h: r1(h),
+  }
+}
+
+/** Compute weighted Q from components using CATEGORY_QUALITY_WEIGHTS. */
+function weightedQuality(c, categoryId) {
+  const w = CATEGORY_QUALITY_WEIGHTS[categoryId] || CATEGORY_QUALITY_WEIGHTS.movie
+  return c.narrative * w.narrative + c.art * w.art + c.innovation * w.innovation + c.technical * w.technical
+}
+
+/** Legacy adapter — components-aware. Returns { q, h }. */
+function rollProgramQH(opts, station, research) {
+  const c = rollProgramComponents(opts, station, research)
+  return { q: c.q, h: c.h }
+}
+
+// helpers used above
+function findMarketing(id) { return MARKETING_TIERS.find(m => m.id === id) || null }
+function techBonus(audioId, subsId, videoId) {
+  return techBonuses({ audioId, subsId, videoId })
+}
+
+/** Estimation range for a planned program — used by build UI live preview.
+ *  Does NOT consume a script or modify station state. */
+export function estimateProgramQH(opts, station, research) {
+  const c = rollProgramComponents(opts, station, research)
+  const dq = c.q * ESTIMATION_RANGE
+  const dh = c.h * ESTIMATION_RANGE
+  return {
+    q: c.q, h: c.h,
+    components: { narrative: c.narrative, art: c.art, innovation: c.innovation, technical: c.technical },
+    qRange: [r1(clamp(c.q - dq, 0, 10)), r1(clamp(c.q + dq, 0, 10))],
+    hRange: [r1(clamp(c.h - dh, 0, 10)), r1(clamp(c.h + dh, 0, 10))],
+  }
+}
+
+/** Start a new program build. Pays upfront cost. Locks script if applicable.
+ *  Production months count down each tick (via tickPrograms). */
+export function beginProgram(station, research, year, opts) {
+  if (!opts.name?.trim()) return { station, error: 'Name required' }
+
+  const method = productionMethodFor(opts)
+  const isMovie = method === 'instant'
+
+  // Validate inputs
+  if (!isMovie) {
+    if (!opts.scriptId) return { station, error: 'Script required (except movies)' }
+    const script = (station.scripts || []).find(s => s.id === opts.scriptId)
+    if (!script) return { station, error: 'Script not found' }
+    if (script.status !== 'ready') return { station, error: 'Script must be ready' }
+    if (!opts.directorId) return { station, error: 'Director required' }
+    if (!opts.starId) return { station, error: 'Star required' }
+  } else {
+    if (!opts.movieId) return { station, error: 'Movie required' }
+  }
+
+  if (opts.sportsLeagueId) {
+    if (!ownsLicense(station, opts.sportsLeagueId, year)) {
+      return { station, error: 'No active license for that league' }
+    }
+  }
+  if (opts.ipId && !ownsIP(station, opts.ipId, year)) {
+    return { station, error: 'No active license for that IP' }
+  }
+
+  const plannedRunMonths = opts.plannedRunMonths || 1
+  const prodMonths = productionMonthsFor(method, plannedRunMonths)
+  const totalCost = programBuildCost(opts, station, research, year)
+
+  // Split into upfront vs ongoing based on method
+  let prepCost = 0
+  let airingCost = 0
+  let editingCost = 0
+  if (method === 'instant') {
+    editingCost = totalCost
+    prepCost = editingCost
+    airingCost = 0
+  } else if (method === 'live') {
+    prepCost = r1(totalCost * LIVE_PREP_FRACTION)
+    const airingTotal = totalCost - prepCost
+    // Keep airing cost at higher precision so small per-airing values don't round to 0
+    airingCost = Math.round((airingTotal / Math.max(1, plannedRunMonths)) * 100) / 100
+  } else {
+    // preproduced: full cost upfront, transmission is small recurring charge
+    prepCost = r1(totalCost * (1 - PREPRODUCED_TRANSMISSION_FRACTION))
+    const transTotal = totalCost - prepCost
+    airingCost = Math.round((transTotal / Math.max(1, plannedRunMonths)) * 100) / 100
+  }
+
+  if (station.cash < prepCost) {
+    return { station, error: `Need ${fmtM(prepCost)} upfront (you have ${fmtM(station.cash)})` }
+  }
+
+  // Roll the full quality components now (locked in at build, reveal after first airing)
+  const rolled = rollProgramComponents(opts, station, research)
+  const q = rolled.q
+  const h = rolled.h
+  const dq = q * ESTIMATION_RANGE
+  const dh = h * ESTIMATION_RANGE
+
+  const program = {
+    id: uid(),
+    name: opts.name.trim(),
+    type: method,
+    scriptId: opts.scriptId || null,
+    movieId: opts.movieId || null,
+    sportsLeagueId: opts.sportsLeagueId || null,
+    categoryId: opts.categoryId,
+    topicId: opts.topicId,
+    ipId: opts.ipId || null,
+    directorId: opts.directorId || null,
+    starId: opts.starId || null,
+    prodDesignId: opts.prodDesignId,
+    sfxId: opts.sfxId,
+    musicId: opts.musicId || 'mus_basic',
+    audioId: opts.audioId,
+    subsId: opts.subsId,
+    videoId: opts.videoId,
+    marketingId: opts.marketingId,
+    slotTypeId: opts.slotTypeId || null,
+    plannedRunMonths,
+    status: prodMonths > 0 ? 'producing' : 'shelf',
+    prodMonthsRemaining: prodMonths,
+    prodMonthsTotal: prodMonths,
+    prepCostPaid: prepCost,
+    airingCost,
+    editingCost,
+    estQ: q, estH: h,
+    estQRange: [r1(clamp(q - dq, 0, 10)), r1(clamp(q + dq, 0, 10))],
+    estHRange: [r1(clamp(h - dh, 0, 10)), r1(clamp(h + dh, 0, 10))],
+    trueQ: q, trueH: h,
+    components: {
+      narrative: rolled.narrative,
+      art: rolled.art,
+      innovation: rolled.innovation,
+      technical: rolled.technical,
+    },
+    revealed: false,
+    review: null,               // populated on first airing (except movies)
+    airingsCount: 0,
+    totalAudience: 0,
+    totalRevenue: 0,
+    totalCost: prepCost,
+    bornYear: year,
+  }
+
+  // Consume the script (decays hype 20%) if applicable
+  let scripts = station.scripts || []
+  if (opts.scriptId) {
+    const consumed = consumeScript({ ...station, scripts }, opts.scriptId)
+    if (consumed.error) return { station, error: consumed.error }
+    scripts = consumed.station.scripts
+  }
+
+  return {
+    station: {
+      ...station,
+      cash: r1(station.cash - prepCost),
+      scripts,
+      programs: [...(station.programs || []), program],
+    },
+    program,
+    error: null,
+  }
+}
+
+/** Tick all programs in production: decrement counters; flip to 'shelf' when done. */
+export function tickPrograms(station) {
+  const programs = station.programs || []
+  const finished = []
+  const newPrograms = programs.map(p => {
+    if (p.status !== 'producing') return p
+    const left = Math.max(0, (p.prodMonthsRemaining || 0) - 1)
+    if (left > 0) return { ...p, prodMonthsRemaining: left }
+    const ready = { ...p, prodMonthsRemaining: 0, status: 'shelf' }
+    finished.push(ready)
+    return ready
+  })
+  return { programs: newPrograms, finished }
+}
+
+/** Cancel a producing program. No refund (sunk cost). Removes it. */
+export function cancelProgram(station, programId) {
+  const programs = station.programs || []
+  const p = programs.find(x => x.id === programId)
+  if (!p) return { station, error: 'Program not found' }
+  if (p.status === 'producing' || p.status === 'shelf') {
+    // sunk
+    return {
+      station: { ...station, programs: programs.filter(x => x.id !== programId) },
+      error: null,
+    }
+  }
+  // Airing — must cancel via run cancellation
+  return { station, error: 'Program is currently airing; cancel its run instead' }
+}
+
+/** Schedule a shelf-program into a slot. Creates a run; updates program status.
+ *  Returns { station, run, error }. */
+export function scheduleProgram(station, programId, slotTypeId, runMonths) {
+  const programs = station.programs || []
+  const p = programs.find(x => x.id === programId)
+  if (!p) return { station, error: 'Program not found' }
+  if (p.status !== 'shelf') return { station, error: `Program not on shelf (status: ${p.status})` }
+
+  // For movies, run length is forced to 1
+  // For sports, run length is forced to the remainder of the calendar year (handled by season skip)
+  const forced = p.movieId ? 1 : (p.sportsLeagueId ? 12 : runMonths)
+
+  const run = {
+    id: uid(),
+    programId: p.id,
+    slotTypeId,
+    name: p.name,
+    categoryId: p.categoryId,
+    topicId: p.topicId,
+    directorId: p.directorId,
+    starId: p.starId,
+    ipId: p.ipId,
+    marketingId: p.marketingId,
+    movieId: p.movieId,
+    sportsRunLeagueId: p.sportsLeagueId,
+    seqSeason: 1,
+    prevDirectorId: null,
+    prevStarId: null,
+    audioId: p.audioId,
+    subsId:  p.subsId,
+    videoId: p.videoId,
+    prodDesignId: p.prodDesignId,
+    sfxId: p.sfxId,
+    runMonths: forced,
+    monthsAired: 0,
+    monthlyCost: p.airingCost,
+    aiHistory: [],
+  }
+
+  // Update program status to airing
+  const newPrograms = programs.map(x => x.id === programId ? { ...x, status: 'airing' } : x)
+
+  return {
+    station: { ...station, programs: newPrograms },
+    run,
+    error: null,
+  }
+}
+
+/** Reveal a program's true Q/H. Called after first airing. */
+export function revealProgramOnAir(station, programId) {
+  const programs = station.programs || []
+  const newPrograms = programs.map(p => {
+    if (p.id !== programId) return p
+    if (p.revealed) return p
+    return { ...p, revealed: true }
+  })
+  return { ...station, programs: newPrograms }
+}
+
+/** Mark a program 'finished' after its run expires (history retained). */
+export function finishProgram(station, programId, finalStats) {
+  const programs = station.programs || []
+  const newPrograms = programs.map(p => {
+    if (p.id !== programId) return p
+    return {
+      ...p,
+      status: 'finished',
+      airingsCount: finalStats?.airingsCount ?? p.airingsCount,
+      totalAudience: finalStats?.totalAudience ?? p.totalAudience,
+      totalRevenue: finalStats?.totalRevenue ?? p.totalRevenue,
+      totalCost: finalStats?.totalCost ?? p.totalCost,
+    }
+  })
+  return { ...station, programs: newPrograms }
+}
+
+/** Helper: aggregate per-airing stats onto a program after each month. */
+/** Generate a review for a freshly-aired program.
+ *  Picks from REVIEW_TEMPLATES based on the program's components + first
+ *  airing rating. Returns { quote, bucket, rating, components } — or null
+ *  if the program is a movie (movies skip the review modal).
+ */
+export function generateReview(program, firstAiring, networkName) {
+  if (program.movieId) return null    // movies skip reviews
+  const c = program.components
+  if (!c) return null
+  const rating = firstAiring?.rating || program.trueQ
+  const candidates = REVIEW_TEMPLATES.filter(t => {
+    try { return t.test(c, rating) } catch (e) { return false }
+  })
+  // Prefer non-fallback if any matched
+  const nonFallback = candidates.filter(t => t.bucket !== 'fallback')
+  const pool = nonFallback.length > 0 ? nonFallback : candidates
+  const template = pool[Math.floor(Math.random() * pool.length)]
+  if (!template) return null
+  const cat = CATEGORIES[program.categoryId]
+  const kindLabel = cat?.label?.toLowerCase() || 'show'
+  const quote = template.quote
+    .replaceAll('{network}', networkName || 'The network')
+    .replaceAll('{kind}', kindLabel)
+  return {
+    quote,
+    bucket: template.bucket,
+    rating: r2(rating),
+    components: { ...c },
+  }
+}
+
+export function updateProgramFromAiring(station, programId, airing, networkName) {
+  const programs = station.programs || []
+  const newPrograms = programs.map(p => {
+    if (p.id !== programId) return p
+    // Capture review on first airing (movies skip it)
+    let review = p.review
+    if (!review && !p.movieId && (p.airingsCount || 0) === 0) {
+      review = generateReview(p, airing, networkName || 'The network')
+    }
+    return {
+      ...p,
+      airingsCount: (p.airingsCount || 0) + 1,
+      totalAudience: r1((p.totalAudience || 0) + (airing.audience || 0)),
+      totalRevenue: r1((p.totalRevenue || 0) + (airing.revenue || 0)),
+      totalCost: r1((p.totalCost || 0) + (airing.cost || 0)),
+      revealed: true,
+      review,
+    }
+  })
+  return { ...station, programs: newPrograms }
 }
 
 export function activeRoster(station) {
@@ -517,9 +1410,11 @@ export function buildMarketRoster(station, scoutLevel = 0) {
   const expose = (list) => list.filter(t => Math.random() < clamp(TIER_EXPOSURE[t.tier] + bonus, 0, 1))
   const hiredD = new Set((station.hiredDirectors || []).map(h => h.talentId))
   const hiredS = new Set((station.hiredStars || []).map(h => h.talentId))
+  const hiredW = new Set((station.hiredWriters || []).map(h => h.talentId))
   return {
     directors: expose(DIRECTORS).filter(d => !hiredD.has(d.id)),
     stars:     expose(STARS).filter(s => !hiredS.has(s.id)),
+    writers:   expose(WRITERS).filter(w => !hiredW.has(w.id)),
   }
 }
 
@@ -781,13 +1676,44 @@ export function projectShow(planned, station, research, monthIdx = 0) {
 // ─── AIRING ──────────────────────────────────────────────────────────────────
 /** Air one month of a planned program — produces quality/hype/rating + metadata.
  *  Audience is NOT computed here. Use assignAudiences() afterwards to fill in
- *  audience & revenue across all airings in a given month with competition. */
+ *  audience & revenue across all airings in a given month with competition.
+ *
+ *  When `planned` is a run linked to a program (programId set), we use the
+ *  program's locked-in trueQ/trueH as the base instead of recomputing from
+ *  director+star+IP. This makes a built show's identity stable across airings;
+ *  only the live noise + seasonal/slot bonuses vary month to month. */
 export function airShow(planned, station, research, monthIdx = 0) {
+  // Try the program-anchored path first
+  let baseQ, baseH, tier, slotBonusH = 0, seasonBonusH = 0, isPeak = false, peakBonus = 0
   const proj = projectShow(planned, station, research, monthIdx)
 
+  if (planned.programId) {
+    const prog = (station.programs || []).find(p => p.id === planned.programId)
+    if (prog) {
+      baseQ = prog.trueQ
+      // Use the locked H but layer in slot+seasonal bonuses (those vary by month)
+      baseH = clamp((prog.trueH + (proj.slotBonusH || 0) + (proj.seasonBonusH || 0)), 0, 10)
+      tier = proj.tier
+      slotBonusH = proj.slotBonusH || 0
+      seasonBonusH = proj.seasonBonusH || 0
+      isPeak = proj.isPeak || false
+      peakBonus = proj.peakBonus || 0
+    }
+  }
+
+  if (baseQ == null) {
+    baseQ = proj.quality
+    baseH = proj.hype
+    tier = proj.tier
+    slotBonusH = proj.slotBonusH || 0
+    seasonBonusH = proj.seasonBonusH || 0
+    isPeak = proj.isPeak || false
+    peakBonus = proj.peakBonus || 0
+  }
+
   // Live noise — bigger swing on hype than quality.
-  const qLive = clamp(proj.quality + rnd(-1.0, 1.0), 1, 10)
-  const hLive = clamp(proj.hype    + rnd(-1.4, 1.4), 1, 10)
+  const qLive = clamp(baseQ + rnd(-1.0, 1.0), 1, 10)
+  const hLive = clamp(baseH + rnd(-1.4, 1.4), 1, 10)
 
   const rating = clamp(qLive * 0.55 + hLive * 0.45 + rnd(-0.3, 0.3), 1, 10)
 
@@ -796,12 +1722,12 @@ export function airShow(planned, station, research, monthIdx = 0) {
     quality: r2(qLive),
     hype: r2(hLive),
     rating: r2(rating),
-    tier: proj.tier,
+    tier,
     monthIdx,
-    isPeak: proj.isPeak || false,
-    peakBonus: proj.peakBonus || 0,
-    slotBonusH: proj.slotBonusH || 0,
-    seasonBonusH: proj.seasonBonusH || 0,
+    isPeak,
+    peakBonus,
+    slotBonusH,
+    seasonBonusH,
     audience: 0,        // assigned later by assignAudiences()
     revenue: 0,
     demoBreakdown: null,
@@ -1125,6 +2051,7 @@ export function runMonth(station, research, runs, monthIdx, year) {
     const cost = run.monthlyCost
     const aired = airShow(run, station, research, monthIdx)
     aired.runId = run.id
+    aired.programId = run.programId || null
     aired.month = monthIdx
     aired.year = year
     aired.seasonNumber = run.seqSeason || 1
@@ -1326,6 +2253,13 @@ export function initGame(setup) {
   const startDirs  = pickStartingTalent(DIRECTORS, focusCat, 2)
   const startStars = pickStartingTalent(STARS,    focusCat, 3)
 
+  // Free starting writer: pick a Common-tier writer matching the focus
+  // category if possible, otherwise any Common writer.
+  const startWriter =
+    WRITERS.find(w => w.specialty === focusCat && w.tier === 'Common') ||
+    WRITERS.find(w => w.tier === 'Common') ||
+    WRITERS[0]
+
   // Starting contracts: 12 free months (1 year) on standard contract.
   const makeStartContract = (talent, role) => ({
     talentId: talent.id,
@@ -1345,6 +2279,18 @@ export function initGame(setup) {
     cash: startingCash,
     hiredDirectors: startDirs.map(t => makeStartContract(t, 'director')),
     hiredStars:     startStars.map(t => makeStartContract(t, 'star')),
+    hiredWriters: startWriter ? [{
+      talentId: startWriter.id,
+      role: 'writer',
+      contractType: 'permanent',
+      permanent: true,
+      monthsLeft: null,
+      perMonthCharge: 0,           // free starter — no salary
+      upfrontPaid: 0,
+      freeStarter: true,
+    }] : [],
+    scripts: [],
+    programs: [],
     slotIds: [...DEFAULT_SLOT_IDS],
     sportsLicenses: [],         // {leagueId, year}
     ipLicenses: [],             // {ipId, expiresYear}
@@ -1375,7 +2321,7 @@ export function initGame(setup) {
     pendingHires: [],            // resolved positions waiting for player to pick a candidate
     log: [
       `📡 ${station.name} broadcasting on ${MARKETS.local.label}`,
-      `Free starting roster: ${startDirs.length} directors, ${startStars.length} stars (12-month contracts)`,
+      `Free starting roster: ${startDirs.length} directors, ${startStars.length} stars (12-month contracts)${startWriter ? `, 1 writer (${startWriter.name}, free)` : ''}`,
       `Year 1 · January — plan your first month`,
     ],
   }

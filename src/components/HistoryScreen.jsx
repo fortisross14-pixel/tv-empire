@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { T } from '../theme.js'
 import { CATEGORIES, CATEGORY_IDS, MONTHS } from '../constants.js'
 import { SectionTitle } from './ui.jsx'
+import { fmtM, findLeague, findMovie } from '../engine.js'
 
 const METRICS = [
   { id: 'quality',  label: 'Quality',   key: 'quality',  color: '#45c47a', max: 10 },
@@ -10,26 +11,253 @@ const METRICS = [
   { id: 'audience', label: 'Audience',  key: 'audience', color: '#3ecfcf', max: null },
 ]
 
-export function HistoryScreen({ stationName, allShows, competitorAllShows, onBack }) {
+const TABS = [
+  { id: 'productions', label: 'My Productions' },
+  { id: 'leaderboard', label: 'All Networks' },
+]
+
+export function HistoryScreen({ stationName, allShows, competitorAllShows, programs, onBack }) {
+  const [tab, setTab] = useState('productions')
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: 18 }}>
+      <button onClick={onBack} style={{
+        background: 'transparent', border: `1px solid ${T.border}`,
+        color: T.muted, padding: '8px 14px', borderRadius: 5,
+        fontSize: 11, fontWeight: 600, marginBottom: 16, cursor: 'pointer',
+      }}>← Back</button>
+
+      <SectionTitle>History</SectionTitle>
+
+      {/* Sub-tabs */}
+      <div style={{
+        display: 'flex', gap: 4, marginBottom: 18,
+        borderBottom: `1px solid ${T.border}`, overflowX: 'auto',
+      }}>
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            style={{
+              background: 'transparent', border: 'none',
+              color: tab === t.id ? T.accent : T.muted,
+              fontFamily: 'Bebas Neue', fontSize: 14, letterSpacing: '.1em',
+              padding: '8px 14px', cursor: 'pointer',
+              borderBottom: `2px solid ${tab === t.id ? T.accent : 'transparent'}`,
+              marginBottom: -1, whiteSpace: 'nowrap',
+            }}
+          >{t.label}</button>
+        ))}
+      </div>
+
+      {tab === 'productions' ? (
+        <ProductionsList programs={programs || []} />
+      ) : (
+        <LeaderboardView
+          stationName={stationName}
+          allShows={allShows}
+          competitorAllShows={competitorAllShows}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── MY PRODUCTIONS TAB ──────────────────────────────────────────────────────
+function ProductionsList({ programs }) {
+  const [filter, setFilter] = useState('all')
+
+  const filtered = useMemo(() => {
+    let pool = programs
+    if (filter !== 'all') pool = programs.filter(p => p.status === filter)
+    // Newest first (revealed first, then by airingsCount desc)
+    return [...pool].sort((a, b) => {
+      if (a.revealed !== b.revealed) return a.revealed ? -1 : 1
+      return (b.airingsCount || 0) - (a.airingsCount || 0)
+    })
+  }, [programs, filter])
+
+  const counts = {
+    all: programs.length,
+    airing: programs.filter(p => p.status === 'airing').length,
+    shelf: programs.filter(p => p.status === 'shelf').length,
+    producing: programs.filter(p => p.status === 'producing').length,
+    finished: programs.filter(p => p.status === 'finished').length,
+  }
+
+  if (programs.length === 0) {
+    return (
+      <div style={{
+        background: T.surface, border: `1px dashed ${T.border}`,
+        borderRadius: 6, padding: 24, textAlign: 'center',
+        fontSize: 12, color: T.muted, lineHeight: 1.5,
+      }}>
+        No productions yet. Head to <strong style={{ color: T.text }}>Content → Production</strong> to build your first show.
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div style={{
+        display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap',
+      }}>
+        <Chip label={`All (${counts.all})`} active={filter === 'all'} onClick={() => setFilter('all')} />
+        <Chip label={`Airing (${counts.airing})`} active={filter === 'airing'} onClick={() => setFilter('airing')} />
+        <Chip label={`Shelf (${counts.shelf})`} active={filter === 'shelf'} onClick={() => setFilter('shelf')} />
+        <Chip label={`Producing (${counts.producing})`} active={filter === 'producing'} onClick={() => setFilter('producing')} />
+        <Chip label={`Done (${counts.finished})`} active={filter === 'finished'} onClick={() => setFilter('finished')} />
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{
+          background: T.surface, border: `1px dashed ${T.border}`,
+          borderRadius: 6, padding: 18, textAlign: 'center',
+          fontSize: 12, color: T.muted,
+        }}>No programs in "{filter}".</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {filtered.map(p => <ProductionRow key={p.id} program={p} />)}
+        </div>
+      )}
+    </>
+  )
+}
+
+function ProductionRow({ program: p }) {
+  const cat = CATEGORIES[p.categoryId]
+  const league = p.sportsLeagueId ? findLeague(p.sportsLeagueId) : null
+  const movie = p.movieId ? findMovie(p.movieId) : null
+  const showTrue = p.revealed || p.status === 'finished' || p.status === 'airing'
+  const profit = (p.totalRevenue || 0) - (p.totalCost || 0)
+
+  const statusColor =
+    p.status === 'producing' ? T.accent :
+    p.status === 'shelf' ? T.green :
+    p.status === 'airing' ? T.gold :
+    T.muted
+
+  return (
+    <div style={{
+      background: T.card,
+      border: `1px solid ${T.border}`,
+      borderLeft: `3px solid ${cat?.color || T.accent}`,
+      borderRadius: 6,
+      padding: 12,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 6 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{p.name}</div>
+          <div style={{ fontSize: 10, color: T.muted, marginTop: 3 }}>
+            {movie ? '🎞 Movie' : league ? `${league.icon} ${league.label}` : `${cat?.icon} ${cat?.label}`}
+            {p.bornYear && <> · Y{p.bornYear}</>}
+            {p.airingsCount > 0 && <> · {p.airingsCount} airing{p.airingsCount > 1 ? 's' : ''}</>}
+          </div>
+        </div>
+        <div style={{
+          fontSize: 9, color: statusColor, fontWeight: 700,
+          background: statusColor + '22', padding: '2px 6px', borderRadius: 3,
+          whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '.08em',
+        }}>{p.status}</div>
+      </div>
+
+      {/* True Q/H or estimate */}
+      <div style={{ display: 'flex', gap: 12, fontSize: 11, marginBottom: 8 }}>
+        <Field label="Quality">
+          <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 700, color: T.text }}>
+            {showTrue ? p.trueQ.toFixed(1) : `${p.estQRange[0]}–${p.estQRange[1]}`}
+          </span>
+        </Field>
+        <Field label="Hype">
+          <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 700, color: T.gold }}>
+            {showTrue ? p.trueH.toFixed(1) : `${p.estHRange[0]}–${p.estHRange[1]}`}
+          </span>
+        </Field>
+        {p.airingsCount > 0 && (
+          <>
+            <Field label="Aud">
+              <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 700, color: T.teal }}>
+                {(p.totalAudience || 0).toFixed(1)}M
+              </span>
+            </Field>
+            <Field label="P/L">
+              <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 700, color: profit >= 0 ? T.green : T.red }}>
+                {fmtM(profit)}
+              </span>
+            </Field>
+          </>
+        )}
+      </div>
+
+      {/* Components — revealed non-movies */}
+      {showTrue && !p.movieId && p.components && (
+        <div style={{
+          marginTop: 4, paddingTop: 8, borderTop: `1px dashed ${T.border}`,
+          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8,
+        }}>
+          <CompBar label="Narrative" value={p.components.narrative} color={T.purple || T.accent} />
+          <CompBar label="Art" value={p.components.art} color={T.pink || T.gold} />
+          <CompBar label="Innovation" value={p.components.innovation} color={T.teal} />
+          <CompBar label="Technical" value={p.components.technical} color={T.green} />
+        </div>
+      )}
+
+      {/* Review */}
+      {p.review && (
+        <div style={{
+          marginTop: 9, padding: '8px 10px',
+          background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4,
+          fontSize: 11, color: T.muted, fontStyle: 'italic', lineHeight: 1.4,
+        }}>📰 “{p.review.quote}”</div>
+      )}
+    </div>
+  )
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.05em', textTransform: 'uppercase' }}>{label}</div>
+      <div>{children}</div>
+    </div>
+  )
+}
+
+function CompBar({ label, value, color }) {
+  const v = Math.max(0, Math.min(10, value || 0))
+  return (
+    <div>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontSize: 9, color: T.muted, letterSpacing: '.04em',
+        textTransform: 'uppercase', marginBottom: 2,
+      }}>
+        <span>{label}</span>
+        <span style={{ fontFamily: "'DM Mono',monospace", color: T.text, textTransform: 'none' }}>{v.toFixed(1)}</span>
+      </div>
+      <div style={{ height: 4, background: T.border, borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{
+          width: `${(v / 10) * 100}%`, height: '100%',
+          background: color || T.accent,
+        }} />
+      </div>
+    </div>
+  )
+}
+
+// ─── LEADERBOARD TAB (existing logic) ────────────────────────────────────────
+function LeaderboardView({ stationName, allShows, competitorAllShows }) {
   const [category, setCategory] = useState('total')
   const [metric, setMetric] = useState('rating')
 
-  // Combine player + competitor shows, label by station name
   const all = useMemo(() => {
-    const mine = (allShows || []).map(s => ({
-      ...s,
-      _station: stationName,
-      _isPlayer: true,
-    }))
+    const mine = (allShows || []).map(s => ({ ...s, _station: stationName, _isPlayer: true }))
     const them = (competitorAllShows || []).map(s => ({
-      ...s,
-      _station: s.stationName || 'Unknown',
-      _isPlayer: false,
+      ...s, _station: s.stationName || 'Unknown', _isPlayer: false,
     }))
     return [...mine, ...them]
   }, [allShows, competitorAllShows, stationName])
 
-  // Filter by category, then sort by metric, top 20
   const filtered = useMemo(() => {
     let pool = all
     if (category !== 'total') {
@@ -44,56 +272,35 @@ export function HistoryScreen({ stationName, allShows, competitorAllShows, onBac
   }, [all, category, metric])
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 18 }}>
-      <button onClick={onBack} style={{
-        background: 'transparent', border: `1px solid ${T.border}`,
-        color: T.muted, padding: '8px 14px', borderRadius: 5,
-        fontSize: 11, fontWeight: 600, marginBottom: 16, cursor: 'pointer',
-      }}>← Back</button>
-
-      <SectionTitle>History — All Networks</SectionTitle>
-
-      <div style={{ fontSize: 12, color: T.muted, marginBottom: 16, lineHeight: 1.5 }}>
+    <>
+      <div style={{ fontSize: 12, color: T.muted, marginBottom: 14, lineHeight: 1.5 }}>
         Every show that's ever aired in this market, by you and your competitors.
-        Filter by category, sort by metric. Top 20 ranked.
       </div>
 
-      {/* Category filter */}
       <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 10, color: T.muted, letterSpacing: 1.5, marginBottom: 6 }}>CATEGORY</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          <FilterChip label="Total" active={category === 'total'} onClick={() => setCategory('total')} />
+          <Chip label="Total" active={category === 'total'} onClick={() => setCategory('total')} />
           {CATEGORY_IDS.map(id => {
             const c = CATEGORIES[id]
             return (
-              <FilterChip
-                key={id}
-                label={`${c.icon} ${c.label}`}
-                active={category === id}
-                onClick={() => setCategory(id)}
-              />
+              <Chip key={id} label={`${c.icon} ${c.label}`}
+                active={category === id} onClick={() => setCategory(id)} />
             )
           })}
         </div>
       </div>
 
-      {/* Metric switch */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 10, color: T.muted, letterSpacing: 1.5, marginBottom: 6 }}>METRIC</div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {METRICS.map(m => (
-            <FilterChip
-              key={m.id}
-              label={m.label}
-              active={metric === m.id}
-              onClick={() => setMetric(m.id)}
-              color={m.color}
-            />
+            <Chip key={m.id} label={m.label}
+              active={metric === m.id} onClick={() => setMetric(m.id)} color={m.color} />
           ))}
         </div>
       </div>
 
-      {/* Leaderboard */}
       <div style={{
         background: T.surface, border: `1px solid ${T.border}`,
         borderRadius: 6, overflow: 'hidden',
@@ -106,24 +313,7 @@ export function HistoryScreen({ stationName, allShows, competitorAllShows, onBac
           <ShowRow key={s.id + '_' + i} show={s} rank={i + 1} metric={metric} />
         ))}
       </div>
-    </div>
-  )
-}
-
-function FilterChip({ label, active, onClick, color }) {
-  const accent = color || T.accent
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        background: active ? accent + '22' : T.card,
-        border: `2px solid ${active ? accent : T.border}`,
-        borderRadius: 18, padding: '5px 11px',
-        fontSize: 11, fontWeight: active ? 700 : 500,
-        color: active ? accent : T.muted,
-        cursor: 'pointer',
-      }}
-    >{active && '✓ '}{label}</button>
+    </>
   )
 }
 
@@ -162,5 +352,22 @@ function ShowRow({ show, rank, metric }) {
         </div>
       </div>
     </div>
+  )
+}
+
+function Chip({ label, active, onClick, color }) {
+  const accent = color || T.accent
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: active ? accent + '22' : T.card,
+        border: `2px solid ${active ? accent : T.border}`,
+        borderRadius: 18, padding: '5px 11px',
+        fontSize: 11, fontWeight: active ? 700 : 500,
+        color: active ? accent : T.muted,
+        cursor: 'pointer',
+      }}
+    >{active && '✓ '}{label}</button>
   )
 }
