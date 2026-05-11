@@ -8,6 +8,7 @@ import { HTag, Bar, Pill } from './ui.jsx'
 import {
   projectShow, programCost, findDirector, findStar, findIP, findMovie, findLeague,
   getUnlocks, getSeasonalPref, ownsLicense, isSportsInSeason,
+  unlockedTechFor, findTechOption, activeIPLicenses,
 } from '../engine.js'
 
 export function SlotEditor({
@@ -443,12 +444,13 @@ export function SlotEditor({
                     />
                   </Section>
 
-                  <Section title="5. IP License (optional)">
+                  <Section title="5. IP License (from owned inventory)">
                     <IPList
                       categoryId={draft.categoryId}
                       selectedId={draft.ipId}
                       onPick={id => update({ ipId: id })}
-                      research={research}
+                      station={station}
+                      year={year}
                     />
                   </Section>
                 </>
@@ -471,6 +473,33 @@ export function SlotEditor({
                       )
                     })}
                   </div>
+                </Section>
+              )}
+
+              {/* PRODUCTION QUALITY (audio / subs / video) */}
+              {(draft.categoryId || draft.movieId) && (
+                <Section title="Production Quality">
+                  <TechPicker
+                    label="🎧 Audio"
+                    dimension="audio"
+                    selectedId={draft.audioId || 'audio_mono'}
+                    onPick={id => update({ audioId: id })}
+                    research={research}
+                  />
+                  <TechPicker
+                    label="💬 Subtitles"
+                    dimension="subtitles"
+                    selectedId={draft.subsId || 'subs_none'}
+                    onPick={id => update({ subsId: id })}
+                    research={research}
+                  />
+                  <TechPicker
+                    label="📺 Video"
+                    dimension="video"
+                    selectedId={draft.videoId || 'video_sd'}
+                    onPick={id => update({ videoId: id })}
+                    research={research}
+                  />
                 </Section>
               )}
 
@@ -543,6 +572,30 @@ export function SlotEditor({
                     onPick={id => update({ starId: id })}
                     isBooked={isBooked}
                     role="star"
+                  />
+                </Section>
+
+                <Section title="Production Quality">
+                  <TechPicker
+                    label="🎧 Audio"
+                    dimension="audio"
+                    selectedId={draft.audioId || 'audio_mono'}
+                    onPick={id => update({ audioId: id })}
+                    research={research}
+                  />
+                  <TechPicker
+                    label="💬 Subtitles"
+                    dimension="subtitles"
+                    selectedId={draft.subsId || 'subs_none'}
+                    onPick={id => update({ subsId: id })}
+                    research={research}
+                  />
+                  <TechPicker
+                    label="📺 Video"
+                    dimension="video"
+                    selectedId={draft.videoId || 'video_sd'}
+                    onPick={id => update({ videoId: id })}
+                    research={research}
                   />
                 </Section>
               </div>
@@ -815,12 +868,21 @@ function TalentList({ list, categoryId, selectedId, onPick, isBooked, role }) {
   )
 }
 
-function IPList({ categoryId, selectedId, onPick, research }) {
-  const eligible = IPS.filter(ip => ip.fits.includes(categoryId))
-  const discount = research.ipDiscount || 1.0
+function IPList({ categoryId, selectedId, onPick, station, year }) {
+  const owned = activeIPLicenses(station, year)
+    .map(l => ({ ip: findIP(l.ipId), license: l }))
+    .filter(x => x.ip && x.ip.fits.includes(categoryId))
 
-  if (eligible.length === 0) {
-    return <div style={{ fontSize: 11, color: T.muted, fontStyle: 'italic' }}>No IPs available for this category.</div>
+  if (owned.length === 0) {
+    return (
+      <div style={{
+        fontSize: 11, color: T.muted, fontStyle: 'italic',
+        padding: 10, background: T.cardHi, borderRadius: 4, border: `1px dashed ${T.border}`,
+      }}>
+        You don't own any IP licenses that fit this category.
+        Buy IPs in <strong>Operations → Purchase Rights</strong>.
+      </div>
+    )
   }
 
   return (
@@ -838,12 +900,13 @@ function IPList({ categoryId, selectedId, onPick, research }) {
       >
         <span style={{ fontSize: 16 }}>{!selectedId ? '✓' : '—'}</span>
         <div style={{ flex: 1, fontSize: 12, color: !selectedId ? T.accent : T.muted, fontStyle: 'italic', fontWeight: !selectedId ? 600 : 400 }}>
-          No IP / original
+          No IP / original content
         </div>
       </div>
       <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-        {eligible.map(ip => {
+        {owned.map(({ ip, license }) => {
           const isSelected = selectedId === ip.id
+          const yearsLeft = license.expiresYear - year + 1
           return (
             <div
               key={ip.id}
@@ -865,17 +928,67 @@ function IPList({ categoryId, selectedId, onPick, research }) {
                   {isSelected && <span style={{ fontSize: 9, color: T.accent, fontWeight: 700, letterSpacing: '.1em', marginLeft: 6 }}>SELECTED</span>}
                 </div>
                 <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>
-                  Q +{ip.q.toFixed(1)} · H +{ip.h.toFixed(1)}
+                  Q +{ip.q.toFixed(1)} · H +{ip.h.toFixed(1)} · {yearsLeft}y left
                 </div>
               </div>
               <HTag tier={ip.tier} />
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: T.red, minWidth: 56, textAlign: 'right' }}>
-                ${(ip.cost * discount).toFixed(1)}M
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: T.green, minWidth: 56, textAlign: 'right' }}>
+                OWNED
               </span>
             </div>
           )
         })}
       </div>
     </>
+  )
+}
+
+// ─── TECH PICKER (audio/subs/video tier row) ─────────────────────────────────
+function TechPicker({ label, dimension, selectedId, onPick, research }) {
+  const unlocked = unlockedTechFor(dimension, research)
+  const allOptions = dimension === 'audio' ? [
+    { id: 'audio_mono', label: 'Mono' },
+    { id: 'audio_stereo', label: 'Stereo' },
+    { id: 'audio_surround', label: 'Surround 5.1' },
+  ] : dimension === 'subtitles' ? [
+    { id: 'subs_none', label: 'None' },
+    { id: 'subs_basic', label: 'Basic' },
+    { id: 'subs_multi', label: 'Multi-Lang' },
+  ] : [
+    { id: 'video_sd', label: 'SD' },
+    { id: 'video_hd', label: 'HD' },
+    { id: 'video_uhd', label: '4K UHD' },
+  ]
+  const unlockedIds = new Set(unlocked.map(o => o.id))
+
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>{label}</div>
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        {allOptions.map(opt => {
+          const isUnlocked = unlockedIds.has(opt.id)
+          const isSelected = selectedId === opt.id
+          const fullOpt = unlocked.find(u => u.id === opt.id)
+          const qHTag = fullOpt && (fullOpt.q > 0 || fullOpt.h > 0)
+            ? ` (+${fullOpt.q.toFixed(1)}Q +${fullOpt.h.toFixed(1)}H · $${fullOpt.cost.toFixed(1)}M/mo)`
+            : ''
+          return (
+            <button
+              key={opt.id}
+              onClick={() => isUnlocked && onPick(opt.id)}
+              disabled={!isUnlocked}
+              style={{
+                background: isSelected ? T.accent + '22' : T.card,
+                border: `1.5px solid ${isSelected ? T.accent : T.border}`,
+                borderRadius: 4, padding: '5px 9px',
+                fontSize: 10, color: isUnlocked ? (isSelected ? T.accent : T.text) : T.muted,
+                cursor: isUnlocked ? 'pointer' : 'not-allowed',
+                fontWeight: isSelected ? 700 : 500,
+              }}
+            >{isUnlocked ? '' : '🔒 '}{opt.label}{qHTag}</button>
+          )
+        })}
+      </div>
+    </div>
   )
 }

@@ -4,14 +4,16 @@ import { HTag, Bar } from './ui.jsx'
 import { fameLabel } from '../engine.js'
 
 export function ResultsView({ results, station, prevFame, onContinue, cycleLabel }) {
-  const { shows, totals, comps } = results
+  if (!results) return null
+  const airings = results.airings || results.shows || []
+  const totals = results.totals || {}
   const market = MARKETS[station.market]
 
   // Sort shows: best rating first
-  const sorted = [...shows].sort((a, b) => b.rating - a.rating)
+  const sorted = [...airings].sort((a, b) => (b.rating || 0) - (a.rating || 0))
 
-  const fameAfter = station.fame  // station already updated by caller
-  const fameDelta = totals.fameDelta
+  const fameAfter = station.fame
+  const fameDelta = totals.fameDelta || 0
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 20px 60px' }} className="ani">
@@ -29,13 +31,13 @@ export function ResultsView({ results, station, prevFame, onContinue, cycleLabel
 
       {/* Bottom-line cards */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
-        <BigStat label="Total Audience" value={`${totals.audience.toFixed(1)}M`} color={T.teal} sub={`Cap ${market.audCap}M`} />
-        <BigStat label="Revenue" value={`$${totals.revenue.toFixed(1)}M`} color={T.green} />
-        <BigStat label="Costs" value={`$${totals.cost.toFixed(1)}M`} color={T.red} />
+        <BigStat label="Total Audience" value={`${(totals.audience ?? 0).toFixed(1)}M`} color={T.teal} sub={`Cap ${market.audCap}M`} />
+        <BigStat label="Revenue" value={`$${(totals.revenue ?? 0).toFixed(1)}M`} color={T.green} />
+        <BigStat label="Costs" value={`$${(totals.cost ?? 0).toFixed(1)}M`} color={T.red} />
         <BigStat
           label="Net"
-          value={`${totals.net >= 0 ? '+' : ''}$${totals.net.toFixed(1)}M`}
-          color={totals.net >= 0 ? T.green : T.red}
+          value={`${(totals.net ?? 0) >= 0 ? '+' : ''}$${(totals.net ?? 0).toFixed(1)}M`}
+          color={(totals.net ?? 0) >= 0 ? T.green : T.red}
         />
         <BigStat
           label="Fame"
@@ -67,26 +69,13 @@ export function ResultsView({ results, station, prevFame, onContinue, cycleLabel
             Next Cycle ▶
           </button>
 
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 6, padding: 12, marginBottom: 13 }}>
-            <div className="bebas" style={{ fontSize: 12, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-              MARKET COMPETITORS
-            </div>
-            {comps.map((c, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, fontSize: 11 }}>
-                <span style={{ color: T.muted }}>{c.name}</span>
-                <span style={{ fontFamily: "'DM Mono',monospace", color: T.text }}>
-                  {c.audience.toFixed(1)}M
-                </span>
-              </div>
-            ))}
-          </div>
-
           <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 6, padding: 12 }}>
             <div className="bebas" style={{ fontSize: 12, color: T.muted, letterSpacing: '.1em', marginBottom: 6 }}>
               REPUTATION
             </div>
             <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.6 }}>
               Hits (≥7.0) push fame up. Bombs (&lt;4) push it down. Reach the next-market threshold to expand reach.
+              See the <strong>Market tab</strong> for competitor performance.
             </div>
           </div>
         </div>

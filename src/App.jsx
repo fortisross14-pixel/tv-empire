@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { T } from './theme'
 import {
   MARKETS, RESEARCH, MOVIES, SLOT_TYPES, MONTHS,
-  SPORTS_LEAGUES,
+  SPORTS_LEAGUES, IPS, IPS as IPS_FOR_NAMES,
 } from './constants'
 import {
   initGame,
@@ -10,6 +10,8 @@ import {
   programCost,
   planToRun,
   runMonth,
+  finalizeMonthForRuns,
+  assignAudiences,
   cancelRunCost,
   buildAwards,
   applyResearch,
@@ -29,8 +31,21 @@ import {
   findLeague,
   initCompetitors,
   simulateCompetitorMonth,
-  computeCompetitorAudience,
+  applyCompetitorMonth,
   rolloverCompetitorYear,
+  // 4d/4e
+  beginResearch,
+  tickResearch,
+  researchAdjusted,
+  staffSalaryTotal,
+  tickStaffSearches,
+  openStaffPosition,
+  cancelStaffPosition,
+  hireStaffCandidate,
+  fireStaffMember,
+  buyIPLicense,
+  activeIPLicenses,
+  launchNetworkCampaign,
 } from './engine'
 
 import { SetupScreen } from './components/SetupScreen'
@@ -39,7 +54,7 @@ import { SlotEditor } from './components/SlotEditor'
 import { ResultsView } from './components/ResultsView'
 import { AwardsView } from './components/AwardsView'
 import { ResearchScreen } from './components/ResearchScreen'
-import { TalentScreen } from './components/TalentScreen'
+import { OperationsScreen } from './components/OperationsScreen'
 import { HistoryScreen } from './components/HistoryScreen'
 import { ThisYearScreen } from './components/ThisYearScreen'
 import { MarketScreen } from './components/MarketScreen'
@@ -171,11 +186,13 @@ export default function App() {
     }, 0)
   }, [game.runs, game.monthIdx])
 
-  // Permanent contract per-month total
+  // Permanent contract per-month total + staff salaries
   const permanentCharge = useMemo(() => {
     if (!game.station) return 0
     const tally = (list) => (list || []).reduce((a, h) => a + (h.permanent ? (h.perMonthCharge || 0) : 0), 0)
-    return tally(game.station.hiredDirectors) + tally(game.station.hiredStars)
+    const talentMonthly = tally(game.station.hiredDirectors) + tally(game.station.hiredStars)
+    const staffMonthly = staffSalaryTotal(game.station)
+    return talentMonthly + staffMonthly
   }, [game.station])
 
   // ─── ADVANCE MONTH ────────────────────────────────────────────────────
@@ -183,77 +200,139 @@ export default function App() {
     if (nextMonthCost + permanentCharge > game.station.cash) return
 
     setGame((g) => {
-      // Air all active runs for this month
+      // ── Phase 1: produce airings (no audience yet) ───────────────────
       const result = runMonth(g.station, g.research, g.runs, g.monthIdx, g.year)
 
-      // ── COMPETITOR SIMULATION ─────────────────────────────────────────
-      // Each competitor airs their slots, audience computed, results stored.
-      const competitors = (g.competitors || []).map(c => ({ ...c }))   // shallow clone
+      // Shallow-clone competitors so we don't mutate the source array's objects
+      const competitors = (g.competitors || []).map(c => ({ ...c, activeRuns: c.activeRuns.map(r => ({ ...r })) }))
       const market = MARKETS[g.station.market]
+
       const competitorAiringsThisMonth = []
       competitors.forEach(c => {
         const airings = simulateCompetitorMonth(c, g.monthIdx, g.year)
-        computeCompetitorAudience(c, airings, market)
         airings.forEach(a => competitorAiringsThisMonth.push({ ...a, id: uid() }))
       })
 
-      // Tick contracts (talent each have 1 month tick)
-      const ticked = tickContracts(g.station)
+      // ── Phase 2: combine all airings + assign audience demographically
+      const playerAirings = result.airings.map(a => ({ ...a, id: uid() }))
+      const allAirings = [...playerAirings, ...competitorAiringsThisMonth]
+      const fameMap = { __player__: g.station.fame }
+      competitors.forEach(c => { fameMap[c.id] = c.fame })
+      assignAudiences(allAirings, market, fameMap, g.monthIdx)
 
-      // Filter runs — drop expired
+      // ── Phase 3: aggregate player totals from filled-in airings ──────
+      let playerCost = result.totalProductionCost
+      let playerRev = 0
+      let playerAud = 0
+      playerAirings.forEach(a => {
+        a.net = r1((a.revenue || 0) - (a.cost || 0))
+        playerRev += a.revenue || 0
+        playerAud += a.audience || 0
+      })
+
+      // Finalize player run histories
+      finalizeMonthForRuns(g.runs, g.monthIdx, g.year)
+
+      // Apply competitor month results (fame, cash, year audience)
+      competitors.forEach(c => {
+        const compAirings = competitorAiringsThisMonth.filter(a => a.stationId === c.id)
+        applyCompetitorMonth(c, compAirings, market)
+      })
+
+      const logLines = [...g.log]
+
+      // ── Phase 4: contracts, fame, cash, staff, research, campaigns ──
+      const ticked = tickContracts(g.station)
       const remainingRuns = g.runs.filter(r => !result.expiredRunIds.includes(r.id))
 
-      // Add aired show data to history
-      const newAiredShows = result.airings.map(a => ({ ...a, id: uid() }))
+      // Tick research-in-progress (returns { research, completed[] })
+      let researchState = { ...g.research, inProgress: [...(g.research.inProgress || [])] }
+      const tickRes = tickResearch(researchState)
+      researchState = tickRes.research
+      const researchFinished = tickRes.completed
+      // Auto-apply each finished research
+      let newPlans = g.plans
+      let stationAfterResearch = { ...g.station }
+      let scoutLevel = g.scoutLevel
+      let marketRoster = g.marketRoster
+      for (const rid of researchFinished) {
+        const r = applyResearch(researchState, rid)
+        researchState = r.research
+        if (r.addSlotType && !(stationAfterResearch.slotIds || []).includes(r.addSlotType)) {
+          stationAfterResearch = {
+            ...stationAfterResearch,
+            slotIds: [...stationAfterResearch.slotIds, r.addSlotType],
+          }
+          newPlans = [...newPlans, emptyPlanned(r.addSlotType)]
+        }
+        if (r.refreshRoster) {
+          scoutLevel += 1
+          marketRoster = buildMarketRoster(stationAfterResearch, scoutLevel)
+        }
+        logLines.push(`✅ Research complete: ${RESEARCH.find(x=>x.id===rid)?.label || rid}`)
+      }
 
-      // Owned shows (eligible for renewal): a run that just expired with q>=7 (avg)
+      // Tick staff searches (any positions finishing this month produce candidates)
+      const tickedStaff = tickStaffSearches({ ...stationAfterResearch, openPositions: [...(stationAfterResearch.openPositions || [])] })
+      const stationAfterStaff = tickedStaff.station
+      const newPendingHires = [
+        ...(g.pendingHires || []),
+        ...tickedStaff.resolvedPositions.map(rp => ({
+          ...rp,
+          resolvedYear: g.year,
+          resolvedMonth: g.monthIdx,
+        }))
+      ]
+      tickedStaff.resolvedPositions.forEach(p => {
+        logLines.push(`🔍 Search complete: ${p.role} candidates ready — go pick one in Operations → Staff`)
+      })
+
+      // Build owned-shows from expired runs (≥7 avg)
       const newOwned = [...g.ownedShows]
       result.expiredRunIds.forEach(rid => {
         const run = g.runs.find(r => r.id === rid)
         if (!run || run.movieId || run.sportsRunLeagueId) return
-        // Average rating across the run
         const ratings = run.aiHistory.map(h => h.rating)
         if (ratings.length === 0) return
         const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length
         if (avgRating >= 7) {
           const idx = newOwned.findIndex(o => o.name === run.name)
           const rec = {
-            id: rid,
-            name: run.name,
-            categoryId: run.categoryId,
-            topicId: run.topicId,
-            ipId: run.ipId,
+            id: rid, name: run.name,
+            categoryId: run.categoryId, topicId: run.topicId, ipId: run.ipId,
             slotTypeId: run.slotTypeId,
-            lastDirectorId: run.directorId,
-            lastStarId: run.starId,
-            lastSeqSeason: run.seqSeason || 1,
-            lastAvgRating: avgRating,
+            lastDirectorId: run.directorId, lastStarId: run.starId,
+            lastSeqSeason: run.seqSeason || 1, lastAvgRating: avgRating,
           }
           if (idx >= 0) newOwned[idx] = rec
           else newOwned.push(rec)
         }
       })
 
-      const newCash = g.station.cash
-        - result.totals.cost
-        + result.totals.revenue
-        - ticked.perMonthCharge
-      const newFame = Math.max(0, g.station.fame + result.totals.fameDelta)
+      // Staff salary deduction
+      const salaryThisMonth = staffSalaryTotal(stationAfterStaff)
+
+      const newCash = g.station.cash - playerCost + playerRev - ticked.perMonthCharge - salaryThisMonth
+      const newFame = Math.max(0, g.station.fame + result.fameDeltaFromRatings)
+
+      if (salaryThisMonth > 0) {
+        logLines.push(`👥 Staff salaries: ${fmtM(-salaryThisMonth)}`)
+      }
 
       const station = {
-        ...g.station,
-        cash: newCash,
-        fame: newFame,
+        ...stationAfterStaff,
+        cash: r1(newCash),
+        fame: r2(newFame),
         hiredDirectors: ticked.hiredDirectors,
         hiredStars: ticked.hiredStars,
+        activeCampaign: null,  // campaigns last only the month they're launched
       }
 
       const monthLabel = MONTHS[g.monthIdx]
-      const logLines = [...g.log]
-      if (newAiredShows.length === 0) {
+      if (playerAirings.length === 0) {
         logLines.push(`📅 ${monthLabel} Y${g.year} — no programming. Free runtime burned.`)
       } else {
-        logLines.push(`📅 ${monthLabel} Y${g.year}: ${newAiredShows.length} shows, net ${fmtM(result.totals.net)}`)
+        logLines.push(`📅 ${monthLabel} Y${g.year}: ${playerAirings.length} shows, ${playerAud.toFixed(1)}M aud, net ${fmtM(playerRev - playerCost)}`)
       }
       if (ticked.perMonthCharge > 0) {
         logLines.push(`💼 Permanent contracts: ${fmtM(-ticked.perMonthCharge)}`)
@@ -265,29 +344,43 @@ export default function App() {
       const nextMonth = g.monthIdx + 1
       const isYearEnd = nextMonth >= 12
 
-      // Build awards if we just aired December
+      // Synthetic "result" object for ResultsView compatibility
+      const lastMonthResult = {
+        airings: playerAirings,
+        totals: {
+          cost: r1(playerCost),
+          revenue: r1(playerRev),
+          audience: r1(playerAud),
+          net: r1(playerRev - playerCost),
+          fameDelta: result.fameDeltaFromRatings,
+        },
+      }
+
       if (isYearEnd) {
-        const allYearShows = [...g.yearShows, ...newAiredShows]
+        const allYearShows = [...g.yearShows, ...playerAirings]
         const awards = buildAwards(allYearShows, station)
         let cash = station.cash
         let fame = station.fame
         awards.wins.forEach(w => { cash += w.cashBonus; fame += w.fameBonus })
         if (awards.bestOverall) { cash += awards.bestOverall.cashBonus; fame += awards.bestOverall.fameBonus }
         if (awards.mostWatched) { cash += awards.mostWatched.cashBonus; fame += awards.mostWatched.fameBonus }
-
-        // Rollover each competitor's annual stats
         competitors.forEach(c => rolloverCompetitorYear(c, g.year))
 
         return {
           ...g,
-          station: { ...station, cash, fame },
+          station: { ...station, cash: r1(cash), fame: r2(fame) },
           runs: remainingRuns,
+          plans: newPlans,
+          research: researchState,
+          pendingHires: newPendingHires,
+          scoutLevel,
+          marketRoster,
           yearShows: allYearShows,
-          allShows: [...(g.allShows || []), ...newAiredShows],
+          allShows: [...(g.allShows || []), ...playerAirings],
           competitorAllShows: [...(g.competitorAllShows || []), ...competitorAiringsThisMonth],
           competitors,
           ownedShows: newOwned,
-          lastMonthResult: result,
+          lastMonthResult,
           awards,
           phase: 'awards',
           log: logLines,
@@ -298,14 +391,19 @@ export default function App() {
         ...g,
         station,
         runs: remainingRuns,
+        plans: newPlans,
+        research: researchState,
+        pendingHires: newPendingHires,
+        scoutLevel,
+        marketRoster,
         monthIdx: nextMonth,
-        yearShows: [...g.yearShows, ...newAiredShows],
-        allShows: [...(g.allShows || []), ...newAiredShows],
+        yearShows: [...g.yearShows, ...playerAirings],
+        allShows: [...(g.allShows || []), ...playerAirings],
         competitorAllShows: [...(g.competitorAllShows || []), ...competitorAiringsThisMonth],
         competitors,
         ownedShows: newOwned,
-        lastMonthResult: result,
-        phase: newAiredShows.length > 0 ? 'results' : 'plan',
+        lastMonthResult,
+        phase: playerAirings.length > 0 ? 'results' : 'plan',
         log: logLines,
       }
     })
@@ -345,38 +443,17 @@ export default function App() {
   }
 
   // ─── RESEARCH ────────────────────────────────────────────────────────
-  const buyResearch = (id) => {
-    const item = RESEARCH.find((r) => r.id === id)
-    if (!item) return
-    if (game.station.cash < item.cost) return
-    if (!canResearch(id, game.research)) return
-
+  const startResearch = (id) => {
     setGame((g) => {
-      const result = applyResearch(g.research, id)
-      const research = result.research
-
-      let station = { ...g.station, cash: g.station.cash - item.cost }
-      let plans = g.plans
-      let log = [...g.log, `🔬 Researched ${item.label}`]
-
-      if (result.addSlotType) {
-        if (!(station.slotIds || []).includes(result.addSlotType)) {
-          station = { ...station, slotIds: [...(station.slotIds || []), result.addSlotType] }
-          plans = [...plans, emptyPlanned(result.addSlotType)]
-          const st = SLOT_TYPES[result.addSlotType]
-          log.push(`🆕 New ${st?.label || 'slot'} added to schedule`)
-        }
+      const result = beginResearch(id, g.station, g.research, g.year, g.monthIdx)
+      if (result.error) return { ...g, log: [...g.log, `⚠ Research: ${result.error}`] }
+      const adj = researchAdjusted(id, g.station, g.research)
+      return {
+        ...g,
+        station: result.station,
+        research: result.research,
+        log: [...g.log, `🔬 Began research: ${RESEARCH.find(r=>r.id===id)?.label} (${adj.months} mo, ${fmtM(adj.cost)})`],
       }
-
-      let scoutLevel = g.scoutLevel
-      let marketRoster = g.marketRoster
-      if (result.refreshRoster) {
-        scoutLevel += 1
-        marketRoster = buildMarketRoster(station, scoutLevel)
-        log.push(`🔍 Talent market refreshed`)
-      }
-
-      return { ...g, research, station, plans, scoutLevel, marketRoster, log }
     })
   }
 
@@ -429,6 +506,84 @@ export default function App() {
     })
   }
 
+  // ─── STAFF ──────────────────────────────────────────────────────────
+  const onOpenPosition = (role, tierId) => {
+    setGame((g) => {
+      const result = openStaffPosition(g.station, role, tierId)
+      if (result.error) return { ...g, log: [...g.log, `⚠ ${result.error}`] }
+      const tierCost = result.station.openPositions.find(p => p.role === role)?.cost || 0
+      return {
+        ...g,
+        station: result.station,
+        log: [...g.log, `📋 Opened ${role} position (${tierId} search, ${fmtM(tierCost)})`],
+      }
+    })
+  }
+
+  const onCancelPosition = (role) => {
+    setGame((g) => {
+      const result = cancelStaffPosition(g.station, role)
+      if (result.error) return { ...g, log: [...g.log, `⚠ ${result.error}`] }
+      return {
+        ...g,
+        station: result.station,
+        log: [...g.log, `❌ Cancelled ${role} search (refund ${fmtM(result.refund)})`],
+      }
+    })
+  }
+
+  const onPickCandidate = (role, candidate) => {
+    setGame((g) => {
+      // hireStaffCandidate returns the updated station directly, not wrapped
+      const newStation = hireStaffCandidate(g.station, role, candidate, g.year, g.monthIdx)
+      const pendingHires = (g.pendingHires || []).filter(p => p.role !== role)
+      return {
+        ...g,
+        station: newStation,
+        pendingHires,
+        log: [...g.log, `🤝 Hired ${candidate.name} as ${role} director (${candidate.tier})`],
+      }
+    })
+  }
+
+  const onFireStaff = (role) => {
+    setGame((g) => {
+      const result = fireStaffMember(g.station, role)
+      return {
+        ...g,
+        station: result.station,
+        log: [...g.log, `🚪 Fired ${role} director (severance ${fmtM(result.penalty)})`],
+      }
+    })
+  }
+
+  // ─── IP RIGHTS ──────────────────────────────────────────────────────
+  const onBuyIP = (ipId, termId) => {
+    setGame((g) => {
+      const result = buyIPLicense(g.station, ipId, termId, g.year, g.research)
+      if (result.error) return { ...g, log: [...g.log, `⚠ IP: ${result.error}`] }
+      const ipObj = IPS_FOR_NAMES.find(i => i.id === ipId)
+      return {
+        ...g,
+        station: result.station,
+        log: [...g.log, `📜 Licensed ${ipObj?.name || ipId} (${termId.replace('y','-year')}, ${fmtM(result.cost)})`],
+      }
+    })
+  }
+
+  // ─── NETWORK CAMPAIGNS ──────────────────────────────────────────────
+  const onLaunchCampaign = (campaignId) => {
+    setGame((g) => {
+      const result = launchNetworkCampaign(g.station, campaignId, g.research)
+      if (result.error) return { ...g, log: [...g.log, `⚠ Campaign: ${result.error}`] }
+      return {
+        ...g,
+        station: result.station,
+        log: [...g.log, `📣 Network campaign launched: ${result.label}`],
+      }
+    })
+  }
+
   // ─── RENDER ──────────────────────────────────────────────────────────
   if (game.phase === 'setup') {
     return <SetupScreen onStart={startGame} />
@@ -454,12 +609,22 @@ export default function App() {
         />
       )}
 
-      {game.phase === 'plan' && view === 'talent' && (
-        <TalentScreen
+      {game.phase === 'plan' && view === 'operations' && (
+        <OperationsScreen
           station={game.station}
           marketRoster={game.marketRoster}
+          research={game.research}
+          year={game.year}
+          pendingHires={game.pendingHires || []}
           onHire={onHire}
           onFire={onFire}
+          onOpenPosition={onOpenPosition}
+          onCancelPosition={onCancelPosition}
+          onPickCandidate={onPickCandidate}
+          onFireStaff={onFireStaff}
+          onBuyIP={onBuyIP}
+          onBuySportsLicense={buySportsLicense}
+          onLaunchCampaign={onLaunchCampaign}
           onBack={() => setView('plan')}
         />
       )}
@@ -469,7 +634,7 @@ export default function App() {
           research={game.research}
           station={game.station}
           cash={game.station.cash}
-          onBuy={buyResearch}
+          onBuy={startResearch}
           onBack={() => setView('plan')}
         />
       )}
@@ -566,8 +731,8 @@ function TopBar({ game, view, setView }) {
         <div style={{ display: 'flex', gap: 4, padding: '0 12px', borderTop: `1px solid ${T.border}`, overflowX: 'auto' }}>
           <NavTab label="Programming" active={view === 'plan'} onClick={() => setView('plan')} />
           <NavTab
-            label={`Talent (${(game.station.hiredDirectors?.length || 0) + (game.station.hiredStars?.length || 0)})`}
-            active={view === 'talent'} onClick={() => setView('talent')} />
+            label="Operations"
+            active={view === 'operations'} onClick={() => setView('operations')} />
           <NavTab label="Research" active={view === 'research'} onClick={() => setView('research')} />
           <NavTab label="This Year" active={view === 'thisyear'} onClick={() => setView('thisyear')} />
           <NavTab label="History" active={view === 'history'} onClick={() => setView('history')} />

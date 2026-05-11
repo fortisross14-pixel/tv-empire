@@ -161,7 +161,7 @@ export const MARKETS = {
   local: {
     id: 'local', label: 'Riverside Local',
     desc: 'A mid-size city of 2M. Friendly. Limited reach.',
-    pop: 2.0, audCap: 1.6, revPerViewer: 4.5,
+    pop: 2.0, audCap: 1.6, revPerViewer: 5.5,
     fameThreshold: 0, nextFame: 25, famePerWin: 1.2, marketingMult: 0.6,
   },
   metro: {
@@ -179,6 +179,171 @@ export const MARKETS = {
 }
 
 export const MARKET_ORDER = ['local', 'metro', 'national']
+
+// ─── AUDIENCE DEMOGRAPHICS ──────────────────────────────────────────────────
+// 7 demo groups. Each has:
+//   - popShare: fraction of total market population
+//   - watchHours: per-slot fraction of this demo's population that watches in
+//     this slot at all (0-1). Sum across slots can exceed 1 (people watch
+//     multiple slots a week).
+//   - appeal[catId]: per-category multiplier. 1.0 = baseline interest;
+//     2.0 = double demand; 0.1 = barely watch; 0 = won't tune in.
+//     Topic-level overrides applied via TOPIC_APPEAL_OVERRIDES below.
+// Total market audience for a slot/show = sum over demos of:
+//     market.pop * popShare * watchHours[slot] * appealNorm * shareOfMarket
+// where appealNorm scales the show's quality+hype by demo appeal, and
+// shareOfMarket = appeal / (appeal + competitorAppealSum) — competitive split.
+export const DEMOS = {
+  kids: {
+    id: 'kids', label: 'Kids',
+    popShare: 0.16,    // ~16% of population is age <16
+    watchHours: {
+      morning: 0.30, afternoon: 0.55, evening: 0.25,
+      prime: 0.20, prime2: 0.10, latenight: 0.02,
+      weekend_morning: 0.70, weekend_afternoon: 0.45, weekend_prime: 0.30,
+    },
+    appeal: {
+      kids: 2.5, family: 1.4, movie: 0.9,
+      news: 0.05, reality: 0.1, series: 0.4, latenight: 0.0,
+      sports: 0.6, contest: 0.7,
+    },
+  },
+  youngM: {
+    id: 'youngM', label: 'Young Male (16-30)',
+    popShare: 0.12,
+    watchHours: {
+      morning: 0.10, afternoon: 0.15, evening: 0.30,
+      prime: 0.55, prime2: 0.40, latenight: 0.40,
+      weekend_morning: 0.15, weekend_afternoon: 0.50, weekend_prime: 0.60,
+    },
+    appeal: {
+      sports: 2.4, series: 1.5, movie: 1.4, latenight: 1.3,
+      reality: 0.7, news: 0.5, contest: 0.5, family: 0.4,
+      kids: 0.1,
+    },
+  },
+  youngF: {
+    id: 'youngF', label: 'Young Female (16-30)',
+    popShare: 0.12,
+    watchHours: {
+      morning: 0.20, afternoon: 0.20, evening: 0.40,
+      prime: 0.65, prime2: 0.45, latenight: 0.30,
+      weekend_morning: 0.20, weekend_afternoon: 0.30, weekend_prime: 0.55,
+    },
+    appeal: {
+      reality: 2.4, series: 1.7, movie: 1.5, latenight: 1.1,
+      family: 0.8, news: 0.6, contest: 0.7, sports: 0.5,
+      kids: 0.2,
+    },
+  },
+  adultM: {
+    id: 'adultM', label: 'Adult Male (31-60)',
+    popShare: 0.20,
+    watchHours: {
+      morning: 0.20, afternoon: 0.10, evening: 0.50,
+      prime: 0.60, prime2: 0.45, latenight: 0.25,
+      weekend_morning: 0.20, weekend_afternoon: 0.55, weekend_prime: 0.60,
+    },
+    appeal: {
+      sports: 2.2, news: 1.6, series: 1.5, movie: 1.3,
+      latenight: 0.9, reality: 0.5, contest: 0.7, family: 0.6,
+      kids: 0.1,
+    },
+  },
+  adultF: {
+    id: 'adultF', label: 'Adult Female (31-60)',
+    popShare: 0.20,
+    watchHours: {
+      morning: 0.35, afternoon: 0.20, evening: 0.55,
+      prime: 0.70, prime2: 0.50, latenight: 0.15,
+      weekend_morning: 0.25, weekend_afternoon: 0.30, weekend_prime: 0.55,
+    },
+    appeal: {
+      reality: 2.2, series: 1.8, movie: 1.6, family: 1.5,
+      news: 1.2, contest: 1.0, latenight: 0.8, sports: 0.3,
+      kids: 0.3,
+    },
+  },
+  olderM: {
+    id: 'olderM', label: 'Older Male (60+)',
+    popShare: 0.10,
+    watchHours: {
+      morning: 0.45, afternoon: 0.45, evening: 0.65,
+      prime: 0.65, prime2: 0.50, latenight: 0.10,
+      weekend_morning: 0.40, weekend_afternoon: 0.55, weekend_prime: 0.55,
+    },
+    appeal: {
+      news: 2.0, sports: 1.5, series: 1.2, movie: 1.4,
+      contest: 1.3, family: 0.8, reality: 0.4, latenight: 0.5,
+      kids: 0.1,
+    },
+  },
+  olderF: {
+    id: 'olderF', label: 'Older Female (60+)',
+    popShare: 0.10,
+    watchHours: {
+      morning: 0.50, afternoon: 0.45, evening: 0.65,
+      prime: 0.65, prime2: 0.55, latenight: 0.10,
+      weekend_morning: 0.45, weekend_afternoon: 0.45, weekend_prime: 0.55,
+    },
+    appeal: {
+      contest: 2.2, news: 1.6, family: 1.5, movie: 1.4,
+      series: 1.3, reality: 1.0, latenight: 0.5, sports: 0.3,
+      kids: 0.4,
+    },
+  },
+}
+export const DEMO_ORDER = ['kids', 'youngM', 'youngF', 'adultM', 'adultF', 'olderM', 'olderF']
+
+// Topic-level overrides: when set, REPLACE the category appeal for that demo.
+// Useful for things like "true crime documentaries appeal more to adult women
+// than other documentaries do", or "competition reality is more male than other reality".
+export const TOPIC_APPEAL_OVERRIDES = {
+  // catId: { topicId: { demoId: appealMultiplier } }
+  reality: {
+    competition: { youngM: 1.1, adultM: 1.0 },    // competition reality more male-balanced
+    love:        { youngF: 3.0, adultF: 2.6, adultM: 0.3, youngM: 0.4 },
+    adventure:   { youngM: 1.5, adultM: 1.2 },
+  },
+  series: {
+    drama:   { adultF: 2.2, olderF: 1.7, youngF: 2.0 },
+    action:  { youngM: 2.4, adultM: 2.0 },
+    fantasy: { youngM: 1.8, youngF: 1.6 },
+    crime:   { adultF: 2.0, olderF: 1.8, olderM: 1.7 },     // CSI / true crime audience
+    comedy:  { youngM: 1.7, youngF: 1.7 },
+  },
+  sports: {
+    live:     { adultM: 2.6, youngM: 2.8 },
+    analysis: { olderM: 2.0, adultM: 1.8 },
+  },
+  news: {
+    bigtopic: { adultF: 1.6, olderF: 1.5 },
+    local:    { olderM: 1.6, olderF: 1.6 },
+  },
+  movie: {
+    // movies vary by genre tag but we don't have movie sub-tags yet;
+    // future hook for romcom/action/etc. demo shaping.
+  },
+  contest: {
+    quiz:     { olderF: 2.8, olderM: 2.4 },
+    prize:    { youngM: 1.4, adultM: 1.3, youngF: 1.4 },
+    physical: { youngM: 1.6 },
+  },
+  latenight: {
+    talk:    { adultF: 1.3, youngF: 1.2 },
+    mature:  { youngM: 1.6, adultM: 1.3, adultF: 0.5, olderF: 0.1, olderM: 0.3, kids: 0 },
+  },
+  family: {
+    edu:     { kids: 1.5, adultF: 1.2 },
+    animated:{ kids: 2.0, adultM: 0.9, adultF: 0.9 },
+  },
+  kids: {
+    cartoon:  { kids: 2.8 },
+    toytiein: { kids: 3.2, adultM: 0.05, adultF: 0.05 },
+    edutain:  { kids: 2.0, adultF: 1.0 },
+    preschool:{ kids: 2.5, adultF: 0.7 },
+  },
+}
 
 // ─── MARKETING TIERS ─────────────────────────────────────────────────────────
 export const MARKETING_TIERS = [
@@ -483,167 +648,214 @@ export const COMPETITORS = {
 //   ipDiscount: number                 → multiply IP licensing costs
 //   sequelBonus: number                → +X quality on renewed shows
 //   refreshRoster: true                → handled by App.jsx (reroll market roster)
+// RESEARCH ITEMS now have `months` field — they take time to complete.
+// Innovation Director discounts both `cost` and `months` (the better the
+// director, the deeper the discount).
+//   no director:   1.00x cost, 1.00x months
+//   Common:        0.95x cost, 0.92x months
+//   Uncommon:      0.85x cost, 0.85x months
+//   Rare:          0.75x cost, 0.75x months
+//   Epic:          0.60x cost, 0.60x months
+//   Legendary:     0.45x cost, 0.50x months
+//
+// Affinity bonus: if the player already has heavy experience in a domain
+// (e.g. already unlocked some content_reality_*), follow-up research in
+// the same domain is 25% cheaper and 25% faster. The engine handles this.
 export const RESEARCH = [
   // ─── SLOTS ─────────────────────────────────────────────────────────────────
   {
     id: 'slot_afternoon', group: 'slots',
     label: 'Weekday Afternoon Slot', icon: '🌤',
     desc: 'Add an afternoon slot. Kids audience + sports pulls all ages.',
-    cost: 8,
+    cost: 8,  months: 3,
     effect: { addSlot: 'afternoon' },
-  },
-  {
-    id: 'slot_evening', group: 'slots',
-    label: 'Weekday Evening Slot', icon: '🌇',
-    desc: 'Pre-prime window — news and lead-in series.',
-    cost: 10,
-    effect: { addSlot: 'evening' },
   },
   {
     id: 'slot_prime2', group: 'slots',
     label: 'Prime Time 2', icon: '🌃',
     desc: 'A second prime window. Almost as big an audience as Prime 1.',
-    cost: 24,
+    cost: 24, months: 6,
     effect: { addSlot: 'prime2' },
   },
   {
     id: 'slot_latenight', group: 'slots',
     label: 'Weekday Late Night', icon: '🌙',
     desc: 'Adults & mature content. Lower audience but cheap.',
-    cost: 12,
+    cost: 12, months: 3,
     effect: { addSlot: 'latenight' },
-  },
-  {
-    id: 'slot_weekend_morning', group: 'slots',
-    label: 'Weekend Morning Slot', icon: '🧸',
-    desc: 'Saturday cartoons block. Kids own this window.',
-    cost: 9,
-    effect: { addSlot: 'weekend_morning' },
   },
   {
     id: 'slot_weekend_afternoon', group: 'slots',
     label: 'Weekend Afternoon Slot', icon: '🏟',
     desc: 'Sports, documentaries, leisure viewing.',
-    cost: 14,
+    cost: 14, months: 4,
     effect: { addSlot: 'weekend_afternoon' },
   },
 
-  // ─── CONTENT — ENTER NEW CATEGORIES ────────────────────────────────────────
+  // ─── CONTENT — ENTER NEW CATEGORIES (slow if you have no experience) ──────
   {
-    id: 'content_news_dept', group: 'content',
+    id: 'content_news_dept', group: 'content', domain: 'news',
     label: 'News Department', icon: '📰',
     desc: 'Unlock News (local + global) if you don\'t have it.',
-    cost: 6,
+    cost: 6,  months: 4,
     effect: { unlockContent: [['news', 'local'], ['news', 'global']] },
   },
   {
-    id: 'content_reality_dept', group: 'content',
+    id: 'content_reality_dept', group: 'content', domain: 'reality',
     label: 'Reality Department', icon: '👁',
     desc: 'Unlock Reality (general + competition).',
-    cost: 8,
+    cost: 8,  months: 4,
     effect: { unlockContent: [['reality', 'general'], ['reality', 'competition']] },
   },
   {
-    id: 'content_series_dept', group: 'content',
+    id: 'content_series_dept', group: 'content', domain: 'series',
     label: 'Series Department', icon: '📺',
     desc: 'Unlock Scripted Series (drama + comedy).',
-    cost: 12,
+    cost: 12, months: 6,
     effect: { unlockContent: [['series', 'drama'], ['series', 'comedy']] },
   },
   {
-    id: 'content_latenight_dept', group: 'content',
+    id: 'content_latenight_dept', group: 'content', domain: 'latenight',
     label: 'Late Night Department', icon: '🎤',
     desc: 'Unlock Late Night (talk + comedy + variety).',
-    cost: 7,
+    cost: 7,  months: 3,
     effect: { unlockContent: [['latenight', 'talk'], ['latenight', 'comedy'], ['latenight', 'variety']] },
   },
   {
-    id: 'content_sports_dept', group: 'content',
+    id: 'content_sports_dept', group: 'content', domain: 'sports',
     label: 'Sports Department', icon: '🏆',
     desc: 'Unlock Sports analysis + documentaries. Live coverage requires further research.',
-    cost: 15,
+    cost: 15, months: 5,
     effect: { unlockContent: [['sports', 'analysis'], ['sports', 'doc']] },
   },
   {
-    id: 'content_family_dept', group: 'content',
+    id: 'content_family_dept', group: 'content', domain: 'family',
     label: 'Family Department', icon: '👨‍👩‍👧',
     desc: 'Unlock Family programming (animated + live-action).',
-    cost: 6,
+    cost: 6,  months: 3,
     effect: { unlockContent: [['family', 'animated'], ['family', 'live']] },
   },
   {
-    id: 'content_kids_dept', group: 'content',
+    id: 'content_kids_dept', group: 'content', domain: 'kids',
     label: 'Kids Department', icon: '🧸',
     desc: 'Unlock Kids programming (cartoons + live-action kids + preschool).',
-    cost: 7,
+    cost: 7,  months: 3,
     effect: { unlockContent: [['kids', 'cartoon'], ['kids', 'liveaction'], ['kids', 'preschool']] },
   },
   {
-    id: 'content_kids_advanced', group: 'content',
+    id: 'content_kids_advanced', group: 'content', domain: 'kids',
     label: 'Kids Specialty', icon: '🎈',
     desc: 'Kids: unlocks Edutainment, Toy Tie-In Series, and Kids Movie Hour.',
-    cost: 9,
+    cost: 9,  months: 4,
     requires: ['content_kids_dept'],
     effect: { unlockContent: [['kids', 'edutain'], ['kids', 'toytiein'], ['kids', 'kidsmovie']] },
   },
   {
-    id: 'content_contest_dept', group: 'content',
+    id: 'content_contest_dept', group: 'content', domain: 'contest',
     label: 'Contest Department', icon: '🎯',
     desc: 'Unlock Contest shows (quiz + physical).',
-    cost: 5,
+    cost: 5,  months: 2,
     effect: { unlockContent: [['contest', 'quiz'], ['contest', 'physical']] },
   },
 
   // ─── CONTENT — DEEPEN AN EXISTING CATEGORY ────────────────────────────────
   {
-    id: 'content_news_field', group: 'content',
+    id: 'content_news_field', group: 'content', domain: 'news',
     label: 'Field Reporting', icon: '🎙',
     desc: 'News: unlocks Field Reporter and Big-Topic Specials.',
-    cost: 8,
+    cost: 8,  months: 3,
     effect: { unlockContent: [['news', 'reporter'], ['news', 'bigtopic']] },
   },
   {
-    id: 'content_reality_lifestyle', group: 'content',
+    id: 'content_reality_lifestyle', group: 'content', domain: 'reality',
     label: 'Lifestyle Programming', icon: '💕',
     desc: 'Reality: unlocks Adventure / Survival and Dating / Love.',
-    cost: 7,
+    cost: 7,  months: 3,
     effect: { unlockContent: [['reality', 'adventure'], ['reality', 'love']] },
   },
   {
-    id: 'content_series_genres', group: 'content',
+    id: 'content_series_genres', group: 'content', domain: 'series',
     label: 'Genre Expansion', icon: '🎭',
     desc: 'Series: unlocks Action, Fantasy/Sci-Fi, and Crime/Procedural.',
-    cost: 14,
+    cost: 14, months: 5,
     effect: { unlockContent: [['series', 'action'], ['series', 'fantasy'], ['series', 'crime']] },
   },
   {
-    id: 'content_latenight_mature', group: 'content',
+    id: 'content_latenight_mature', group: 'content', domain: 'latenight',
     label: 'Mature Content License', icon: '🔞',
     desc: 'Late Night: unlocks Adult / Edgy comedy. Big hype, small audience.',
-    cost: 10,
+    cost: 10, months: 3,
     effect: { unlockContent: [['latenight', 'mature']] },
   },
   {
-    id: 'content_sports_live', group: 'content',
+    id: 'content_sports_live', group: 'content', domain: 'sports',
     label: 'Live Coverage Rights', icon: '🏟',
     desc: 'Sports: unlocks LIVE GAME COVERAGE — the highest revenue sports content.',
-    cost: 35,
+    cost: 35, months: 6,
     requires: ['content_sports_dept'],
     effect: { unlockContent: [['sports', 'live']] },
   },
   {
-    id: 'content_family_edu', group: 'content',
+    id: 'content_family_edu', group: 'content', domain: 'family',
     label: 'Educational Programming', icon: '🎓',
     desc: 'Family: unlocks Educational shows (high quality, lower hype).',
-    cost: 5,
+    cost: 5,  months: 2,
     effect: { unlockContent: [['family', 'edu']] },
   },
   {
-    id: 'content_contest_prize', group: 'content',
+    id: 'content_contest_prize', group: 'content', domain: 'contest',
     label: 'Big-Prize Productions', icon: '💰',
     desc: 'Contest: unlocks Big Prize Show — high hype, expensive prizes.',
-    cost: 8,
+    cost: 8,  months: 3,
     effect: { unlockContent: [['contest', 'prize']] },
+  },
+
+  // ─── TECH — AUDIO / SUBTITLES / VIDEO ──────────────────────────────────────
+  // Each unlocks a higher tier of broadcast quality. Set in show editor.
+  {
+    id: 'tech_audio_stereo', group: 'tech', domain: 'audio',
+    label: 'Stereo Audio', icon: '🎧',
+    desc: 'Unlock Stereo audio option for shows. +0.4 quality, +0.1 hype.',
+    cost: 6,  months: 3,
+    effect: {},
+  },
+  {
+    id: 'tech_audio_surround', group: 'tech', domain: 'audio',
+    label: 'Surround Sound', icon: '🔊',
+    desc: 'Unlock 5.1 Surround audio. +0.9 quality, +0.3 hype. Requires Stereo.',
+    cost: 14, months: 4,
+    requires: ['tech_audio_stereo'],
+    effect: {},
+  },
+  {
+    id: 'tech_subs_basic', group: 'tech', domain: 'subtitles',
+    label: 'Basic Subtitles', icon: '💬',
+    desc: 'Add subtitle option for shows. +0.3 quality, +0.05 hype.',
+    cost: 5,  months: 2,
+    effect: {},
+  },
+  {
+    id: 'tech_subs_multi', group: 'tech', domain: 'subtitles',
+    label: 'Multilingual Subtitles', icon: '🌐',
+    desc: 'Add multi-lang subtitles. +0.7 quality, +0.2 hype. Requires basic.',
+    cost: 10, months: 4,
+    requires: ['tech_subs_basic'],
+    effect: {},
+  },
+  {
+    id: 'tech_video_hd', group: 'tech', domain: 'video',
+    label: 'HD Broadcast', icon: '📺',
+    desc: 'Unlock HD video option. +0.6 quality, +0.3 hype.',
+    cost: 10, months: 4,
+    effect: {},
+  },
+  {
+    id: 'tech_video_uhd', group: 'tech', domain: 'video',
+    label: '4K UHD Broadcast', icon: '🎞',
+    desc: '4K Ultra HD. +1.2 quality, +0.5 hype. Requires HD.',
+    cost: 25, months: 7,
+    requires: ['tech_video_hd'],
+    effect: {},
   },
 
   // ─── OPERATIONS — PASSIVE BOOSTS ──────────────────────────────────────────
@@ -651,29 +863,44 @@ export const RESEARCH = [
     id: 'ops_scout', group: 'ops',
     label: 'Talent Scout', icon: '🔍',
     desc: 'Refresh the market talent roster with new options. Repeatable.',
-    cost: 4,
+    cost: 4,  months: 1,
     repeatable: true,
     effect: { refreshRoster: true },
   },
   {
+    id: 'staff_search_normal', group: 'ops',
+    label: 'Standard Staff Search', icon: '📋',
+    desc: 'Unlock "Standard" tier staff searches (2 mo, finds up to Rare).',
+    cost: 8,  months: 2,
+    effect: { unlockSearchTier: 'normal' },
+  },
+  {
+    id: 'staff_search_heavy', group: 'ops',
+    label: 'Heavy Staff Search', icon: '🎯',
+    desc: 'Unlock "Heavy" tier staff searches (3 mo, finds up to Legendary).',
+    cost: 18, months: 4,
+    requires: ['staff_search_normal'],
+    effect: { unlockSearchTier: 'heavy' },
+  },
+  {
     id: 'ops_mktg_eff', group: 'ops',
     label: 'Marketing Efficiency', icon: '📢',
-    desc: '−25% on all marketing campaign costs.',
-    cost: 10,
+    desc: '−25% on all marketing campaign costs (stacks with Marketing Director).',
+    cost: 10, months: 3,
     effect: { marketingDiscount: 0.75 },
   },
   {
     id: 'ops_sequel_boost', group: 'ops',
     label: 'Renewal Power', icon: '🔄',
-    desc: 'Renewed shows get +0.5 quality.',
-    cost: 6,
+    desc: 'Renewed shows get +0.5 quality on top of the natural sequel bonus.',
+    cost: 6,  months: 2,
     effect: { sequelBonus: 0.5 },
   },
   {
     id: 'ops_ip_negot', group: 'ops',
     label: 'IP Negotiators', icon: '📜',
     desc: '−20% on IP licensing costs.',
-    cost: 8,
+    cost: 8,  months: 3,
     effect: { ipDiscount: 0.8 },
   },
 ]
@@ -783,7 +1010,7 @@ export const SLOT_TYPES = {
 }
 
 // Default slots a brand-new station has (pre-research)
-export const DEFAULT_SLOT_IDS = ['morning', 'prime', 'weekend_prime']
+export const DEFAULT_SLOT_IDS = ['morning', 'evening', 'prime', 'weekend_morning', 'weekend_prime']
 
 // Slot groupings for UI display
 export const SLOT_GROUPS = [
@@ -975,6 +1202,171 @@ export const SPORTS_LEAGUES = [
 // Cost multipliers by station market
 export const SPORTS_MARKET_COST_MULT = { local: 1.0, metro: 2.5, national: 6.0 }
 
+// ─── STAFF (Directors of …) ──────────────────────────────────────────────────
+// 5 roles. Personnel is the gate — until you hire one, you can't hire others.
+// Quick search = always available (1 mo, $0.5M, Common-only).
+// Normal search = unlocked via research (2 mo, $1M, up to Rare).
+// Heavy search = unlocked via research (3 mo, $2M, up to Legendary).
+export const STAFF_ROLES = [
+  {
+    id: 'personnel', label: 'Personnel Director', icon: '👔',
+    desc: 'Required to hire any other director. Quick searches always available; better searches unlock more.',
+  },
+  {
+    id: 'innovation', label: 'Innovation Director', icon: '🔬',
+    desc: 'Speeds up and discounts research. Common −5%, Legendary −55% cost / −50% time.',
+  },
+  {
+    id: 'operations', label: 'Operations Director', icon: '⚙️',
+    desc: 'Lowers production cost on every show. Common −5%, Legendary −30%.',
+  },
+  {
+    id: 'marketing', label: 'Marketing Director', icon: '📣',
+    desc: 'Discounts marketing campaigns AND boosts their impact. Common −10% / +10% impact, Legendary −40% / +60% impact.',
+  },
+  {
+    id: 'content', label: 'Content Director', icon: '🎨',
+    desc: 'Permanent quality bonus on every show. Common +0.3, Legendary +1.2.',
+  },
+]
+
+// Search tier definitions
+export const STAFF_SEARCHES = [
+  {
+    id: 'quick',  label: 'Quick',  desc: 'Always available. 1 month. Finds Common only.',
+    months: 1, cost: 0.5, maxTier: 'Common',
+  },
+  {
+    id: 'normal', label: 'Normal', desc: 'Unlock via research. 2 months. Up to Rare.',
+    months: 2, cost: 1.0, maxTier: 'Rare', requiresResearch: 'ops_search_normal',
+  },
+  {
+    id: 'heavy',  label: 'Heavy',  desc: 'Unlock via research. 3 months. Up to Legendary.',
+    months: 3, cost: 2.0, maxTier: 'Legendary', requiresResearch: 'ops_search_heavy',
+  },
+]
+
+// Staff director per-month salary & tier discount tables
+// Salary is per-month, paid each month (no upfront).
+// Fire penalty: 3× one month's salary.
+export const STAFF_SALARY_BY_TIER = {
+  Common:    0.4,
+  Uncommon:  0.9,
+  Rare:      1.8,
+  Epic:      3.5,
+  Legendary: 6.5,
+}
+export const STAFF_FIRE_PENALTY_MULT = 3
+
+// Aliases so engine can import nicer names
+export const STAFF_MONTHLY_SALARY = STAFF_SALARY_BY_TIER
+export const STAFF_FIRE_PENALTY = STAFF_FIRE_PENALTY_MULT
+export const SEARCH_TIERS = [
+  { id: 'quick',  label: 'Quick',  months: 1, cost: 0.5,  tierWeights: [1.0, 0, 0, 0, 0] },
+  { id: 'normal', label: 'Normal', months: 2, cost: 1.0,  tierWeights: [0.35, 0.40, 0.20, 0.05, 0], requiresResearch: 'ops_search_normal' },
+  { id: 'heavy',  label: 'Heavy',  months: 3, cost: 2.0,  tierWeights: [0.10, 0.20, 0.30, 0.25, 0.15], requiresResearch: 'ops_search_heavy' },
+]
+
+// Effect coefficients by role+tier
+//   innovation: { cost: 0.95, months: 0.92 }  → multipliers on research
+//   operations: { prodCost: 0.95 }            → mult on baseProductionCost
+//   marketing:  { mktgCost: 0.90, mktgImpact: 1.10 }  → mult on cost, mult on hype
+//   content:    { qBonus: 0.3 }              → flat quality additive
+export const STAFF_EFFECTS = {
+  innovation: {
+    Common:    { cost: 0.95, months: 0.92 },
+    Uncommon:  { cost: 0.85, months: 0.85 },
+    Rare:      { cost: 0.75, months: 0.75 },
+    Epic:      { cost: 0.60, months: 0.60 },
+    Legendary: { cost: 0.45, months: 0.50 },
+  },
+  operations: {
+    Common:    { prodCost: 0.95 },
+    Uncommon:  { prodCost: 0.90 },
+    Rare:      { prodCost: 0.85 },
+    Epic:      { prodCost: 0.78 },
+    Legendary: { prodCost: 0.70 },
+  },
+  marketing: {
+    Common:    { mktgCost: 0.90, mktgImpact: 1.10 },
+    Uncommon:  { mktgCost: 0.82, mktgImpact: 1.20 },
+    Rare:      { mktgCost: 0.75, mktgImpact: 1.30 },
+    Epic:      { mktgCost: 0.65, mktgImpact: 1.45 },
+    Legendary: { mktgCost: 0.60, mktgImpact: 1.60 },
+  },
+  content: {
+    Common:    { qBonus: 0.3 },
+    Uncommon:  { qBonus: 0.5 },
+    Rare:      { qBonus: 0.7 },
+    Epic:      { qBonus: 0.95 },
+    Legendary: { qBonus: 1.2 },
+  },
+  personnel: {
+    // Personnel has no direct effects on shows — they just unlock other staff hires.
+    Common:    {},
+    Uncommon:  {},
+    Rare:      {},
+    Epic:      {},
+    Legendary: {},
+  },
+}
+
+// Name pool for randomly-generated staff candidates
+export const STAFF_NAME_POOL = {
+  first: ['Alex', 'Sam', 'Jordan', 'Casey', 'Morgan', 'Taylor', 'Riley', 'Avery', 'Quinn', 'Cameron',
+          'David', 'Sarah', 'Michael', 'Jessica', 'Robert', 'Linda', 'James', 'Patricia', 'Mary', 'John',
+          'Karen', 'Rachel', 'Marcus', 'Elena', 'Diego', 'Priya', 'Yuki', 'Omar', 'Naomi', 'Ahmed'],
+  last: ['Chen', 'Patel', 'Rodriguez', 'Smith', 'Garcia', 'Kim', 'Johnson', 'Brown', 'Davis', 'Miller',
+         'Anderson', 'Wilson', 'Martinez', 'Lee', 'Walker', 'Hall', 'Allen', 'Young', 'King', 'Wright',
+         'Lopez', 'Hill', 'Scott', 'Adams', 'Baker', 'Nelson', 'Carter', 'Mitchell', 'Roberts', 'Phillips'],
+}
+export const STAFF_FIRST_NAMES = STAFF_NAME_POOL.first
+export const STAFF_LAST_NAMES = STAFF_NAME_POOL.last
+
+// ─── AUDIO / SUBTITLES / VIDEO QUALITY ───────────────────────────────────────
+// 3 independent dimensions, 3 levels each. Better levels unlocked via research.
+// Per-month cost added to show, quality + hype bonuses.
+export const TECH_QUALITY = {
+  audio: [
+    { id: 'audio_mono',     label: 'Mono',           q: 0,    h: 0,   cost: 0,   requires: null },
+    { id: 'audio_stereo',   label: 'Stereo',         q: 0.4,  h: 0.1, cost: 0.4, requires: 'tech_audio_stereo' },
+    { id: 'audio_surround', label: 'Surround 5.1',   q: 0.9,  h: 0.3, cost: 1.0, requires: 'tech_audio_surround' },
+  ],
+  subtitles: [
+    { id: 'subs_none',  label: 'No Subtitles',     q: 0,    h: 0,   cost: 0,   requires: null },
+    { id: 'subs_basic', label: 'Basic Subtitles',  q: 0.3,  h: 0.05,cost: 0.3, requires: 'tech_subs_basic' },
+    { id: 'subs_multi', label: 'Multilingual',     q: 0.7,  h: 0.2, cost: 0.8, requires: 'tech_subs_multi' },
+  ],
+  video: [
+    { id: 'video_sd',  label: 'Standard Def',  q: 0,    h: 0,   cost: 0,   requires: null },
+    { id: 'video_hd',  label: 'HD',            q: 0.6,  h: 0.3, cost: 0.6, requires: 'tech_video_hd' },
+    { id: 'video_uhd', label: '4K UHD',        q: 1.2,  h: 0.5, cost: 1.5, requires: 'tech_video_uhd' },
+  ],
+}
+export const AUDIO_TIERS    = TECH_QUALITY.audio
+export const SUBTITLE_TIERS = TECH_QUALITY.subtitles
+export const VIDEO_TIERS    = TECH_QUALITY.video
+
+// ─── IP LICENSE TERMS ────────────────────────────────────────────────────────
+// You now BUY an IP for 1/3/5 years (price scales with duration). After
+// purchase, you can use it on any show for free during the term. Optional
+// renewal at expiry.
+export const IP_LICENSE_TERMS = [
+  { id: '1y', years: 1, label: '1 year',  costMult: 1.0 },
+  { id: '3y', years: 3, label: '3 years', costMult: 2.6 },
+  { id: '5y', years: 5, label: '5 years', costMult: 4.0 },
+]
+
+// ─── NETWORK MARKETING CAMPAIGNS ─────────────────────────────────────────────
+// Brand-level campaigns (not tied to a single show). Raise station fame
+// AND give a small hype bump to every show airing this month.
+export const NETWORK_CAMPAIGNS = [
+  { id: 'small',   label: 'Local Buzz',         cost: 3,   fameGain: 0.6, hypeBoost: 0.1, desc: 'Local radio + billboards. Modest reach.' },
+  { id: 'medium',  label: 'Regional Push',      cost: 9,   fameGain: 1.4, hypeBoost: 0.25, desc: 'Regional ads + media tour.' },
+  { id: 'big',     label: 'National Campaign',  cost: 22,  fameGain: 2.8, hypeBoost: 0.5, desc: 'TV + print + digital across the country.' },
+  { id: 'huge',    label: 'Brand Takeover',     cost: 50,  fameGain: 5.5, hypeBoost: 0.9, desc: 'Multi-channel saturation. Station-defining.' },
+]
+
 // ─── COMPETITOR SHOW NAME POOL ───────────────────────────────────────────────
 // Used by the AI competitor sim to generate show names per category.
 export const SHOW_NAME_POOL = {
@@ -987,4 +1379,3 @@ export const SHOW_NAME_POOL = {
   kids: ['Cartoon Express', 'Adventures of Bunny Bop', 'Robot Friends', 'Imagination Hour', 'Animal Pals', 'Storytime Castle', 'The Toy Box'],
   contest: ['Wheel of Cash', 'The Big Question', 'Beat the Clock', 'Trivia Bowl', 'Last Standing'],
 }
-

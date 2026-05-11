@@ -13,6 +13,11 @@ import {
   RUN_LENGTHS, CANCEL_REFUND_MULT, SEQUEL_BONUSES,
   SPORTS_LEAGUES, SPORTS_MARKET_COST_MULT,
   SHOW_NAME_POOL,
+  DEMOS, DEMO_ORDER, TOPIC_APPEAL_OVERRIDES,
+  AUDIO_TIERS, SUBTITLE_TIERS, VIDEO_TIERS,
+  STAFF_ROLES, STAFF_EFFECTS, STAFF_FIRST_NAMES, STAFF_LAST_NAMES,
+  SEARCH_TIERS, STAFF_MONTHLY_SALARY,
+  IP_LICENSE_TERMS, NETWORK_CAMPAIGNS,
 } from './constants.js'
 
 // ─── MATH HELPERS ────────────────────────────────────────────────────────────
@@ -174,6 +179,339 @@ export function activeRoster(station) {
   return { directors: dirs, stars }
 }
 
+// ─── STAFF (DIRECTORS OF…) ──────────────────────────────────────────────────
+// Station has up to 5 staff: personnel, innovation, operations, marketing, content.
+// Each is null or { name, tier, hiredMonth, hiredYear }.
+// Personnel is the gate — until you hire one, you can't hire others.
+
+const STAFF_FIRE_PENALTY = 3   // fire = pay 3 months salary
+
+/** Get the effect bundle for a staff role from station.staff. Empty {} if vacant.
+ *  STAFF_EFFECTS shape: { roleId: { tierName: { effectKey: value } } }. */
+export function staffEffect(station, role) {
+  const s = station?.staff?.[role]
+  if (!s) return {}
+  return STAFF_EFFECTS[role]?.[s.tier] || {}
+}
+
+/** Per-month salary cost across all hired staff. */
+export function staffSalaryTotal(station) {
+  if (!station?.staff) return 0
+  let total = 0
+  for (const role of Object.keys(station.staff)) {
+    const s = station.staff[role]
+    if (s) total += STAFF_MONTHLY_SALARY[s.tier] || 0
+  }
+  return r1(total)
+}
+
+/** Check if player CAN hire a given role.
+ *  Personnel is always hireable (no prereq). All others require Personnel. */
+export function canHireStaffRole(station, role) {
+  if (role === 'personnel') return true
+  return !!station?.staff?.personnel
+}
+
+/** Cost to fire a staff member. */
+export function staffFireCost(station, role) {
+  const s = station?.staff?.[role]
+  if (!s) return 0
+  return r1((STAFF_MONTHLY_SALARY[s.tier] || 0) * STAFF_FIRE_PENALTY)
+}
+
+/** Generate a single staff candidate using a search tier's weights. */
+function generateStaffCandidate(role, searchTier) {
+  const weights = searchTier.tierWeights
+  const total = weights.reduce((a, b) => a + b, 0)
+  let r = Math.random() * total
+  let chosenIdx = 0
+  for (let i = 0; i < weights.length; i++) {
+    r -= weights[i]
+    if (r <= 0) { chosenIdx = i; break }
+  }
+  const tier = TIERS[chosenIdx]
+  const name = `${pick(STAFF_FIRST_NAMES)} ${pick(STAFF_LAST_NAMES)}`
+  return { name, tier, role }
+}
+
+/** Open a position. Returns updated station + cash debit. Doesn't hire — the
+ *  position resolves after `months` and the user picks from candidates. */
+export function openStaffPosition(station, role, searchTierId) {
+  const tier = SEARCH_TIERS.find(t => t.id === searchTierId)
+  if (!tier) return { station, error: 'Bad search tier' }
+  if (!canHireStaffRole(station, role)) return { station, error: 'Hire a Personnel Director first' }
+  if (station.openPositions?.some(p => p.role === role)) return { station, error: 'Already searching for this role' }
+  if (station.cash < tier.cost) return { station, error: 'Not enough cash' }
+
+  const position = {
+    role,
+    tierId: searchTierId,
+    monthsLeft: tier.months,
+    monthsTotal: tier.months,
+    cost: tier.cost,
+  }
+  return {
+    station: {
+      ...station,
+      cash: r1(station.cash - tier.cost),
+      openPositions: [...(station.openPositions || []), position],
+    },
+    charged: tier.cost,
+    error: null,
+  }
+}
+
+/** Cancel an open position. Refund 50%. */
+export function cancelStaffPosition(station, role) {
+  const pos = (station.openPositions || []).find(p => p.role === role)
+  if (!pos) return { station, refund: 0 }
+  const refund = r1(pos.cost * 0.5)
+  return {
+    station: {
+      ...station,
+      cash: r1(station.cash + refund),
+      openPositions: (station.openPositions || []).filter(p => p.role !== role),
+    },
+    refund,
+  }
+}
+
+/** Hire a candidate (called from the position's resolved state).
+ *  Returns updated station. */
+export function hireStaffCandidate(station, role, candidate, year, month) {
+  return {
+    ...station,
+    staff: {
+      ...(station.staff || {}),
+      [role]: {
+        name: candidate.name,
+        tier: candidate.tier,
+        hiredYear: year,
+        hiredMonth: month,
+      },
+    },
+    openPositions: (station.openPositions || []).filter(p => p.role !== role),
+  }
+}
+
+/** Fire staff. Returns updated station + penalty paid. */
+export function fireStaffMember(station, role) {
+  const penalty = staffFireCost(station, role)
+  const nextStaff = { ...(station.staff || {}) }
+  delete nextStaff[role]
+  return {
+    station: { ...station, cash: r1(station.cash - penalty), staff: nextStaff },
+    penalty,
+  }
+}
+
+/** Tick all open positions by one month. Returns:
+ *   { station, resolvedPositions: [{ role, candidates: [...] }] }
+ * Candidates: 3 picks at this tier so the player can choose. */
+export function tickStaffSearches(station) {
+  const next = []
+  const resolved = []
+  for (const pos of (station.openPositions || [])) {
+    const newMonths = pos.monthsLeft - 1
+    if (newMonths <= 0) {
+      const tier = SEARCH_TIERS.find(t => t.id === pos.tierId)
+      const candidates = [
+        generateStaffCandidate(pos.role, tier),
+        generateStaffCandidate(pos.role, tier),
+        generateStaffCandidate(pos.role, tier),
+      ]
+      resolved.push({ role: pos.role, candidates })
+    } else {
+      next.push({ ...pos, monthsLeft: newMonths })
+    }
+  }
+  return {
+    station: { ...station, openPositions: next },
+    resolvedPositions: resolved,
+  }
+}
+
+// ─── IP LICENSING ────────────────────────────────────────────────────────────
+/** Cost to license an IP for a given term, with discounts applied. */
+export function ipLicenseCost(ipId, termId, research) {
+  const ip = findIP(ipId)
+  if (!ip) return 0
+  const term = IP_LICENSE_TERMS.find(t => t.id === termId)
+  if (!term) return 0
+  const discount = research?.ipDiscount || 1.0
+  return r1(ip.cost * term.costMult * discount)
+}
+
+/** Does the station currently own a license on this IP (and it hasn't expired)? */
+export function ownsIP(station, ipId, currentYear) {
+  return (station?.ipLicenses || []).some(l => l.ipId === ipId && l.expiresYear >= currentYear)
+}
+
+/** Buy an IP license. */
+export function buyIPLicense(station, ipId, termId, year, research) {
+  const term = IP_LICENSE_TERMS.find(t => t.id === termId)
+  if (!term) return { station, error: 'Bad term' }
+  const cost = ipLicenseCost(ipId, termId, research)
+  if (station.cash < cost) return { station, error: 'Not enough cash' }
+
+  // If renewing an existing license, push out its expiry; otherwise add new
+  const licenses = [...(station.ipLicenses || [])]
+  const existingIdx = licenses.findIndex(l => l.ipId === ipId)
+  if (existingIdx >= 0) {
+    licenses[existingIdx] = {
+      ...licenses[existingIdx],
+      expiresYear: Math.max(licenses[existingIdx].expiresYear, year + term.years - 1),
+    }
+  } else {
+    licenses.push({ ipId, expiresYear: year + term.years - 1 })
+  }
+  return {
+    station: { ...station, cash: r1(station.cash - cost), ipLicenses: licenses },
+    cost,
+    charged: cost,
+    ipName: findIP(ipId)?.name || ipId,
+    error: null,
+  }
+}
+
+export function activeIPLicenses(station, currentYear) {
+  return (station?.ipLicenses || []).filter(l => l.expiresYear >= currentYear)
+}
+
+// ─── RESEARCH IN PROGRESS ────────────────────────────────────────────────────
+/** Compute adjusted cost + months for a research item given station state.
+ *  Innovation Director discounts both. Domain affinity (already unlocked content
+ *  in the same domain) gives an additional 25% off both. */
+export function researchAdjusted(researchId, station, research) {
+  const r = RESEARCH.find(x => x.id === researchId)
+  if (!r) return { cost: 0, months: 0 }
+  const innovEff = staffEffect(station, 'innovation')
+  let costMult = innovEff.cost || 1.0
+  let monthsMult = innovEff.months || 1.0
+
+  // Domain affinity: if the player already has unlocked content in the same domain,
+  // give an extra 25% off cost + time.
+  if (r.domain) {
+    const unlocked = research?.unlocked || []
+    const hasDomainExp = RESEARCH.some(x =>
+      x.id !== r.id &&
+      x.domain === r.domain &&
+      unlocked.includes(x.id)
+    )
+    if (hasDomainExp) {
+      costMult *= 0.75
+      monthsMult *= 0.75
+    }
+  }
+
+  return {
+    cost: Math.max(1, r1(r.cost * costMult)),
+    months: Math.max(1, Math.round(r.months * monthsMult)),
+  }
+}
+
+/** Begin a research project. Returns updated state + cash debit. */
+export function beginResearch(researchId, station, research, year, month) {
+  const r = RESEARCH.find(x => x.id === researchId)
+  if (!r) return { error: 'No such research' }
+  if (!canResearch(researchId, research)) return { error: 'Cannot research now' }
+  if ((research.inProgress || []).some(p => p.id === researchId)) {
+    return { error: 'Already in progress' }
+  }
+  const adj = researchAdjusted(researchId, station, research)
+  if (station.cash < adj.cost) return { error: 'Not enough cash' }
+
+  return {
+    station: { ...station, cash: r1(station.cash - adj.cost) },
+    research: {
+      ...research,
+      inProgress: [
+        ...(research.inProgress || []),
+        { id: researchId, monthsLeft: adj.months, monthsTotal: adj.months, cost: adj.cost },
+      ],
+    },
+    cost: adj.cost,
+    error: null,
+  }
+}
+
+/** Tick all in-progress research by one month. Returns:
+ *   { research, completed: [...researchIds] } */
+export function tickResearch(research) {
+  const next = []
+  const completed = []
+  for (const p of (research.inProgress || [])) {
+    if (p.monthsLeft <= 1) {
+      completed.push(p.id)
+    } else {
+      next.push({ ...p, monthsLeft: p.monthsLeft - 1 })
+    }
+  }
+  return { research: { ...research, inProgress: next }, completed }
+}
+
+// ─── NETWORK CAMPAIGNS ───────────────────────────────────────────────────────
+/** Run a network-wide marketing campaign. Costs upfront. Hype boost applies
+ *  to all of THIS month's shows; fame gain applies immediately. */
+export function launchNetworkCampaign(station, campaignId, research) {
+  const camp = NETWORK_CAMPAIGNS.find(c => c.id === campaignId)
+  if (!camp) return { station, error: 'Bad campaign' }
+  const mktgEff = staffEffect(station, 'marketing')
+  const cost = r1(camp.cost * (research?.marketingDiscount || 1.0) * (mktgEff.mktgCost || 1.0))
+  if (station.cash < cost) return { station, error: 'Not enough cash' }
+  const impactMult = mktgEff.mktgImpact || 1.0
+  return {
+    station: {
+      ...station,
+      cash: r1(station.cash - cost),
+      fame: r2(station.fame + camp.fameGain * impactMult),
+      activeCampaign: { tierId: campaignId, hypeBoost: camp.hypeBoost * impactMult },
+    },
+    cost,
+    label: camp.label,
+    error: null,
+  }
+}
+
+// ─── TECH QUALITY HELPERS ────────────────────────────────────────────────────
+const TECH_BY_DIM = {
+  audio: AUDIO_TIERS,
+  subtitles: SUBTITLE_TIERS,
+  video: VIDEO_TIERS,
+}
+const TECH_DEFAULT_ID = { audio: 'audio_mono', subtitles: 'subs_none', video: 'video_sd' }
+
+/** Get the tech quality options unlocked for a dimension based on research. */
+export function unlockedTechFor(dimension, research) {
+  const all = TECH_BY_DIM[dimension] || []
+  const unlocked = research?.unlocked || []
+  return all.filter(opt => !opt.requires || unlocked.includes(opt.requires))
+}
+
+export function findTechOption(dimension, id) {
+  const all = TECH_BY_DIM[dimension] || []
+  return all.find(o => o.id === id) || all.find(o => o.id === TECH_DEFAULT_ID[dimension]) || all[0]
+}
+
+/** Total per-month tech cost added to a show. */
+export function techMonthlyCost(planned) {
+  const audio = findTechOption('audio', planned.audioId)
+  const subs  = findTechOption('subtitles', planned.subsId)
+  const video = findTechOption('video', planned.videoId)
+  return r2((audio?.cost || 0) + (subs?.cost || 0) + (video?.cost || 0))
+}
+
+/** Total q/h bonuses from tech selections. */
+export function techBonuses(planned) {
+  const audio = findTechOption('audio', planned.audioId)
+  const subs  = findTechOption('subtitles', planned.subsId)
+  const video = findTechOption('video', planned.videoId)
+  return {
+    q: (audio?.q || 0) + (subs?.q || 0) + (video?.q || 0),
+    h: (audio?.h || 0) + (subs?.h || 0) + (video?.h || 0),
+  }
+}
+
 export function buildMarketRoster(station, scoutLevel = 0) {
   const bonus = scoutLevel * 0.15
   const expose = (list) => list.filter(t => Math.random() < clamp(TIER_EXPOSURE[t.tier] + bonus, 0, 1))
@@ -230,22 +568,28 @@ export function ownsLicense(station, leagueId, year) {
 }
 
 // ─── COSTS ───────────────────────────────────────────────────────────────────
-export function baseProductionCost(categoryId, marketId) {
+export function baseProductionCost(categoryId, marketId, station) {
   const cat = CATEGORIES[categoryId]
   const market = MARKETS[marketId]
   const marketMult = market.id === 'local' ? 0.7 : market.id === 'metro' ? 1.0 : 1.4
-  return r1(1.0 * (cat?.cost_mult || 1.0) * marketMult)
+  const opsEff = staffEffect(station, 'operations')
+  const opsMult = opsEff.prodCost || 1.0
+  return r1(1.0 * (cat?.cost_mult || 1.0) * marketMult * opsMult)
 }
 
-export function marketingCost(tierId, marketId, research) {
+export function marketingCost(tierId, marketId, research, station) {
   const tier = MARKETING_TIERS.find(t => t.id === tierId) || MARKETING_TIERS[0]
   const market = MARKETS[marketId]
   const discount = research?.marketingDiscount || 1.0
-  return r1(tier.cost * market.marketingMult * discount)
+  const mktgEff = staffEffect(station, 'marketing')
+  const mktgMult = mktgEff.mktgCost || 1.0
+  return r1(tier.cost * market.marketingMult * discount * mktgMult)
 }
 
-export function ipCost(ipId, research) {
+export function ipCost(ipId, research, station, currentYear) {
   if (!ipId) return 0
+  // If station owns an active license, IP is free
+  if (station && currentYear && ownsIP(station, ipId, currentYear)) return 0
   const ip = findIP(ipId)
   if (!ip) return 0
   const discount = research?.ipDiscount || 1.0
@@ -253,41 +597,58 @@ export function ipCost(ipId, research) {
 }
 
 /** Per-month production cost of one program. */
-export function programCost(planned, stationOrMarket, research) {
-  const market = stationOrMarket?.market && typeof stationOrMarket.market === 'string'
-    ? MARKETS[stationOrMarket.market]
-    : stationOrMarket
+export function programCost(planned, stationOrMarket, research, year) {
+  const isFullStation = stationOrMarket?.market && typeof stationOrMarket.market === 'string'
+  const station = isFullStation ? stationOrMarket : null
+  const market = isFullStation ? MARKETS[stationOrMarket.market] : stationOrMarket
   const slot = SLOT_TYPES[planned.slotTypeId || 'prime']
   const slotMult = slot?.costMult || 1.0
+  const techCost = techMonthlyCost(planned)
 
   if (planned.movieId) {
     const m = findMovie(planned.movieId)
-    return r1(((m?.cost || 0) * slotMult) + marketingCost(planned.marketingId || 'none', market.id, research))
+    return r1(((m?.cost || 0) * slotMult) + marketingCost(planned.marketingId || 'none', market.id, research, station) + techCost)
   }
   if (planned.sportsRunLeagueId) {
-    // Sports rights themselves are licensed yearly. Per-month cost is just
-    // the production overhead (small) + marketing.
-    const base = 0.4 * slotMult
-    const mktg = marketingCost(planned.marketingId || 'none', market.id, research)
-    return r1(base + mktg)
+    const opsEff = staffEffect(station, 'operations')
+    const opsMult = opsEff.prodCost || 1.0
+    const base = 0.4 * slotMult * opsMult
+    const mktg = marketingCost(planned.marketingId || 'none', market.id, research, station)
+    return r1(base + mktg + techCost)
   }
-  const base = baseProductionCost(planned.categoryId, market.id) * slotMult
-  const ip   = ipCost(planned.ipId, research)
-  const mktg = marketingCost(planned.marketingId || 'none', market.id, research)
-  return r1(base + ip + mktg)
+  const base = baseProductionCost(planned.categoryId, market.id, station) * slotMult
+  const ip   = ipCost(planned.ipId, research, station, year)
+  const mktg = marketingCost(planned.marketingId || 'none', market.id, research, station)
+  return r1(base + ip + mktg + techCost)
 }
 
-/** Total cost across the whole multi-month run (paid upfront-ish via per-month
- *  cash hits, but useful to show "total commitment" in UI). */
-export function runTotalCost(planned, station, research) {
+/** Total cost across the whole multi-month run. */
+export function runTotalCost(planned, station, research, year) {
   const months = planned.runMonths || 1
-  return r1(programCost(planned, station, research) * months)
+  return r1(programCost(planned, station, research, year) * months)
 }
 
 // ─── QUALITY & HYPE ──────────────────────────────────────────────────────────
+// Talent-category match: 1.0 = on-specialty, 0.15-0.4 = mismatch.
+// Some pairings are actively HARMFUL: a sports star fronting a kids show
+// brings the wrong vibe, so the show gets a small NEGATIVE pull rather than
+// nothing. Reflected in ANTI_AFFINITY.
+const ANTI_AFFINITY = {
+  // talent specialty → category they should not touch
+  sports:    { kids: -0.3, family: -0.1 },
+  latenight: { kids: -0.5, family: -0.2 },
+  news:      { kids: -0.2 },
+  reality:   { kids: -0.3, news: -0.2 },
+  kids:      { latenight: -0.4, sports: -0.2 },
+  family:    { latenight: -0.2 },
+}
+
 function matchFactor(talent, categoryId) {
   if (!talent) return 0
-  return talent.specialty === categoryId ? 1.0 : 0.4
+  if (talent.specialty === categoryId) return 1.0
+  const anti = ANTI_AFFINITY[talent.specialty]?.[categoryId]
+  if (anti !== undefined) return anti  // negative — actively hurts the show
+  return 0.25  // unrelated specialty — contributes a little
 }
 
 /** Sequel bonus calculator. Applied to seqSeason ≥ 2.
@@ -329,9 +690,14 @@ export function projectShow(planned, station, research, monthIdx = 0) {
     const focusQ = (focus.bonusCat === 'sports' && focus.bonusQ) ? focus.bonusQ : 0
     const fameH = clamp((station.fame || 0) / 100, 0, 1) * 1.2
 
+    // Staff + tech + campaign bonuses
+    const contentQ = (staffEffect(station, 'content').qBonus) || 0
+    const tech = techBonuses(planned)
+    const campHype = station.activeCampaign?.hypeBoost || 0
+
     return {
-      quality: clamp(lg.baseQ + (dir?.q || 0) * dMatch + (star?.q || 0) * sMatch + focusQ, 1, 10),
-      hype:    clamp(lg.baseH + (dir?.h || 0) * dMatch + (star?.h || 0) * sMatch + focusH + fameH + slotBonusH + seasonBonusH + peakBonus, 1, 10),
+      quality: clamp(lg.baseQ + (dir?.q || 0) * dMatch + (star?.q || 0) * sMatch + focusQ + contentQ + tech.q, 1, 10),
+      hype:    clamp(lg.baseH + (dir?.h || 0) * dMatch + (star?.h || 0) * sMatch + focusH + fameH + slotBonusH + seasonBonusH + peakBonus + tech.h + campHype, 1, 10),
       tier:    isPeak ? 'Legendary' : 'Rare',
       slotBonusH, seasonBonusH, peakBonus, isPeak,
     }
@@ -340,9 +706,14 @@ export function projectShow(planned, station, research, monthIdx = 0) {
   if (planned.movieId) {
     const m = findMovie(planned.movieId)
     const mktg = MARKETING_TIERS.find(t => t.id === (planned.marketingId || 'none')) || MARKETING_TIERS[0]
+    const mktgEff = staffEffect(station, 'marketing')
+    const mktgImpact = mktgEff.mktgImpact || 1.0
+    const contentQ = (staffEffect(station, 'content').qBonus) || 0
+    const tech = techBonuses(planned)
+    const campHype = station.activeCampaign?.hypeBoost || 0
     return {
-      quality: clamp(m.q + mktg.q, 1, 10),
-      hype:    clamp(m.h + mktg.h + slotBonusH + seasonBonusH, 1, 10),
+      quality: clamp(m.q + mktg.q + contentQ + tech.q, 1, 10),
+      hype:    clamp(m.h + mktg.h * mktgImpact + slotBonusH + seasonBonusH + tech.h + campHype, 1, 10),
       tier:    m.tier,
       slotBonusH, seasonBonusH,
     }
@@ -372,18 +743,27 @@ export function projectShow(planned, station, research, monthIdx = 0) {
 
   const fameH = clamp((station.fame || 0) / 100, 0, 1) * 1.2
 
+  // Staff effects
+  const contentQ = (staffEffect(station, 'content').qBonus) || 0
+  const mktgEff = staffEffect(station, 'marketing')
+  const mktgImpact = mktgEff.mktgImpact || 1.0
+  const tech = techBonuses(planned)
+  const campHype = station.activeCampaign?.hypeBoost || 0
+
   const quality = clamp(
     cat.base_q + topic.q
     + (dir?.q || 0) * dMatch
     + (star?.q || 0) * sMatch
-    + ipQ + mktg.q + focusQ + localBonus + seqBonus,
+    + ipQ + mktg.q + focusQ + localBonus + seqBonus
+    + contentQ + tech.q,
     1, 10,
   )
   const hype = clamp(
     cat.base_h + topic.h
     + (dir?.h || 0) * dMatch
     + (star?.h || 0) * sMatch
-    + ipH + mktg.h + focusH + fameH + slotBonusH + seasonBonusH,
+    + ipH + mktg.h * mktgImpact + focusH + fameH + slotBonusH + seasonBonusH
+    + tech.h + campHype,
     1, 10,
   )
 
@@ -399,11 +779,11 @@ export function projectShow(planned, station, research, monthIdx = 0) {
 }
 
 // ─── AIRING ──────────────────────────────────────────────────────────────────
-/** Air one month of a planned program. Returns the show entry to be logged. */
+/** Air one month of a planned program — produces quality/hype/rating + metadata.
+ *  Audience is NOT computed here. Use assignAudiences() afterwards to fill in
+ *  audience & revenue across all airings in a given month with competition. */
 export function airShow(planned, station, research, monthIdx = 0) {
   const proj = projectShow(planned, station, research, monthIdx)
-  const market = MARKETS[station.market]
-  const slotType = SLOT_TYPES[planned.slotTypeId || 'prime']
 
   // Live noise — bigger swing on hype than quality.
   const qLive = clamp(proj.quality + rnd(-1.0, 1.0), 1, 10)
@@ -411,29 +791,109 @@ export function airShow(planned, station, research, monthIdx = 0) {
 
   const rating = clamp(qLive * 0.55 + hLive * 0.45 + rnd(-0.3, 0.3), 1, 10)
 
-  const cap = market.audCap
-  const next = market.nextFame || 100
-  const fameFactor = clamp(0.35 + (station.fame / next) * 0.65, 0.35, 1.0)
-  const appealNorm = (qLive * 0.45 + hLive * 0.55) / 10
-  const compNoise = rnd(0.7, 1.05)
-  const slotMult = slotType?.audienceMult || 1.0
-  const audience = clamp(cap * appealNorm * fameFactor * compNoise * slotMult, 0.05, cap)
-
-  const revenue = r2(audience * market.revPerViewer)
-
   return {
     ...planned,
     quality: r2(qLive),
     hype: r2(hLive),
     rating: r2(rating),
     tier: proj.tier,
-    audience: r2(audience),
-    revenue,
     monthIdx,
     isPeak: proj.isPeak || false,
     peakBonus: proj.peakBonus || 0,
     slotBonusH: proj.slotBonusH || 0,
     seasonBonusH: proj.seasonBonusH || 0,
+    audience: 0,        // assigned later by assignAudiences()
+    revenue: 0,
+    demoBreakdown: null,
+  }
+}
+
+// ─── DEMOGRAPHIC AUDIENCE MODEL ──────────────────────────────────────────────
+/** Get effective per-demo appeal for a show.
+ *  Returns { kids: 1.4, youngM: 0.8, ... } mapping demo id → appeal multiplier.
+ *  Topic-level overrides REPLACE category appeal for specified demos. */
+export function showAppealByDemo(show) {
+  // Sports rights → treat as live sports
+  const catId = show.sportsRunLeagueId ? 'sports'
+              : show.movieId ? 'movie'
+              : show.categoryId
+  const topicId = show.sportsRunLeagueId ? 'live' : show.topicId
+
+  const out = {}
+  for (const demoId of DEMO_ORDER) {
+    const demo = DEMOS[demoId]
+    let baseAppeal = demo.appeal[catId] ?? 0.3
+    // Topic override?
+    const topicOver = TOPIC_APPEAL_OVERRIDES[catId]?.[topicId]?.[demoId]
+    if (topicOver !== undefined) baseAppeal = topicOver
+    out[demoId] = baseAppeal
+  }
+  return out
+}
+
+/** Given all airings happening this month in this market (player + competitors),
+ *  fill in each airing's `audience` field based on the demographic model and
+ *  competition for each demo's available eyeballs. Returns nothing — mutates
+ *  airings in place. */
+export function assignAudiences(airings, market, stationFameById, monthIdx) {
+  if (!airings || airings.length === 0) return
+
+  // Group airings by slot — each slot only competes against other airings in
+  // the same slot at the same time.
+  const bySlot = {}
+  for (const a of airings) {
+    const sid = a.slotTypeId || 'prime'
+    if (!bySlot[sid]) bySlot[sid] = []
+    bySlot[sid].push(a)
+  }
+
+  // For each slot, compute per-demo competition
+  for (const [slotId, slotAirings] of Object.entries(bySlot)) {
+    const slotType = SLOT_TYPES[slotId] || SLOT_TYPES.prime
+
+    // Precompute each airing's appeal+pull per demo
+    const pulls = slotAirings.map(a => {
+      const appeal = showAppealByDemo(a)
+      const stationFame = stationFameById[a.stationId] ?? a._stationFame ?? 10
+      const fameFactor = clamp(0.35 + (stationFame / 100) * 0.65, 0.35, 1.0)
+      const appealNorm = (a.quality * 0.4 + a.hype * 0.6) / 10
+      const pullByDemo = {}
+      for (const demoId of DEMO_ORDER) {
+        pullByDemo[demoId] = appeal[demoId] * appealNorm * fameFactor
+      }
+      return { airing: a, appeal, pullByDemo }
+    })
+
+    // For each demo, compute total available eyeballs and split among airings
+    for (const demoId of DEMO_ORDER) {
+      const demo = DEMOS[demoId]
+      const demoPop = market.pop * demo.popShare
+      const watchShare = demo.watchHours[slotId] ?? 0
+      const availableEyeballs = demoPop * watchShare
+      if (availableEyeballs <= 0) continue
+
+      // Sum of all pulls in this slot for this demo
+      const totalPull = pulls.reduce((s, p) => s + p.pullByDemo[demoId], 0)
+      // Ambient noise: a base "other entertainment" sink so very weak shows
+      // don't capture 100% of an empty market
+      const ambient = Math.max(0.15, totalPull * 0.10)
+      const denom = totalPull + ambient
+
+      // Each airing gets share of available eyeballs
+      for (const p of pulls) {
+        const share = denom > 0 ? p.pullByDemo[demoId] / denom : 0
+        const aud = availableEyeballs * share * rnd(0.85, 1.15)  // small noise
+        if (!p.airing.demoBreakdown) p.airing.demoBreakdown = {}
+        p.airing.demoBreakdown[demoId] = r2(aud)
+        p.airing.audience = r2((p.airing.audience || 0) + aud)
+      }
+    }
+  }
+
+  // Cap audience to market.audCap and compute revenue
+  for (const a of airings) {
+    a.audience = r2(Math.min(a.audience, market.audCap))
+    a.revenue = r2(a.audience * market.revPerViewer)
   }
 }
 
@@ -513,7 +973,8 @@ function planCompetitorRun(comp, slotTypeId) {
   }
 }
 
-/** Air one month for a competitor: top up empty slots, air all active runs, return airings. */
+/** Air one month for a competitor: top up empty slots, air all active runs, return airings.
+ *  Audience is NOT yet computed — caller will call assignAudiences with the full month's airings. */
 export function simulateCompetitorMonth(comp, monthIdx, year) {
   // Fill empty slots first
   const occupiedSlots = new Set(comp.activeRuns.filter(r => r.monthsAired < r.runMonths).map(r => r.slotTypeId))
@@ -533,14 +994,11 @@ export function simulateCompetitorMonth(comp, monthIdx, year) {
     const hLive = clamp(run.baseH + rnd(-1.0, 1.0), 1, 10)
     const rating = clamp(qLive * 0.55 + hLive * 0.45 + rnd(-0.3, 0.3), 1, 10)
 
-    // Audience: similar shape to player but uses competitor's fame
-    // Don't use station's market here directly because comp.market not stored — derive
-    // we'll look it up by station context when called
-    // For simplicity competitor audience is appeal * fame * noise * marketScale (passed in)
     airings.push({
       runId: run.id,
       stationId: comp.id,
       stationName: comp.name,
+      _stationFame: comp.fame,
       slotTypeId: run.slotTypeId,
       categoryId: run.categoryId,
       topicId: run.topicId,
@@ -548,6 +1006,8 @@ export function simulateCompetitorMonth(comp, monthIdx, year) {
       quality: r2(qLive),
       hype: r2(hLive),
       rating: r2(rating),
+      audience: 0,        // assigned later
+      revenue: 0,
       month: monthIdx,
       year,
     })
@@ -556,41 +1016,30 @@ export function simulateCompetitorMonth(comp, monthIdx, year) {
     if (run.monthsAired >= run.runMonths) expiredIds.push(run.id)
   }
 
-  // Drop expired runs
   comp.activeRuns = comp.activeRuns.filter(r => !expiredIds.includes(r.id))
-
   return airings
 }
 
-/** Compute competitor audience for a month given their airings + market.
- *  Each show gets an audience based on its appeal + competitor's fame + market.
- *  Mutates the competitor's yearAudienceTotal. */
-export function computeCompetitorAudience(comp, airings, market) {
+/** Update competitor station state after their month's airings have audience assigned.
+ *  Mutates the competitor in place. */
+export function applyCompetitorMonth(comp, airings, market) {
   let totalAudience = 0
   let totalRevenue = 0
+  let bestRating = 0
   for (const a of airings) {
-    const slotType = SLOT_TYPES[a.slotTypeId] || SLOT_TYPES.prime
-    const fameFactor = clamp(0.35 + (comp.fame / 100) * 0.65, 0.35, 1.0)
-    const appealNorm = (a.quality * 0.45 + a.hype * 0.55) / 10
-    const audience = clamp(
-      market.audCap * appealNorm * fameFactor * (slotType.audienceMult || 1) * rnd(0.6, 1.0),
-      0.05, market.audCap,
-    )
-    a.audience = r2(audience)
-    a.revenue = r2(audience * market.revPerViewer)
-    totalAudience += audience
-    totalRevenue += audience * market.revPerViewer
+    totalAudience += a.audience || 0
+    totalRevenue += a.revenue || 0
+    if (a.rating > bestRating) bestRating = a.rating
   }
   comp.yearAudienceTotal += totalAudience
 
-  // Fame tweak based on best show this month
-  const best = airings.reduce((max, a) => Math.max(max, a.rating), 0)
-  if (best >= 8.5) comp.fame += 0.4
-  else if (best >= 7.0) comp.fame += 0.15
-  else if (best <  4.0) comp.fame -= 0.2
+  // Fame change based on best show this month
+  if (bestRating >= 8.5) comp.fame += 0.4
+  else if (bestRating >= 7.0) comp.fame += 0.15
+  else if (bestRating <  4.0) comp.fame -= 0.2
   comp.fame = clamp(comp.fame, 0, 200)
 
-  // Cash sim: revenue minus rough "operating cost" tied to slots
+  // Cash sim: revenue minus rough operating cost
   const opCost = comp.slotTypeIds.length * 1.5
   comp.cash = r1(comp.cash + totalRevenue - opCost)
 }
@@ -624,8 +1073,8 @@ export function rolloverCompetitorYear(comp, year) {
 // occupy the slot for the full year of the license.
 
 /** Build a run object from a planned slot. */
-export function planToRun(planned, station, research) {
-  const monthly = programCost(planned, station, research)
+export function planToRun(planned, station, research, year) {
+  const monthly = programCost(planned, station, research, year)
   return {
     id: uid(),
     slotTypeId: planned.slotTypeId,
@@ -641,22 +1090,25 @@ export function planToRun(planned, station, research) {
     seqSeason: planned.seqSeason || 1,
     prevDirectorId: planned.prevDirectorId || null,
     prevStarId: planned.prevStarId || null,
+    audioId: planned.audioId || 'audio_mono',
+    subsId:  planned.subsId  || 'subs_none',
+    videoId: planned.videoId || 'video_sd',
     runMonths: planned.movieId ? 1 : (planned.sportsRunLeagueId ? 12 : (planned.runMonths || 1)),
     monthsAired: 0,
     monthlyCost: monthly,
-    aiHistory: [],   // ratings per month for analytics
+    aiHistory: [],
   }
 }
 
-/** Run one calendar month. Returns:
- *   { airings, totals, comps, expiredRunIds, station } */
+/** Run one calendar month — produce airings for all active player runs.
+ *  Audience is NOT yet assigned (caller should call assignAudiences afterward
+ *  with competitor airings included). Returns:
+ *   { airings, expiredRunIds, totalProductionCost, fameDeltaFromRatings } */
 export function runMonth(station, research, runs, monthIdx, year) {
   const market = MARKETS[station.market]
   const airings = []
   const expiredRunIds = []
   let totalCost = 0
-  let totalRev  = 0
-  let totalAud  = 0
   let fameDelta = 0
 
   // Air each active run
@@ -677,19 +1129,20 @@ export function runMonth(station, research, runs, monthIdx, year) {
     aired.year = year
     aired.seasonNumber = run.seqSeason || 1
     aired.cost = cost
-    aired.net  = r2(aired.revenue - cost)
+    aired.stationId = '__player__'
+    aired.stationName = station.name
+    aired._stationFame = station.fame
     airings.push(aired)
 
     totalCost += cost
-    totalRev  += aired.revenue
-    totalAud  += aired.audience
 
-    if (aired.rating >= 8.5)      fameDelta += market.famePerWin * 1.0   // monthly, scaled vs old quarterly
+    if (aired.rating >= 8.5)      fameDelta += market.famePerWin * 1.0
     else if (aired.rating >= 7.0) fameDelta += market.famePerWin * 0.45
     else if (aired.rating >= 5.0) fameDelta += market.famePerWin * 0.12
     else if (aired.rating <  4.0) fameDelta -= 0.3
 
-    run.aiHistory.push({ month: monthIdx, year, rating: aired.rating, audience: aired.audience, net: aired.net })
+    // Update run history — audience filled in after assignAudiences
+    run._currentAired = aired
     run.monthsAired += 1
     if (run.monthsAired >= run.runMonths) {
       expiredRunIds.push(run.id)
@@ -698,14 +1151,25 @@ export function runMonth(station, research, runs, monthIdx, year) {
 
   return {
     airings,
-    totals: {
-      cost: r1(totalCost),
-      revenue: r1(totalRev),
-      audience: r1(totalAud),
-      net: r1(totalRev - totalCost),
-      fameDelta: r2(fameDelta),
-    },
     expiredRunIds,
+    totalProductionCost: r1(totalCost),
+    fameDeltaFromRatings: r2(fameDelta),
+  }
+}
+
+/** Finalize a month: fold audience into totals, push to aiHistory.
+ *  Call after assignAudiences. */
+export function finalizeMonthForRuns(runs, monthIdx, year) {
+  for (const run of runs) {
+    if (run._currentAired) {
+      run.aiHistory.push({
+        month: monthIdx, year,
+        rating: run._currentAired.rating,
+        audience: run._currentAired.audience,
+        net: run._currentAired.net,
+      })
+      delete run._currentAired
+    }
   }
 }
 
@@ -784,10 +1248,12 @@ export function applyResearch(researchState, researchId) {
 
   let addSlotType = null
   let refreshRoster = false
+  let unlockSearchTier = null
 
   Object.entries(r.effect || {}).forEach(([k, v]) => {
     if (k === 'refreshRoster') { refreshRoster = true; return }
     if (k === 'addSlot') { addSlotType = v; return }
+    if (k === 'unlockSearchTier') { unlockSearchTier = v; return }
     if (k === 'unlockContent') {
       for (const pair of v) {
         const exists = next.contentUnlocks.some(p => p[0] === pair[0] && p[1] === pair[1])
@@ -795,16 +1261,22 @@ export function applyResearch(researchState, researchId) {
       }
       return
     }
+    if (k === 'unlockTech') {
+      // Already tracked via the `unlocked` array
+      return
+    }
     next[k] = v
   })
-  return { research: next, addSlotType, refreshRoster }
+  return { research: next, addSlotType, refreshRoster, unlockSearchTier }
 }
 
 export function canResearch(researchId, researchState) {
   const r = RESEARCH.find(x => x.id === researchId)
   if (!r) return false
   const unlocked = researchState.unlocked || []
+  const inProgress = (researchState.inProgress || []).map(p => p.id)
   if (!r.repeatable && unlocked.includes(researchId)) return false
+  if (inProgress.includes(researchId)) return false
   if (r.requires && !r.requires.every(req => unlocked.includes(req))) return false
   return true
 }
@@ -874,7 +1346,13 @@ export function initGame(setup) {
     hiredDirectors: startDirs.map(t => makeStartContract(t, 'director')),
     hiredStars:     startStars.map(t => makeStartContract(t, 'star')),
     slotIds: [...DEFAULT_SLOT_IDS],
-    sportsLicenses: [],   // {leagueId, year}
+    sportsLicenses: [],         // {leagueId, year}
+    ipLicenses: [],             // {ipId, expiresYear}
+    staff: {                    // { roleId: {name,tier,...} | null }
+      personnel: null, innovation: null, operations: null, marketing: null, content: null,
+    },
+    openPositions: [],          // [{role, tierId, monthsLeft, monthsTotal, cost}]
+    activeCampaign: null,       // {tierId, hypeBoost}
   }
 
   return {
@@ -882,18 +1360,19 @@ export function initGame(setup) {
     station,
     monthIdx: 0,
     year: 1,
-    runs: [],                                            // active multi-month commitments
-    plans: station.slotIds.map(id => emptyPlanned(id)),  // per-slot draft for empty slots
-    yearShows: [],                                       // all aired (this year) for awards
-    allShows: [],                                        // all aired (history, all years) — yours
-    competitorAllShows: [],                              // all aired (history, all years) — them
-    competitors: initCompetitors('local'),               // persistent competitor stations
+    runs: [],
+    plans: station.slotIds.map(id => emptyPlanned(id)),
+    yearShows: [],
+    allShows: [],
+    competitorAllShows: [],
+    competitors: initCompetitors('local'),
     marketRoster: buildMarketRoster(station, 0),
     scoutLevel: 0,
-    research: { unlocked: [], contentUnlocks: [] },
+    research: { unlocked: [], contentUnlocks: [], inProgress: [] },
     awards: null,
     lastMonthResult: null,
-    ownedShows: [],                                      // finished shows, eligible for renewal
+    ownedShows: [],
+    pendingHires: [],            // resolved positions waiting for player to pick a candidate
     log: [
       `📡 ${station.name} broadcasting on ${MARKETS.local.label}`,
       `Free starting roster: ${startDirs.length} directors, ${startStars.length} stars (12-month contracts)`,
@@ -919,6 +1398,10 @@ export function emptyPlanned(slotTypeId = 'prime') {
     prevDirectorId: null,
     prevStarId: null,
     fromOwnedId: null,
+    // tech quality defaults to baseline
+    audioId: 'audio_mono',
+    subsId:  'subs_none',
+    videoId: 'video_sd',
   }
 }
 
