@@ -39,8 +39,8 @@ export function TalentScreen({ station, marketRoster, onHire, onFire, onBack }) 
             const rec = (role === 'director' ? station.hiredDirectors : station.hiredStars)
               .find(h => h.talentId === talentId)
             const penalty = rec?.permanent
-              ? r1((rec.perCycleCharge || talent.cost) * FIRE_PENALTY_MULT)
-              : r1(Math.min(talent.cost, (rec?.cyclesLeft || 0) * talent.cost * 0.4))
+              ? r1((rec.perMonthCharge || talent.cost) * FIRE_PENALTY_MULT)
+              : r1(Math.min(talent.cost, (rec?.monthsLeft || 0) * talent.cost * 0.4))
             setConfirmFire({ role, talentId, name: talent.name, penalty, permanent: rec?.permanent })
           }}
         />
@@ -131,7 +131,7 @@ function Group({ title, items, role, onFireRequest }) {
           const cat = CATEGORIES[t.specialty]
           const status = item.permanent
             ? 'PERMANENT'
-            : `${item.cyclesLeft} cycle${item.cyclesLeft === 1 ? '' : 's'} left`
+            : `${item.monthsLeft} month${item.monthsLeft === 1 ? '' : 's'} left`
           return (
             <div key={t.id} style={{
               display: 'flex', alignItems: 'center', gap: 10,
@@ -153,7 +153,7 @@ function Group({ title, items, role, onFireRequest }) {
                 }}>{status}</div>
                 {item.permanent && (
                   <div style={{ fontFamily: 'DM Mono', fontSize: 10, color: T.muted, marginTop: 2 }}>
-                    {fmtM(item.perCycleCharge)}/cyc
+                    {fmtM(item.perMonthCharge)}/mo
                   </div>
                 )}
               </div>
@@ -260,16 +260,16 @@ function HireModal({ role, talent, cash, onCancel, onConfirm }) {
 
         <div style={{ padding: 18 }}>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>
-            Base cost: <span style={{ color: T.text, fontFamily: 'DM Mono' }}>{fmtM(talent.cost)} / cycle</span>
+            Base cost: <span style={{ color: T.text, fontFamily: 'DM Mono' }}>{fmtM(talent.cost)} / month</span>
           </div>
 
           <div style={{ display: 'grid', gap: 8 }}>
             {CONTRACT_TYPES.map(ct => {
               const cost = contractCost(talent, ct.id)
-              const upfront = ct.cycles === -1 ? cost : cost
+              const upfront = cost
               const affordable = cash >= upfront
-              const label = ct.cycles === -1
-                ? `${fmtM(cost)} / cycle (paid each cycle)`
+              const label = ct.months === -1
+                ? `${fmtM(cost)} / mo (paid each month)`
                 : `${fmtM(upfront)} upfront`
               return (
                 <button
@@ -291,7 +291,7 @@ function HireModal({ role, talent, cash, onCancel, onConfirm }) {
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{ct.label}</span>
                     <span style={{
                       fontFamily: 'DM Mono', fontSize: 12,
-                      color: ct.cycles === -1 ? T.gold : T.green,
+                      color: ct.months === -1 ? T.gold : T.green,
                     }}>{label}</span>
                   </div>
                   <div style={{ fontSize: 10, color: T.muted }}>{ct.desc}</div>
@@ -301,7 +301,7 @@ function HireModal({ role, talent, cash, onCancel, onConfirm }) {
           </div>
 
           <div style={{ marginTop: 14, fontSize: 10, color: T.muted, fontStyle: 'italic' }}>
-            Permanent talent works every cycle. Firing them costs {FIRE_PENALTY_MULT}× one cycle's pay.
+            Permanent talent works every month. Firing them costs {FIRE_PENALTY_MULT}× one month's pay.
           </div>
         </div>
       </div>
@@ -320,7 +320,7 @@ function FireConfirmModal({ info, onCancel, onConfirm }) {
           </div>
           <div style={{ fontSize: 13, color: T.text, marginBottom: 8 }}>
             {info.permanent
-              ? `Penalty: ${fmtM(info.penalty)} (${FIRE_PENALTY_MULT}× one cycle's pay)`
+              ? `Penalty: ${fmtM(info.penalty)} (${FIRE_PENALTY_MULT}× one month's pay)`
               : `Penalty: ${fmtM(info.penalty)} kill fee`}
           </div>
           <div style={{ fontSize: 11, color: T.muted, marginBottom: 18 }}>

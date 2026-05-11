@@ -10,8 +10,12 @@ export const TIER_COL = {
 }
 
 // ─── CYCLES ──────────────────────────────────────────────────────────────────
-export const CYCLES = ['Q1', 'Q2', 'Q3', 'Q4']
-export const CYCLES_PER_YEAR = 4
+// Months Jan=0 through Dec=11. Awards happen in December.
+export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+export const MONTHS_PER_YEAR = 12
+// Legacy aliases (some code still says "cycle")
+export const CYCLES = MONTHS
+export const CYCLES_PER_YEAR = MONTHS_PER_YEAR
 
 // ─── CATEGORIES & TOPICS ─────────────────────────────────────────────────────
 export const CATEGORIES = {
@@ -98,6 +102,22 @@ export const CATEGORIES = {
       { id: 'edu',      label: 'Educational',         q: 0.5, h: -0.2 },
     ],
   },
+  kids: {
+    label: 'Kids',
+    icon: '🧸',
+    color: '#ff8acc',
+    base_q: 4.5,
+    base_h: 4.5,
+    cost_mult: 0.75,
+    topics: [
+      { id: 'cartoon',     label: 'Cartoons',            q: 0.3, h: 0.7 },
+      { id: 'liveaction',  label: 'Live-Action Kids',    q: 0.2, h: 0.5 },
+      { id: 'preschool',   label: 'Preschool Block',     q: 0.4, h: 0.2 },
+      { id: 'edutain',     label: 'Edutainment',         q: 0.6, h: 0.0 },
+      { id: 'toytiein',    label: 'Toy Tie-In Series',   q: 0.0, h: 1.0 },
+      { id: 'kidsmovie',   label: 'Kids Movie Hour',     q: 0.4, h: 0.5 },
+    ],
+  },
   contest: {
     label: 'Contest',
     icon: '🎯',
@@ -123,7 +143,7 @@ export const CATEGORIES = {
   },
 }
 
-export const CATEGORY_IDS = ['news', 'reality', 'series', 'latenight', 'sports', 'family', 'contest', 'movie']
+export const CATEGORY_IDS = ['news', 'reality', 'series', 'latenight', 'sports', 'family', 'kids', 'contest', 'movie']
 
 // ─── STATION FOCUSES ─────────────────────────────────────────────────────────
 export const FOCUSES = [
@@ -132,6 +152,7 @@ export const FOCUSES = [
   { id: 'series',  label: 'Scripted Series',      desc: '+1.0 quality on series. Free common series director.', bonusCat: 'series',  bonusQ: 1.0 },
   { id: 'sports',  label: 'Sports',               desc: '+0.7 quality, +0.5 hype on sports.', bonusCat: 'sports',  bonusQ: 0.7, bonusH: 0.5 },
   { id: 'family',  label: 'Family / Variety',     desc: '+0.8 quality on family programming.', bonusCat: 'family',  bonusQ: 0.8 },
+  { id: 'kids',    label: 'Kids',                 desc: '+0.6 quality, +0.6 hype on kids programming.', bonusCat: 'kids',    bonusQ: 0.6, bonusH: 0.6 },
   { id: 'general', label: 'General Entertainment',desc: 'No bonus, but +$10M starting cash.', bonusCash: 10 },
 ]
 
@@ -182,7 +203,7 @@ export const DIRECTORS = [
   { id: 'd_andysohn',       name: 'Andy Sohn',          specialty: 'reality',  tier: 'Epic',      q: 1.4, h: 2.0, cost: 5.5  },
   { id: 'd_jeffprovost',    name: 'Jeff Provost',       specialty: 'reality',  tier: 'Rare',      q: 1.1, h: 1.4, cost: 2.4  },
   { id: 'd_kimkard',        name: 'Kim Kardenian',      specialty: 'reality',  tier: 'Uncommon',  q: 0.5, h: 1.1, cost: 1.0  },
-  { id: 'd_realtycrew',     name: 'The Reality Crew',   specialty: 'reality',  tier: 'Common',    q: 0.2, h: 0.4, cost: 0.3  },
+  { id: 'd_realtycrew',     name: 'Bobby Calderon',     specialty: 'reality',  tier: 'Common',    q: 0.2, h: 0.4, cost: 0.3  },
 
   // Series
   { id: 'd_vincegillagain', name: 'Vince Gillagain',    specialty: 'series',   tier: 'Legendary', q: 2.6, h: 1.8, cost: 12.0 },
@@ -190,32 +211,38 @@ export const DIRECTORS = [
   { id: 'd_shondarimes',    name: 'Shonda Rimes',       specialty: 'series',   tier: 'Epic',      q: 1.9, h: 1.4, cost: 6.5  },
   { id: 'd_taylersheridan', name: 'Tayler Sheridan',    specialty: 'series',   tier: 'Rare',      q: 1.4, h: 0.9, cost: 3.0  },
   { id: 'd_aaronsorkid',    name: 'Aaron Sorkid',       specialty: 'series',   tier: 'Rare',      q: 1.5, h: 0.7, cost: 3.0  },
-  { id: 'd_indiedirector',  name: 'Indie Up-and-Comer', specialty: 'series',   tier: 'Uncommon',  q: 0.8, h: 0.5, cost: 1.1  },
-  { id: 'd_filmschoolgrad', name: 'Film School Grad',   specialty: 'series',   tier: 'Common',    q: 0.3, h: 0.2, cost: 0.4  },
+  { id: 'd_indiedirector',  name: 'Marcus Holloway',    specialty: 'series',   tier: 'Uncommon',  q: 0.8, h: 0.5, cost: 1.1  },
+  { id: 'd_filmschoolgrad', name: 'Philip Smith',       specialty: 'series',   tier: 'Common',    q: 0.3, h: 0.2, cost: 0.4  },
 
   // Late Night
   { id: 'd_lornemikels',    name: 'Lorne Mikels',       specialty: 'latenight',tier: 'Legendary', q: 2.2, h: 2.0, cost: 8.5  },
   { id: 'd_stephencobert',  name: 'Stephen Cobert',     specialty: 'latenight',tier: 'Epic',      q: 1.6, h: 1.6, cost: 4.5  },
   { id: 'd_conanobryant',   name: "Conan O'Bryant",     specialty: 'latenight',tier: 'Rare',      q: 1.2, h: 1.0, cost: 2.0  },
-  { id: 'd_localcomic',     name: 'Local Comic',        specialty: 'latenight',tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
+  { id: 'd_localcomic',     name: 'Tony Reggio',        specialty: 'latenight',tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
 
   // Sports
   { id: 'd_bobcostis',      name: 'Bob Costis',         specialty: 'sports',   tier: 'Legendary', q: 2.0, h: 2.2, cost: 9.0  },
   { id: 'd_alroker',        name: 'Al Mikels',          specialty: 'sports',   tier: 'Epic',      q: 1.5, h: 1.6, cost: 5.0  },
-  { id: 'd_localsportsguy', name: 'Sports Desk Vet',    specialty: 'sports',   tier: 'Rare',      q: 1.0, h: 0.9, cost: 2.0  },
-  { id: 'd_collegegrad',    name: 'College Sportscaster',specialty: 'sports',  tier: 'Common',    q: 0.3, h: 0.3, cost: 0.4  },
+  { id: 'd_localsportsguy', name: 'Ron Mahoney',        specialty: 'sports',   tier: 'Rare',      q: 1.0, h: 0.9, cost: 2.0  },
+  { id: 'd_collegegrad',    name: 'Mike Patterson',     specialty: 'sports',   tier: 'Common',    q: 0.3, h: 0.3, cost: 0.4  },
 
   // Family
-  { id: 'd_pixarvet',       name: 'Pixarian Veteran',   specialty: 'family',   tier: 'Legendary', q: 2.5, h: 1.8, cost: 9.5  },
+  { id: 'd_pixarvet',       name: 'Brad Birde',         specialty: 'family',   tier: 'Legendary', q: 2.5, h: 1.8, cost: 9.5  },
   { id: 'd_phineasferb',    name: 'Phineas Ferb',       specialty: 'family',   tier: 'Epic',      q: 1.8, h: 1.4, cost: 5.0  },
-  { id: 'd_familychannel',  name: 'Family Channel Vet', specialty: 'family',   tier: 'Rare',      q: 1.1, h: 0.8, cost: 2.0  },
-  { id: 'd_sundayschool',   name: 'Sunday School Crew', specialty: 'family',   tier: 'Common',    q: 0.3, h: 0.2, cost: 0.3  },
+  { id: 'd_familychannel',  name: 'Diane Whitlock',     specialty: 'family',   tier: 'Rare',      q: 1.1, h: 0.8, cost: 2.0  },
+  { id: 'd_sundayschool',   name: 'Carol Bennett',      specialty: 'family',   tier: 'Common',    q: 0.3, h: 0.2, cost: 0.3  },
+
+  // Kids
+  { id: 'd_kidsanimator',   name: 'Maddie Lin',         specialty: 'kids',     tier: 'Legendary', q: 2.2, h: 2.2, cost: 8.5  },
+  { id: 'd_cartoonist',     name: 'Greg Tendler',       specialty: 'kids',     tier: 'Epic',      q: 1.5, h: 1.6, cost: 4.0  },
+  { id: 'd_kidshow_dir',    name: 'Amber Foster',       specialty: 'kids',     tier: 'Rare',      q: 1.0, h: 1.0, cost: 1.8  },
+  { id: 'd_summercamp',     name: 'Doug Hartwell',      specialty: 'kids',     tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
 
   // Contest
   { id: 'd_chrishorton',    name: 'Chris Horton',       specialty: 'contest',  tier: 'Legendary', q: 1.8, h: 2.4, cost: 8.5  },
   { id: 'd_steveharvy',     name: 'Steve Harvy',        specialty: 'contest',  tier: 'Epic',      q: 1.4, h: 1.8, cost: 4.5  },
   { id: 'd_aliexttrebek',   name: 'Aliex Trebok',       specialty: 'contest',  tier: 'Rare',      q: 1.4, h: 0.9, cost: 2.5  },
-  { id: 'd_localhost',      name: 'Local Game Host',    specialty: 'contest',  tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
+  { id: 'd_localhost',      name: 'Jerry Donato',       specialty: 'contest',  tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
 ]
 
 // ─── STARS POOL ──────────────────────────────────────────────────────────────
@@ -224,15 +251,15 @@ export const STARS = [
   { id: 's_andercoop',     name: 'Ander Coop',          specialty: 'news',     tier: 'Legendary', q: 2.6, h: 2.0, cost: 11.0 },
   { id: 's_lestrhold',     name: 'Lester Hold',         specialty: 'news',     tier: 'Epic',      q: 1.8, h: 1.4, cost: 5.5  },
   { id: 's_norareilly',    name: 'Nora Reilly',         specialty: 'news',     tier: 'Rare',      q: 1.4, h: 1.0, cost: 2.6  },
-  { id: 's_localanchor1',  name: 'Local Anchor Vet',    specialty: 'news',     tier: 'Uncommon',  q: 0.7, h: 0.4, cost: 0.9  },
-  { id: 's_freshanchor',   name: 'Fresh-Faced Reporter',specialty: 'news',     tier: 'Common',    q: 0.3, h: 0.2, cost: 0.3  },
+  { id: 's_localanchor1',  name: 'Sandra Reyes',        specialty: 'news',     tier: 'Uncommon',  q: 0.7, h: 0.4, cost: 0.9  },
+  { id: 's_freshanchor',   name: 'Eric Park',           specialty: 'news',     tier: 'Common',    q: 0.3, h: 0.2, cost: 0.3  },
 
   // Reality stars (pure hype)
   { id: 's_zandayya',      name: 'Zandayya',            specialty: 'reality',  tier: 'Legendary', q: 1.4, h: 3.2, cost: 12.0 },
   { id: 's_kourtneyk',     name: 'Kourtney K.',         specialty: 'reality',  tier: 'Epic',      q: 1.0, h: 2.6, cost: 6.0  },
   { id: 's_paulsenheir',   name: 'Paulsen Heir',        specialty: 'reality',  tier: 'Rare',      q: 0.7, h: 1.8, cost: 2.8  },
-  { id: 's_instainfluencer',name: 'Insta Influencer',   specialty: 'reality',  tier: 'Uncommon',  q: 0.3, h: 1.2, cost: 1.0  },
-  { id: 's_realityrookie', name: 'Reality Rookie',      specialty: 'reality',  tier: 'Common',    q: 0.2, h: 0.5, cost: 0.3  },
+  { id: 's_instainfluencer',name: 'Brittany Vance',     specialty: 'reality',  tier: 'Uncommon',  q: 0.3, h: 1.2, cost: 1.0  },
+  { id: 's_realityrookie', name: 'Madison Cole',        specialty: 'reality',  tier: 'Common',    q: 0.2, h: 0.5, cost: 0.3  },
 
   // Series leads
   { id: 's_bryancranstein',name: 'Bryan Cranstein',     specialty: 'series',   tier: 'Legendary', q: 3.0, h: 2.0, cost: 13.0 },
@@ -240,33 +267,40 @@ export const STARS = [
   { id: 's_jenanniston',   name: 'Jen Anniston',        specialty: 'series',   tier: 'Epic',      q: 2.0, h: 1.8, cost: 6.5  },
   { id: 's_keanureverse',  name: 'Keanu Reverse',       specialty: 'series',   tier: 'Epic',      q: 1.8, h: 2.2, cost: 7.0  },
   { id: 's_zendoyle',      name: 'Zen Doyle',           specialty: 'series',   tier: 'Rare',      q: 1.4, h: 1.4, cost: 3.0  },
-  { id: 's_workingactor',  name: 'Working Actor',       specialty: 'series',   tier: 'Uncommon',  q: 0.8, h: 0.4, cost: 1.0  },
-  { id: 's_castingcouch',  name: 'Up-and-Comer',        specialty: 'series',   tier: 'Common',    q: 0.3, h: 0.2, cost: 0.4  },
+  { id: 's_workingactor',  name: 'James Whelan',        specialty: 'series',   tier: 'Uncommon',  q: 0.8, h: 0.4, cost: 1.0  },
+  { id: 's_castingcouch',  name: 'Kayla Ortiz',         specialty: 'series',   tier: 'Common',    q: 0.3, h: 0.2, cost: 0.4  },
 
   // Late night hosts
   { id: 's_jimmyfellone',  name: 'Jimmy Fellone',       specialty: 'latenight',tier: 'Legendary', q: 2.0, h: 2.6, cost: 11.0 },
   { id: 's_jimmykimble',   name: 'Jimmy Kimble',        specialty: 'latenight',tier: 'Epic',      q: 1.6, h: 2.0, cost: 5.5  },
   { id: 's_setmeyors',     name: 'Set Meyors',          specialty: 'latenight',tier: 'Rare',      q: 1.2, h: 1.4, cost: 2.5  },
-  { id: 's_openmicnight',  name: 'Open-Mic Night',      specialty: 'latenight',tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
+  { id: 's_openmicnight',  name: 'Vinnie Largo',        specialty: 'latenight',tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
 
   // Sports talent
   { id: 's_tombrody',      name: 'Tom Brody',           specialty: 'sports',   tier: 'Legendary', q: 2.4, h: 2.8, cost: 12.0 },
   { id: 's_lebronjeans',   name: 'LeBron Jeans',        specialty: 'sports',   tier: 'Legendary', q: 2.2, h: 3.0, cost: 12.5 },
   { id: 's_payton',        name: 'Peyton M.',           specialty: 'sports',   tier: 'Epic',      q: 1.8, h: 1.8, cost: 5.5  },
   { id: 's_localathlete',  name: 'Local Pro Athlete',   specialty: 'sports',   tier: 'Rare',      q: 1.0, h: 1.2, cost: 2.2  },
-  { id: 's_collegehost',   name: 'College Sports Host', specialty: 'sports',   tier: 'Common',    q: 0.3, h: 0.4, cost: 0.4  },
+  { id: 's_collegehost',   name: 'Drew Halloway',       specialty: 'sports',   tier: 'Common',    q: 0.3, h: 0.4, cost: 0.4  },
 
   // Family
   { id: 's_dwayneboulder', name: 'Dwayne Boulder',      specialty: 'family',   tier: 'Legendary', q: 1.8, h: 3.0, cost: 11.5 },
   { id: 's_zackefron',     name: 'Zack Efron',          specialty: 'family',   tier: 'Epic',      q: 1.6, h: 2.0, cost: 5.5  },
   { id: 's_disneystar',    name: 'Channel Star',        specialty: 'family',   tier: 'Rare',      q: 1.0, h: 1.4, cost: 2.4  },
-  { id: 's_kidshow',       name: 'Kid Show Veteran',    specialty: 'family',   tier: 'Common',    q: 0.3, h: 0.4, cost: 0.3  },
+  { id: 's_kidshow',       name: 'Becky Sterling',      specialty: 'family',   tier: 'Common',    q: 0.3, h: 0.4, cost: 0.3  },
+
+  // Kids
+  { id: 's_steveirwin',    name: 'Steve Erwin Jr.',     specialty: 'kids',     tier: 'Legendary', q: 2.0, h: 2.8, cost: 9.0  },
+  { id: 's_blueclues',     name: 'Joey Burgess',        specialty: 'kids',     tier: 'Epic',      q: 1.4, h: 2.0, cost: 4.5  },
+  { id: 's_youngstar',     name: 'Lily Adams',          specialty: 'kids',     tier: 'Rare',      q: 1.0, h: 1.3, cost: 2.0  },
+  { id: 's_puppeteer',     name: 'Pete the Puppeteer',  specialty: 'kids',     tier: 'Uncommon',  q: 0.7, h: 0.5, cost: 0.9  },
+  { id: 's_kidsrookie',    name: 'Sam Tanaka',          specialty: 'kids',     tier: 'Common',    q: 0.3, h: 0.4, cost: 0.3  },
 
   // Contest hosts
   { id: 's_mistrbeast',    name: 'Mister Feast',        specialty: 'contest',  tier: 'Legendary', q: 1.6, h: 3.4, cost: 12.5 },
   { id: 's_ryanseaprest',  name: 'Ryan Seaprest',       specialty: 'contest',  tier: 'Epic',      q: 1.4, h: 2.2, cost: 5.5  },
   { id: 's_padmalakshmer', name: 'Padma Lakshmer',      specialty: 'contest',  tier: 'Rare',      q: 1.4, h: 1.4, cost: 2.6  },
-  { id: 's_localhostess',  name: 'Local TV Personality',specialty: 'contest',  tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
+  { id: 's_localhostess',  name: 'Theresa Gomez',       specialty: 'contest',  tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
 ]
 
 // ─── IP CATALOG ──────────────────────────────────────────────────────────────
@@ -304,28 +338,140 @@ export const MOVIES = [
 ]
 
 // ─── COMPETITORS PER MARKET ──────────────────────────────────────────────────
+// Each competitor has:
+//   - name, label
+//   - strength: rough power level (drives base quality/hype of their shows)
+//   - focusCats: array of category IDs they air OFTEN (heavy preference)
+//   - startCash, startFame
+//   - slotTypeIds: their programming slots
+//   - tier: 'big4' | 'regional' | 'niche'  — display grouping
+// Niche channels (NatGeo etc.) only do one type of content.
 export const COMPETITORS = {
   local: [
-    { name: 'Riverside 12',   strength: 0.7 },
-    { name: 'KRVS Local',     strength: 0.5 },
-    { name: 'Public Channel', strength: 0.4 },
+    // Local versions of the Big 4
+    {
+      id: 'local_kbc',    name: 'KBC Riverside',     tier: 'big4',
+      strength: 0.85,     startCash: 50, startFame: 22,
+      focusCats: ['news', 'series', 'reality'],
+      slotTypeIds: ['morning', 'prime', 'weekend_prime'],
+    },
+    {
+      id: 'local_kfb',    name: 'KFB Channel 4',     tier: 'big4',
+      strength: 0.80,     startCash: 45, startFame: 18,
+      focusCats: ['series', 'reality', 'movie'],
+      slotTypeIds: ['morning', 'prime', 'weekend_prime'],
+    },
+    {
+      id: 'local_kab',    name: 'KAB News 7',        tier: 'big4',
+      strength: 0.75,     startCash: 40, startFame: 16,
+      focusCats: ['news', 'family', 'movie'],
+      slotTypeIds: ['morning', 'prime', 'weekend_prime'],
+    },
+    {
+      id: 'local_kcb',    name: 'KCB Network',       tier: 'big4',
+      strength: 0.70,     startCash: 38, startFame: 14,
+      focusCats: ['reality', 'sports', 'series'],
+      slotTypeIds: ['morning', 'prime', 'weekend_prime'],
+    },
   ],
   metro: [
-    { name: 'Tri-State NBC',  strength: 1.0 },
-    { name: 'Metro CBS',      strength: 0.95 },
-    { name: 'Empire FOX',     strength: 0.9 },
-    { name: 'Liberty ABC',    strength: 0.85 },
+    // Big 4 at metro scale + 1 additional regional
+    {
+      id: 'metro_atlas',   name: 'Atlas Broadcasting',   tier: 'big4',
+      strength: 1.05,     startCash: 110, startFame: 45,
+      focusCats: ['news', 'series'],
+      slotTypeIds: ['morning', 'evening', 'prime', 'prime2', 'weekend_prime'],
+    },
+    {
+      id: 'metro_pinnacle',name: 'Pinnacle Networks',     tier: 'big4',
+      strength: 1.0,      startCash: 100, startFame: 42,
+      focusCats: ['series', 'reality', 'movie'],
+      slotTypeIds: ['morning', 'evening', 'prime', 'prime2', 'weekend_prime'],
+    },
+    {
+      id: 'metro_vertex',  name: 'Vertex Media',          tier: 'big4',
+      strength: 0.95,     startCash: 95, startFame: 40,
+      focusCats: ['news', 'reality', 'family'],
+      slotTypeIds: ['morning', 'evening', 'prime', 'weekend_prime', 'weekend_morning'],
+    },
+    {
+      id: 'metro_zenith',  name: 'Zenith TV',             tier: 'big4',
+      strength: 0.90,     startCash: 90, startFame: 38,
+      focusCats: ['reality', 'sports', 'series'],
+      slotTypeIds: ['evening', 'prime', 'prime2', 'weekend_afternoon', 'weekend_prime'],
+    },
+    {
+      id: 'metro_keystone',name: 'Keystone Public',       tier: 'regional',
+      strength: 0.75,     startCash: 60, startFame: 28,
+      focusCats: ['news', 'family', 'kids'],
+      slotTypeIds: ['morning', 'evening', 'weekend_morning', 'weekend_prime'],
+    },
   ],
   national: [
-    { name: 'Galaxy Network',  strength: 1.2 },
-    { name: 'Apex Broadcast',  strength: 1.15 },
-    { name: 'Olympus TV',      strength: 1.1 },
-    { name: 'Continental',     strength: 1.05 },
-    { name: 'Sovereign Media', strength: 1.0 },
+    // Big 4 at national scale
+    {
+      id: 'nat_globalmedia', name: 'Global Media',        tier: 'big4',
+      strength: 1.25,     startCash: 250, startFame: 75,
+      focusCats: ['series', 'news'],
+      slotTypeIds: ['morning', 'afternoon', 'evening', 'prime', 'prime2', 'latenight', 'weekend_morning', 'weekend_afternoon', 'weekend_prime'],
+    },
+    {
+      id: 'nat_summit',    name: 'Summit Networks',       tier: 'big4',
+      strength: 1.20,     startCash: 240, startFame: 72,
+      focusCats: ['series', 'reality', 'movie'],
+      slotTypeIds: ['morning', 'afternoon', 'evening', 'prime', 'prime2', 'latenight', 'weekend_morning', 'weekend_afternoon', 'weekend_prime'],
+    },
+    {
+      id: 'nat_apex',      name: 'Apex Broadcasting',     tier: 'big4',
+      strength: 1.15,     startCash: 230, startFame: 70,
+      focusCats: ['news', 'reality', 'family'],
+      slotTypeIds: ['morning', 'afternoon', 'evening', 'prime', 'prime2', 'weekend_morning', 'weekend_prime'],
+    },
+    {
+      id: 'nat_continental',name: 'Continental TV',       tier: 'big4',
+      strength: 1.10,     startCash: 220, startFame: 68,
+      focusCats: ['series', 'sports', 'movie'],
+      slotTypeIds: ['morning', 'evening', 'prime', 'prime2', 'latenight', 'weekend_afternoon', 'weekend_prime'],
+    },
+    // Niche national channels — single-purpose
+    {
+      id: 'nat_natgeo',    name: 'GeoView',               tier: 'niche',
+      strength: 0.95,     startCash: 130, startFame: 55,
+      focusCats: ['family'],            // documentaries → family/edu
+      onlyCats: ['family', 'kids'],
+      slotTypeIds: ['evening', 'prime', 'weekend_afternoon', 'weekend_prime'],
+    },
+    {
+      id: 'nat_cnn',       name: 'NewsWire 24',           tier: 'niche',
+      strength: 1.0,      startCash: 140, startFame: 60,
+      focusCats: ['news'],
+      onlyCats: ['news'],
+      slotTypeIds: ['morning', 'afternoon', 'evening', 'prime', 'latenight'],
+    },
+    {
+      id: 'nat_espn',      name: 'AllSports Network',     tier: 'niche',
+      strength: 1.05,     startCash: 160, startFame: 65,
+      focusCats: ['sports'],
+      onlyCats: ['sports'],
+      slotTypeIds: ['evening', 'prime', 'weekend_morning', 'weekend_afternoon', 'weekend_prime'],
+    },
+    {
+      id: 'nat_hbo',       name: 'Prestige Channel',      tier: 'niche',
+      strength: 1.10,     startCash: 180, startFame: 67,
+      focusCats: ['series'],
+      onlyCats: ['series', 'movie'],
+      slotTypeIds: ['evening', 'prime', 'prime2', 'latenight', 'weekend_prime'],
+    },
+    {
+      id: 'nat_kids',      name: 'KidsZone',              tier: 'niche',
+      strength: 0.85,     startCash: 110, startFame: 50,
+      focusCats: ['kids', 'family'],
+      onlyCats: ['kids', 'family'],
+      slotTypeIds: ['morning', 'afternoon', 'weekend_morning', 'weekend_afternoon'],
+    },
   ],
 }
 
-// ─── RESEARCH TREE ───────────────────────────────────────────────────────────
 // ─── RESEARCH TREE ───────────────────────────────────────────────────────────
 // Three groups: SLOTS (add a programming slot of a specific type), CONTENT
 // (unlock new categories & topics), OPERATIONS (passive economic boosts).
@@ -340,32 +486,46 @@ export const COMPETITORS = {
 export const RESEARCH = [
   // ─── SLOTS ─────────────────────────────────────────────────────────────────
   {
-    id: 'slot_news', group: 'slots',
-    label: 'News Slot', icon: '📰',
-    desc: 'Add a daily news block. High match bonus for news.',
+    id: 'slot_afternoon', group: 'slots',
+    label: 'Weekday Afternoon Slot', icon: '🌤',
+    desc: 'Add an afternoon slot. Kids audience + sports pulls all ages.',
+    cost: 8,
+    effect: { addSlot: 'afternoon' },
+  },
+  {
+    id: 'slot_evening', group: 'slots',
+    label: 'Weekday Evening Slot', icon: '🌇',
+    desc: 'Pre-prime window — news and lead-in series.',
     cost: 10,
-    effect: { addSlot: 'news' },
+    effect: { addSlot: 'evening' },
   },
   {
     id: 'slot_prime2', group: 'slots',
-    label: 'Prime Time II', icon: '🌃',
-    desc: 'Add a second prime-time window — series, reality, movies thrive here.',
-    cost: 22,
+    label: 'Prime Time 2', icon: '🌃',
+    desc: 'A second prime window. Almost as big an audience as Prime 1.',
+    cost: 24,
     effect: { addSlot: 'prime2' },
   },
   {
     id: 'slot_latenight', group: 'slots',
-    label: 'Late Night Slot', icon: '🌙',
-    desc: 'A small late-night slot — adults, talk, edgy content. Lower audience but cheap.',
+    label: 'Weekday Late Night', icon: '🌙',
+    desc: 'Adults & mature content. Lower audience but cheap.',
     cost: 12,
     effect: { addSlot: 'latenight' },
   },
   {
-    id: 'slot_weekend2', group: 'slots',
-    label: 'Weekend II', icon: '🎬',
-    desc: 'A second weekend slot — sports, movies, family events.',
-    cost: 18,
-    effect: { addSlot: 'weekend2' },
+    id: 'slot_weekend_morning', group: 'slots',
+    label: 'Weekend Morning Slot', icon: '🧸',
+    desc: 'Saturday cartoons block. Kids own this window.',
+    cost: 9,
+    effect: { addSlot: 'weekend_morning' },
+  },
+  {
+    id: 'slot_weekend_afternoon', group: 'slots',
+    label: 'Weekend Afternoon Slot', icon: '🏟',
+    desc: 'Sports, documentaries, leisure viewing.',
+    cost: 14,
+    effect: { addSlot: 'weekend_afternoon' },
   },
 
   // ─── CONTENT — ENTER NEW CATEGORIES ────────────────────────────────────────
@@ -410,6 +570,21 @@ export const RESEARCH = [
     desc: 'Unlock Family programming (animated + live-action).',
     cost: 6,
     effect: { unlockContent: [['family', 'animated'], ['family', 'live']] },
+  },
+  {
+    id: 'content_kids_dept', group: 'content',
+    label: 'Kids Department', icon: '🧸',
+    desc: 'Unlock Kids programming (cartoons + live-action kids + preschool).',
+    cost: 7,
+    effect: { unlockContent: [['kids', 'cartoon'], ['kids', 'liveaction'], ['kids', 'preschool']] },
+  },
+  {
+    id: 'content_kids_advanced', group: 'content',
+    label: 'Kids Specialty', icon: '🎈',
+    desc: 'Kids: unlocks Edutainment, Toy Tie-In Series, and Kids Movie Hour.',
+    cost: 9,
+    requires: ['content_kids_dept'],
+    effect: { unlockContent: [['kids', 'edutain'], ['kids', 'toytiein'], ['kids', 'kidsmovie']] },
   },
   {
     id: 'content_contest_dept', group: 'content',
@@ -507,132 +682,177 @@ export const RESEARCH = [
 // Each station's lineup is a list of typed slots. Each slot has a focus
 // audience and "preferred" categories that get a small audience boost when
 // you program something matching. Mismatches don't fail — they just don't
-// get the bonus. Slot types are unlocked via research (Pass 2).
+// get the bonus.
+//
+// 9 slot types total: 6 weekday + 3 weekend. New stations start with 3
+// (Morning, Prime, Weekend Prime). The rest are researched.
 export const SLOT_TYPES = {
+  // ─── WEEKDAYS ────────────────────────────────────────────────────────────
   morning: {
     id: 'morning',
-    label: 'Morning',
+    label: 'Weekday Morning',
     icon: '☀',
-    desc: 'Pre-work, kids, casual viewers. Family + light news land best.',
-    prefersCategory: ['family', 'news', 'contest'],
-    audienceMult: 0.85,           // smaller audience pool, but cheaper
+    desc: 'Family audience starting the day. Light news, family-friendly.',
+    prefersCategory: ['family', 'news', 'kids'],
+    audienceMult: 0.85,
     costMult: 0.85,
-    matchBonus: 0.6,              // hype bonus when you match a preferred category
+    matchBonus: 0.6,
+  },
+  afternoon: {
+    id: 'afternoon',
+    label: 'Weekday Afternoon',
+    icon: '🌤',
+    desc: 'Kids home from school — kids programming dominates. Sports here pulls fans from all ages.',
+    prefersCategory: ['kids', 'family', 'sports'],
+    audienceMult: 0.75,
+    costMult: 0.7,
+    matchBonus: 0.7,
+  },
+  evening: {
+    id: 'evening',
+    label: 'Weekday Evening',
+    icon: '🌇',
+    desc: 'Pre-prime: news + lead-in series. Audience is settling in.',
+    prefersCategory: ['news', 'series', 'family'],
+    audienceMult: 0.95,
+    costMult: 0.9,
+    matchBonus: 0.7,
   },
   prime: {
     id: 'prime',
-    label: 'Prime Time',
+    label: 'Prime Time 1',
     icon: '🌆',
-    desc: 'The big window. Series, reality, and movies thrive here.',
+    desc: 'The premium window. Series, reality, movies thrive. Big audience.',
     prefersCategory: ['series', 'reality', 'movie'],
-    audienceMult: 1.15,
+    audienceMult: 1.20,
     costMult: 1.0,
     matchBonus: 0.9,
   },
-  weekend: {
-    id: 'weekend',
-    label: 'Weekend',
-    icon: '🏈',
-    desc: 'Sports and movies own the weekend. Big events, casual viewing.',
-    prefersCategory: ['sports', 'movie', 'family'],
-    audienceMult: 1.05,
-    costMult: 0.95,
-    matchBonus: 0.8,
-  },
-  // — Researchable slots (unlocked in Pass 2 research tree) —
-  news: {
-    id: 'news',
-    label: 'Daily News',
-    icon: '📰',
-    desc: 'A nightly news block. Heavy news preference; reality flops here.',
-    prefersCategory: ['news'],
-    audienceMult: 0.9,
-    costMult: 0.8,
-    matchBonus: 1.2,
-  },
   prime2: {
     id: 'prime2',
-    label: 'Prime Time II',
+    label: 'Prime Time 2',
     icon: '🌃',
-    desc: 'A second prime window — same audience as prime.',
-    prefersCategory: ['series', 'reality', 'movie'],
-    audienceMult: 1.1,
+    desc: 'A second prime window — series, reality, movies. Slightly smaller than Prime 1.',
+    prefersCategory: ['series', 'reality', 'movie', 'sports'],
+    audienceMult: 1.10,
     costMult: 1.0,
     matchBonus: 0.9,
   },
   latenight: {
     id: 'latenight',
-    label: 'Late Night',
+    label: 'Weekday Late Night',
     icon: '🌙',
-    desc: 'Adults-only window. Talk shows, mature comedy, edgy content.',
-    prefersCategory: ['latenight', 'series'],
-    audienceMult: 0.65,
+    desc: 'Adults, mature content, talk shows, movies. Smaller audience but cheap to run.',
+    prefersCategory: ['latenight', 'movie', 'series'],
+    audienceMult: 0.55,
     costMult: 0.7,
-    matchBonus: 1.1,
+    matchBonus: 1.0,
   },
-  weekend2: {
-    id: 'weekend2',
-    label: 'Weekend II',
-    icon: '🎬',
-    desc: 'A second weekend slot — sports, movies, family events.',
-    prefersCategory: ['sports', 'movie', 'family'],
-    audienceMult: 1.0,
-    costMult: 0.95,
-    matchBonus: 0.8,
+
+  // ─── WEEKENDS ────────────────────────────────────────────────────────────
+  weekend_morning: {
+    id: 'weekend_morning',
+    label: 'Weekend Morning',
+    icon: '🧸',
+    desc: 'Kids own Saturday morning. Cartoons, family fare.',
+    prefersCategory: ['kids', 'family'],
+    audienceMult: 0.80,
+    costMult: 0.75,
+    matchBonus: 1.0,
+  },
+  weekend_afternoon: {
+    id: 'weekend_afternoon',
+    label: 'Weekend Afternoon',
+    icon: '🏟',
+    desc: 'Sports, documentaries, lazy-day viewing. Sports gets a big bump here.',
+    prefersCategory: ['sports', 'family', 'movie'],
+    audienceMult: 0.95,
+    costMult: 0.9,
+    matchBonus: 0.9,
+  },
+  weekend_prime: {
+    id: 'weekend_prime',
+    label: 'Weekend Prime',
+    icon: '⭐',
+    desc: 'The best of the best lives here. Movies, big sports, blockbuster events.',
+    prefersCategory: ['movie', 'sports', 'series'],
+    audienceMult: 1.25,
+    costMult: 1.05,
+    matchBonus: 1.0,
   },
 }
 
 // Default slots a brand-new station has (pre-research)
-export const DEFAULT_SLOT_IDS = ['morning', 'prime', 'weekend']
+export const DEFAULT_SLOT_IDS = ['morning', 'prime', 'weekend_prime']
+
+// Slot groupings for UI display
+export const SLOT_GROUPS = [
+  {
+    id: 'weekday',
+    label: 'Weekdays',
+    slots: ['morning', 'afternoon', 'evening', 'prime', 'prime2', 'latenight'],
+  },
+  {
+    id: 'weekend',
+    label: 'Weekends',
+    slots: ['weekend_morning', 'weekend_afternoon', 'weekend_prime'],
+  },
+]
 
 // ─── SEASONAL PREFERENCES ────────────────────────────────────────────────────
-// `[slotTypeId][quarterIdx]` → { categoryId? topicId? bonusH? bonusQ?, label }
-// Drives the "this quarter wants…" hint shown on each slot card. If the player
-// programs something matching, they get a hype bonus that quarter.
-// quarterIdx: 0=Q1 winter, 1=Q2 spring, 2=Q3 summer, 3=Q4 holiday.
+// Per-slot, per-month bonus when you match the recommended content.
+// Format: `SEASONAL_PREFS[slotTypeId][monthIdx]` (0=Jan ... 11=Dec) → preference
+// or `null` if no preference that month. The active preference shows on the
+// slot card as "this month wants…" and gives a hype bonus when matched.
 export const SEASONAL_PREFS = {
-  morning: [
-    { categoryId: 'news',    topicId: 'local',     label: 'New Year news cycle',         bonusH: 0.6 },
-    { categoryId: 'family',  topicId: 'edu',       label: 'Spring kids programming',     bonusH: 0.7 },
-    { categoryId: 'family',  topicId: 'animated',  label: 'Summer family content',       bonusH: 0.8 },
-    { categoryId: 'family',  topicId: 'live',      label: 'Holiday family specials',     bonusH: 0.9 },
-  ],
-  prime: [
-    { categoryId: 'series',  topicId: 'drama',     label: 'Prestige drama season',       bonusH: 0.8 },
-    { categoryId: 'reality', topicId: 'love',      label: 'Spring romance reality',      bonusH: 0.7 },
-    { categoryId: 'reality', topicId: 'adventure', label: 'Summer adventure reality',    bonusH: 0.9 },
-    { categoryId: 'movie',   topicId: null,        label: 'Holiday movie specials',      bonusH: 1.0 },
-  ],
-  weekend: [
-    { categoryId: 'sports',  topicId: 'live',      label: 'Winter sports season',        bonusH: 0.9 },
-    { categoryId: 'sports',  topicId: 'live',      label: 'Spring playoff fever',        bonusH: 1.0 },
-    { categoryId: 'sports',  topicId: 'doc',       label: 'Summer doc marathon',         bonusH: 0.6 },
-    { categoryId: 'movie',   topicId: null,        label: 'Holiday romantic movies',     bonusH: 0.9 },
-  ],
-  news: [
-    { categoryId: 'news', topicId: 'global',   label: 'World affairs focus',     bonusH: 0.5 },
-    { categoryId: 'news', topicId: 'local',    label: 'Local elections',         bonusH: 0.7 },
-    { categoryId: 'news', topicId: 'reporter', label: 'Summer field stories',    bonusH: 0.5 },
-    { categoryId: 'news', topicId: 'bigtopic', label: 'Year-in-review specials', bonusH: 0.9 },
-  ],
-  prime2: [
-    { categoryId: 'series',  topicId: 'crime',     label: 'Crime drama winter',     bonusH: 0.7 },
-    { categoryId: 'series',  topicId: 'comedy',    label: 'Spring comedies',        bonusH: 0.6 },
-    { categoryId: 'reality', topicId: 'competition', label: 'Summer competitions',  bonusH: 0.9 },
-    { categoryId: 'series',  topicId: 'fantasy',   label: 'Holiday fantasy event',  bonusH: 1.0 },
-  ],
-  latenight: [
-    { categoryId: 'latenight', topicId: 'talk',    label: 'Awards season talk',     bonusH: 0.7 },
-    { categoryId: 'latenight', topicId: 'comedy',  label: 'Spring stand-up tour',   bonusH: 0.8 },
-    { categoryId: 'latenight', topicId: 'variety', label: 'Summer variety',         bonusH: 0.7 },
-    { categoryId: 'latenight', topicId: 'talk',    label: 'Year-end interviews',    bonusH: 0.9 },
-  ],
-  weekend2: [
-    { categoryId: 'sports', topicId: 'analysis', label: 'Winter sports analysis',  bonusH: 0.6 },
-    { categoryId: 'sports', topicId: 'live',     label: 'Spring tournaments',      bonusH: 1.0 },
-    { categoryId: 'movie',  topicId: null,       label: 'Summer blockbusters',     bonusH: 0.9 },
-    { categoryId: 'family', topicId: 'animated', label: 'Holiday animated event',  bonusH: 0.8 },
-  ],
+  morning: {
+    0:  { categoryId: 'news',    topicId: 'local',    label: 'New Year news cycle',     bonusH: 0.6 },
+    3:  { categoryId: 'family',  topicId: 'edu',      label: 'Spring kids programming', bonusH: 0.7 },
+    6:  { categoryId: 'family',  topicId: 'animated', label: 'Summer family hits',      bonusH: 0.8 },
+    11: { categoryId: 'family',  topicId: 'live',     label: 'Holiday family',          bonusH: 0.9 },
+  },
+  afternoon: {
+    5:  { categoryId: 'kids',    topicId: 'cartoon',  label: 'Summer break cartoons',   bonusH: 1.0 },
+    8:  { categoryId: 'kids',    topicId: 'liveaction', label: 'Back-to-school kids',   bonusH: 0.7 },
+    11: { categoryId: 'kids',    topicId: 'toytiein', label: 'Toy-tie-in Xmas',         bonusH: 1.1 },
+  },
+  evening: {
+    0:  { categoryId: 'news',    topicId: 'global',   label: 'Year-ahead analysis',     bonusH: 0.5 },
+    10: { categoryId: 'news',    topicId: 'bigtopic', label: 'Election specials',       bonusH: 0.9 },
+  },
+  prime: {
+    0:  { categoryId: 'series',  topicId: 'drama',    label: 'Prestige drama season',   bonusH: 0.8 },
+    1:  { categoryId: 'series',  topicId: 'drama',    label: 'Awards-bait drama',       bonusH: 0.9 },
+    4:  { categoryId: 'reality', topicId: 'love',     label: 'Spring romance reality',  bonusH: 0.7 },
+    6:  { categoryId: 'reality', topicId: 'adventure',label: 'Summer adventure',        bonusH: 0.9 },
+    11: { categoryId: 'movie',   topicId: null,       label: 'Holiday movie events',    bonusH: 1.0 },
+  },
+  prime2: {
+    1:  { categoryId: 'series',  topicId: 'crime',    label: 'Crime drama February',    bonusH: 0.7 },
+    4:  { categoryId: 'series',  topicId: 'comedy',   label: 'Spring sitcom premiere',  bonusH: 0.6 },
+    7:  { categoryId: 'reality', topicId: 'competition', label: 'Summer competitions',  bonusH: 0.9 },
+    11: { categoryId: 'series',  topicId: 'fantasy',  label: 'Holiday fantasy event',   bonusH: 1.0 },
+  },
+  latenight: {
+    1:  { categoryId: 'latenight', topicId: 'talk',    label: 'Awards-season talk',     bonusH: 0.8 },
+    9:  { categoryId: 'latenight', topicId: 'comedy',  label: 'Stand-up tour season',   bonusH: 0.7 },
+    11: { categoryId: 'latenight', topicId: 'talk',    label: 'Year-end interviews',    bonusH: 0.9 },
+  },
+  weekend_morning: {
+    11: { categoryId: 'kids',    topicId: 'cartoon',   label: 'Holiday cartoon block',   bonusH: 0.9 },
+  },
+  weekend_afternoon: {
+    1:  { categoryId: 'sports',  topicId: 'live',      label: 'Super Bowl + playoffs',   bonusH: 1.2 },
+    3:  { categoryId: 'sports',  topicId: 'live',      label: 'NBA Playoffs / Masters',  bonusH: 1.0 },
+    6:  { categoryId: 'movie',   topicId: null,        label: 'Summer blockbusters',     bonusH: 0.9 },
+    8:  { categoryId: 'sports',  topicId: 'live',      label: 'NFL kickoff',             bonusH: 1.1 },
+  },
+  weekend_prime: {
+    1:  { categoryId: 'sports',  topicId: 'live',      label: 'Super Bowl Sunday',       bonusH: 1.4 },
+    5:  { categoryId: 'movie',   topicId: null,        label: 'Blockbuster premieres',   bonusH: 1.0 },
+    9:  { categoryId: 'sports',  topicId: 'live',      label: 'World Series + NFL',      bonusH: 1.1 },
+    11: { categoryId: 'movie',   topicId: null,        label: 'Holiday movie marathon',  bonusH: 1.1 },
+  },
 }
 
 // ─── DEFAULT-AVAILABLE TOPICS PER FOCUS ──────────────────────────────────────
@@ -655,6 +875,8 @@ export function defaultUnlocks(focusId) {
     sports:  [['sports', 'analysis'], ['sports', 'doc']],
     // Family: animated + live. Educational requires research.
     family:  [['family', 'animated'], ['family', 'live']],
+    // Kids: cartoons + live-action. Advanced (edutainment, toy-tie-in, kids movies) need research.
+    kids:    [['kids', 'cartoon'], ['kids', 'liveaction']],
     // General: a small dish from each — nothing deep. Player must specialize via research.
     general: [['series', 'comedy'], ['reality', 'general'], ['contest', 'quiz']],
   }
@@ -662,14 +884,107 @@ export function defaultUnlocks(focusId) {
 }
 
 // ─── TALENT CONTRACT TYPES ───────────────────────────────────────────────────
-// `cost` here is a multiplier on talent's base cost-per-cycle.
-// "Permanent" charges base cost every cycle but if you fire them you pay 5×.
+// `costMult` is a multiplier on talent's base cost. Total cost is paid upfront.
+// "Permanent" charges base cost every month they're on the roster. Firing them
+// costs 5× one month's pay as severance.
 export const CONTRACT_TYPES = [
-  { id: 'c1',  label: '1 cycle',     cycles: 1,  costMult: 1.0,  desc: 'One-shot. Pay once.' },
-  { id: 'c2',  label: '2 cycles',    cycles: 2,  costMult: 1.9,  desc: 'Slight discount.' },
-  { id: 'c4',  label: '4 cycles',    cycles: 4,  costMult: 3.6,  desc: '−10% per cycle.' },
-  { id: 'c8',  label: '8 cycles',    cycles: 8,  costMult: 6.8,  desc: '−15% per cycle.' },
-  { id: 'cP',  label: 'Permanent',   cycles: -1, costMult: 0.85, desc: 'Pay each cycle. Firing costs 5× one cycle.' },
+  { id: 'c1',  label: '1 month',    months: 1,   costMult: 1.0,  desc: 'One-shot. Pay one month upfront.' },
+  { id: 'c3',  label: '3 months',   months: 3,   costMult: 2.7,  desc: '−10% per month.' },
+  { id: 'c6',  label: '6 months',   months: 6,   costMult: 5.1,  desc: '−15% per month.' },
+  { id: 'c12', label: '12 months',  months: 12,  costMult: 9.6,  desc: '−20% per month.' },
+  { id: 'cP',  label: 'Permanent',  months: -1,  costMult: 0.85, desc: 'Pay each month they\'re hired. Firing costs 5× one month.' },
 ]
 export const FIRE_PENALTY_MULT = 5
+
+// ─── PROGRAM RUN COMMITMENTS ─────────────────────────────────────────────────
+// When you save a slot, you commit to a run length. Each month of the run
+// pays the production cost again and (re-)airs the show.
+// Movies always run for 1 month only.
+export const RUN_LENGTHS = [
+  { id: 'r1',  months: 1,  label: '1 month',  desc: 'Limited / pilot.' },
+  { id: 'r3',  months: 3,  label: '3 months', desc: 'Mini-season.' },
+  { id: 'r6',  months: 6,  label: '6 months', desc: 'Half-year run.' },
+  { id: 'r12', months: 12, label: 'Full year',desc: 'Year-long commitment.' },
+]
+// Cancellation: pay 50% of remaining months' cost; free slot+talent.
+export const CANCEL_REFUND_MULT = 0.5
+
+// Sequel quality bonus by season number (S2=+10%, S3=+8%, S4=+6%, S5=+4%, then +3%)
+// Requires same director AND same star to apply the full bonus. If either
+// changed, bonus halves. If both changed, no bonus.
+export const SEQUEL_BONUSES = [0, 0.10, 0.08, 0.06, 0.04, 0.03, 0.03, 0.02, 0.02, 0.02]
+
+// ─── SPORTS LICENSE RIGHTS ───────────────────────────────────────────────────
+// Buy rights for one full year (Jan–Dec, runs through its in-season months only).
+// At end of year you re-license. Each league has:
+//   - season: array of month indices it runs (0=Jan ... 11=Dec)
+//   - peakMonth: month idx with peak event (playoffs/finals/major)
+//   - peakBonus: extra hype for peak month
+//   - baseQ, baseH: quality + hype baseline (live games)
+//   - cost: full-year rights cost, scales 1.0× local / 2.5× metro / 6× national
+export const SPORTS_LEAGUES = [
+  {
+    id: 'nfl', label: 'NFL Football', icon: '🏈',
+    season: [7, 8, 9, 10, 11, 0, 1], // Aug-Feb (wraps)
+    peakMonth: 1, peakLabel: 'Super Bowl',
+    cost: 35, baseQ: 8.5, baseH: 9.0, peakBonus: 2.5,
+  },
+  {
+    id: 'nba', label: 'NBA Basketball', icon: '🏀',
+    season: [8, 9, 10, 11, 0, 1, 2, 3], // Sep-Apr
+    peakMonth: 5, peakLabel: 'Finals',
+    cost: 28, baseQ: 7.5, baseH: 8.0, peakBonus: 2.0,
+  },
+  {
+    id: 'mlb', label: 'MLB Baseball', icon: '⚾',
+    season: [2, 3, 4, 5, 6, 7, 8, 9], // Mar-Oct
+    peakMonth: 9, peakLabel: 'World Series',
+    cost: 22, baseQ: 7.0, baseH: 6.5, peakBonus: 2.0,
+  },
+  {
+    id: 'wwe', label: 'WWE Wrestling', icon: '🤼',
+    season: [0,1,2,3,4,5,6,7,8,9,10,11], // year-round
+    peakMonth: 3, peakLabel: 'WrestleMania',
+    cost: 14, baseQ: 5.5, baseH: 8.5, peakBonus: 2.5,
+  },
+  {
+    id: 'tennis', label: 'Tennis Tour', icon: '🎾',
+    season: [0,1,2,3,4,5,6,7,8,9,10], // year-round (mostly)
+    peakMonth: 6, peakLabel: 'Wimbledon',
+    cost: 12, baseQ: 7.0, baseH: 6.0, peakBonus: 2.0,
+  },
+  {
+    id: 'golf', label: 'PGA Tour', icon: '⛳',
+    season: [0,1,2,3,4,5,6,7,8,9,10], // year-round
+    peakMonth: 3, peakLabel: 'The Masters',
+    cost: 10, baseQ: 6.8, baseH: 5.5, peakBonus: 1.8,
+  },
+  {
+    id: 'nhl', label: 'NHL Hockey', icon: '🏒',
+    season: [9, 10, 11, 0, 1, 2, 3, 4, 5], // Oct-Jun
+    peakMonth: 5, peakLabel: 'Stanley Cup',
+    cost: 18, baseQ: 7.0, baseH: 6.5, peakBonus: 1.8,
+  },
+  {
+    id: 'soccer', label: 'Soccer League', icon: '⚽',
+    season: [7, 8, 9, 10, 11, 0, 1, 2, 3, 4], // Aug-May
+    peakMonth: 4, peakLabel: 'Championship',
+    cost: 15, baseQ: 7.2, baseH: 7.0, peakBonus: 1.8,
+  },
+]
+// Cost multipliers by station market
+export const SPORTS_MARKET_COST_MULT = { local: 1.0, metro: 2.5, national: 6.0 }
+
+// ─── COMPETITOR SHOW NAME POOL ───────────────────────────────────────────────
+// Used by the AI competitor sim to generate show names per category.
+export const SHOW_NAME_POOL = {
+  news: ['Morning Briefing', 'The Daily Wire', 'Wake Up America', 'Top of the Hour', 'Front Page Tonight', 'Beat Report', 'Newsline', 'World Update', 'Capital Report', 'Daybreak'],
+  reality: ['House Wars', 'Survive the Island', 'The Bachelor Mansion', 'Real Lives', 'Singles Beach', 'Fame Quest', 'My Big Family', 'Catfight Bay', 'The Drama House', 'Truth or Dare'],
+  series: ['Midnight Protocol', 'Crown of Ashes', 'The Westwing Files', 'Bay City Blues', 'Echoes', 'Hollow Crown', 'The Shoreline', 'Crossfire', 'Glass Houses', 'After Dark', 'Pioneers', 'Verdict'],
+  latenight: ['Tonight with the Crew', 'After Midnight', 'The Late Lineup', 'Stand-Up Hour', 'Late Show Variety', 'Friday Bumpers', 'The Comedy Wire'],
+  sports: ['Sports Wrap', 'Game Day Tonight', 'Score Center', 'Playmakers', 'The Sports Desk', 'Pre-Game Live'],
+  family: ['Sunday Family Hour', 'Home & Hearth', 'The Family Variety', 'Wholesome Stories', 'Heartland Tales'],
+  kids: ['Cartoon Express', 'Adventures of Bunny Bop', 'Robot Friends', 'Imagination Hour', 'Animal Pals', 'Storytime Castle', 'The Toy Box'],
+  contest: ['Wheel of Cash', 'The Big Question', 'Beat the Clock', 'Trivia Bowl', 'Last Standing'],
+}
 

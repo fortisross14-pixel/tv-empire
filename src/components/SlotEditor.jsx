@@ -2,20 +2,22 @@ import { useState, useMemo, useEffect } from 'react'
 import { T } from '../theme.js'
 import {
   CATEGORIES, CATEGORY_IDS, MARKETING_TIERS, IPS, MARKETS, SLOT_TYPES,
+  MONTHS, RUN_LENGTHS, SPORTS_LEAGUES,
 } from '../constants.js'
 import { HTag, Bar, Pill } from './ui.jsx'
 import {
-  projectShow, programCost, findDirector, findStar, findIP, findMovie,
-  getUnlocks, getSeasonalPref,
+  projectShow, programCost, findDirector, findStar, findIP, findMovie, findLeague,
+  getUnlocks, getSeasonalPref, ownsLicense, isSportsInSeason,
 } from '../engine.js'
 
 export function SlotEditor({
   initial, slotTypeId, cycleIdx,
-  station, research, roster, movies, takenTalent, ownedShows,
+  station, research, roster, movies, takenTalent, ownedShows, year,
   onSave, onClear, onClose,
 }) {
   const [draft, setDraft] = useState(() => ({ ...initial, slotTypeId }))
   const [showRenew, setShowRenew] = useState(false)
+  const [showSports, setShowSports] = useState(false)
 
   // Defensive defaults so missing props don't crash the editor
   const safeRoster = {
@@ -31,19 +33,28 @@ export function SlotEditor({
   const unlocks = useMemo(() => getUnlocks(station, research), [station, research])
 
   const isMovieMode = !!draft.movieId
+  const isSportsMode = !!draft.sportsRunLeagueId
   const cat = draft.categoryId ? CATEGORIES[draft.categoryId] : null
   const isMovieCategory = draft.categoryId === 'movie'
 
+  // Available sports licenses owned this year and not used in another run
+  const ownedSportsThisYear = (station.sportsLicenses || [])
+    .filter(l => l.year === year)
+    .map(l => findLeague(l.leagueId))
+    .filter(Boolean)
+
   const proj = useMemo(() => {
-    if (!draft.categoryId && !draft.movieId) return null
-    if (!isMovieMode && !isMovieCategory && !draft.topicId) return null
+    if (!draft.categoryId && !draft.movieId && !draft.sportsRunLeagueId) return null
+    if (!isMovieMode && !isSportsMode && !isMovieCategory && !draft.topicId) return null
     return projectShow(draft, station, research, cycleIdx)
-  }, [draft, station, research, isMovieMode, isMovieCategory, cycleIdx])
+  }, [draft, station, research, isMovieMode, isSportsMode, isMovieCategory, cycleIdx])
 
   const cost = useMemo(() => {
-    if (!draft.categoryId && !draft.movieId) return 0
+    if (!draft.categoryId && !draft.movieId && !draft.sportsRunLeagueId) return 0
     return programCost(draft, market, research)
   }, [draft, market, research])
+
+  const totalCommitment = useMemo(() => cost * (draft.runMonths || 1), [cost, draft.runMonths])
 
   const update = (patch) => setDraft(d => ({ ...d, ...patch }))
 
@@ -52,19 +63,37 @@ export function SlotEditor({
   // Booked-this-cycle filter (excluding the slot we're editing)
   const isBooked = (id) => safeTaken.has(id)
 
-  // Validation: name optional now (auto-fills with "Untitled" or category label)
+  // Validation: needs category+topic OR movie OR sports
   const valid = useMemo(() => {
+    if (isSportsMode) return !!draft.sportsRunLeagueId
     if (isMovieMode) return !!draft.movieId
     return !!(draft.categoryId && draft.topicId)
-  }, [draft, isMovieMode])
+  }, [draft, isMovieMode, isSportsMode])
+
+  function pickSportsLeague(leagueId) {
+    update({
+      sportsRunLeagueId: leagueId,
+      categoryId: null, topicId: null,
+      movieId: null, ipId: null,
+      runMonths: 12,  // sports always run the full year
+      name: '',
+      seqSeason: 1,
+    })
+    setShowSports(false)
+  }
 
   // Auto-fill name if empty when saving — friendlier
   function save() {
     let finalDraft = { ...draft, slotTypeId }
-    if (!isMovieMode && !finalDraft.name?.trim()) {
+    if (isSportsMode) {
+      const lg = findLeague(finalDraft.sportsRunLeagueId)
+      finalDraft.name = `${lg?.label || 'Sports'} Coverage`
+      finalDraft.runMonths = 12
+    } else if (!isMovieMode && !finalDraft.name?.trim()) {
       const c = CATEGORIES[finalDraft.categoryId]
       finalDraft.name = `Untitled ${c?.label || 'Show'}`
     }
+    if (isMovieMode) finalDraft.runMonths = 1
     onSave(finalDraft)
     onClose()
   }
@@ -79,7 +108,12 @@ export function SlotEditor({
       update({
         categoryId: 'movie', topicId: null,
         directorId: null, starId: null, ipId: null,
-        movieId: null, name: '',
+        movieId: null,
+        sportsRunLeagueId: null,
+        runMonths: 1,    // movies are always 1 month
+        name: '',
+        seqSeason: 1,
+        fromOwnedId: null,
       })
     } else {
       // Auto-suggest best fit director/star from roster (specialty match, not booked, highest tier)
@@ -92,11 +126,13 @@ export function SlotEditor({
       }
       update({
         categoryId: catId, topicId: null, movieId: null,
+        sportsRunLeagueId: null,
         directorId: bestFit(safeRoster.directors),
         starId:     bestFit(safeRoster.stars),
         ipId: null,
         name: draft.name && !isMovieMode ? draft.name : '',
-        seqSeason: null, fromOwnedId: null,
+        seqSeason: 1, fromOwnedId: null,
+        prevDirectorId: null, prevStarId: null,
       })
     }
   }
@@ -112,12 +148,17 @@ export function SlotEditor({
     update({
       categoryId: sh.categoryId,
       topicId: sh.topicId,
-      directorId: null, starId: null, ipId: sh.ipId || null,
+      directorId: sh.lastDirectorId || null,
+      starId: sh.lastStarId || null,
+      ipId: sh.ipId || null,
       name: sh.name,
       seqSeason: (sh.lastSeqSeason || 1) + 1,
+      prevDirectorId: sh.lastDirectorId || null,
+      prevStarId: sh.lastStarId || null,
       fromOwnedId: ownedId,
       marketingId: 'none',
       movieId: null,
+      sportsRunLeagueId: null,
     })
     setShowRenew(false)
   }
@@ -131,8 +172,33 @@ export function SlotEditor({
   )
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        top: 0, left: 0, right: 0, bottom: 0,
+        background: 'rgba(15, 14, 23, .85)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: 12,
+        overflowY: 'auto',
+        animation: 'slide-in .2s ease',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: T.surface,
+          border: `1px solid ${T.border}`,
+          borderRadius: 8,
+          maxWidth: 720,
+          width: '100%',
+          marginTop: 20,
+          marginBottom: 20,
+        }}
+      >
 
         {/* Header */}
         <div style={{
@@ -164,7 +230,7 @@ export function SlotEditor({
               borderRadius: 5,
               fontSize: 11, color: T.gold, lineHeight: 1.5,
             }}>
-              ⭐ <strong>This quarter: {seasonal.label}</strong>
+              ⭐ <strong>{MONTHS[cycleIdx]} wants: {seasonal.label}</strong>
               <div style={{ marginTop: 3, color: T.text, opacity: 0.85 }}>
                 Match the suggested category/topic for +{seasonal.bonusH?.toFixed(1)} hype bonus.
               </div>
@@ -172,8 +238,8 @@ export function SlotEditor({
           )}
 
           {/* Renew option */}
-          {!showRenew && renewableShows.length > 0 && !draft.fromOwnedId && (
-            <div style={{ marginBottom: 16 }}>
+          {!showRenew && !showSports && renewableShows.length > 0 && !draft.fromOwnedId && (
+            <div style={{ marginBottom: 10 }}>
               <button
                 onClick={() => setShowRenew(true)}
                 style={{
@@ -191,6 +257,64 @@ export function SlotEditor({
             </div>
           )}
 
+          {/* Sports rights option */}
+          {!showRenew && !showSports && !isSportsMode && ownedSportsThisYear.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <button
+                onClick={() => setShowSports(true)}
+                style={{
+                  background: T.red + '14',
+                  border: `1px solid ${T.red}55`,
+                  color: T.red,
+                  padding: '8px 14px',
+                  borderRadius: 5,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: '.05em',
+                  cursor: 'pointer',
+                }}
+              >🏆 Use Sports Rights ({ownedSportsThisYear.length} owned)</button>
+            </div>
+          )}
+
+          {showSports && (
+            <div style={{ marginBottom: 16 }} className="ani">
+              <div className="bebas" style={{ fontSize: 13, color: T.red, marginBottom: 7, letterSpacing: '.1em' }}>
+                YOUR SPORTS RIGHTS — PICK A LEAGUE TO BROADCAST
+              </div>
+              <div style={{ fontSize: 11, color: T.muted, marginBottom: 8, lineHeight: 1.5 }}>
+                Will lock the slot for 12 months — auto-airs during the league's season window.
+              </div>
+              {ownedSportsThisYear.map(lg => (
+                <div
+                  key={lg.id}
+                  onClick={() => pickSportsLeague(lg.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 11px', marginBottom: 5,
+                    background: T.card,
+                    border: `2px solid ${T.border}`,
+                    borderRadius: 5,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>{lg.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{lg.label}</div>
+                    <div style={{ fontSize: 10, color: T.muted }}>
+                      In-season: {lg.season.map(m => MONTHS[m]).join(', ')} · Peak: {MONTHS[lg.peakMonth]} ({lg.peakLabel})
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 10, color: T.red, fontWeight: 600 }}>BROADCAST</span>
+                </div>
+              ))}
+              <button onClick={() => setShowSports(false)} style={{
+                fontSize: 11, color: T.muted, marginTop: 6,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+              }}>← Back to fresh program</button>
+            </div>
+          )}
+
           {showRenew && (
             <div style={{ marginBottom: 16 }} className="ani">
               <div className="bebas" style={{ fontSize: 13, color: T.purple, marginBottom: 7, letterSpacing: '.1em' }}>
@@ -204,7 +328,7 @@ export function SlotEditor({
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</div>
                       <div style={{ fontSize: 10, color: T.muted }}>
-                        Last season: rated {s.lastRating?.toFixed(1) || '-'} · S{s.lastSeqSeason || 1}
+                        Last season: avg rating {s.lastAvgRating?.toFixed(1) || '-'} · S{s.lastSeqSeason || 1}
                       </div>
                     </div>
                     <span style={{ fontSize: 10, color: T.muted }}>→ S{(s.lastSeqSeason || 1) + 1}</span>
@@ -218,7 +342,7 @@ export function SlotEditor({
             </div>
           )}
 
-          {!showRenew && (
+          {!showRenew && !showSports && !isSportsMode && (
             <>
               {/* CATEGORY */}
               <Section title="1. Category">
@@ -371,6 +495,88 @@ export function SlotEditor({
             </>
           )}
 
+          {/* SPORTS MODE BLOCK */}
+          {isSportsMode && !showSports && (() => {
+            const lg = findLeague(draft.sportsRunLeagueId)
+            if (!lg) return null
+            return (
+              <div className="ani">
+                <div style={{
+                  padding: '12px 14px', marginBottom: 14,
+                  background: T.red + '10', border: `1px solid ${T.red}55`, borderRadius: 6,
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.red, marginBottom: 4 }}>
+                    {lg.icon} {lg.label} — Year {year}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.text, lineHeight: 1.5 }}>
+                    Auto-airs each in-season month: {lg.season.map(m => MONTHS[m]).join(', ')}.{' '}
+                    Peak <strong>{MONTHS[lg.peakMonth]}</strong> ({lg.peakLabel}) gets +{lg.peakBonus.toFixed(1)} hype.
+                  </div>
+                  <button
+                    onClick={() => update({
+                      sportsRunLeagueId: null, directorId: null, starId: null,
+                      runMonths: 1,
+                    })}
+                    style={{
+                      marginTop: 8, fontSize: 10, color: T.muted,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                    }}
+                  >← Pick a different league</button>
+                </div>
+
+                <Section title="Director (live producer)">
+                  <TalentList
+                    list={safeRoster.directors}
+                    categoryId="sports"
+                    selectedId={draft.directorId}
+                    onPick={id => update({ directorId: id })}
+                    isBooked={isBooked}
+                    role="director"
+                  />
+                </Section>
+
+                <Section title="Star (on-air presenter)">
+                  <TalentList
+                    list={safeRoster.stars}
+                    categoryId="sports"
+                    selectedId={draft.starId}
+                    onPick={id => update({ starId: id })}
+                    isBooked={isBooked}
+                    role="star"
+                  />
+                </Section>
+              </div>
+            )
+          })()}
+
+          {/* RUN LENGTH PICKER (hidden for movies + sports — fixed) */}
+          {(valid && !isMovieMode && !isSportsMode) && (
+            <Section title={`Commitment: How many months will this run?`}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {RUN_LENGTHS.map(r => (
+                  <Pill
+                    key={r.id}
+                    label={`${r.label} · $${(cost * r.months).toFixed(1)}M total`}
+                    active={(draft.runMonths || 1) === r.months}
+                    onClick={() => update({ runMonths: r.months })}
+                  />
+                ))}
+              </div>
+              <div style={{ marginTop: 6, fontSize: 10, color: T.muted, fontStyle: 'italic' }}>
+                The slot is locked for this duration. Cancel mid-run for 50% of remaining cost.
+              </div>
+            </Section>
+          )}
+          {isMovieMode && (
+            <div style={{
+              padding: 10, marginTop: 4, marginBottom: 10,
+              fontSize: 11, color: T.muted, fontStyle: 'italic',
+              background: T.cardHi, borderRadius: 4,
+            }}>
+              Movies run for 1 month only.
+            </div>
+          )}
+
           {/* PROJECTION */}
           {proj && (
             <div style={{
@@ -414,11 +620,19 @@ export function SlotEditor({
               )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 9, borderTop: `1px solid ${T.border}` }}>
-                <div style={{ fontSize: 11, color: T.muted }}>Total cost this cycle</div>
+                <div style={{ fontSize: 11, color: T.muted }}>Cost per month</div>
                 <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: T.red, fontWeight: 600 }}>
                   ${cost.toFixed(1)}M
                 </div>
               </div>
+              {(draft.runMonths || 1) > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: T.muted }}>Total run commitment ({draft.runMonths} mo)</div>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: T.muted }}>
+                    ${totalCommitment.toFixed(1)}M
+                  </div>
+                </div>
+              )}
               <div style={{ fontSize: 10, color: T.muted, marginTop: 4, fontStyle: 'italic' }}>
                 Live results swing ±1.2 quality / ±1.5 hype — anything can happen on air.
               </div>
@@ -452,7 +666,7 @@ export function SlotEditor({
               borderRadius: 4, border: `1px dashed ${T.border}`,
             }}>
               <strong style={{ color: T.accent }}>To save this slot:</strong>{' '}
-              {!draft.categoryId && !draft.movieId && 'pick a category.'}
+              {!draft.categoryId && !draft.movieId && !draft.sportsRunLeagueId && 'pick a category or use sports rights.'}
               {draft.categoryId === 'movie' && !draft.movieId && 'pick a movie to license.'}
               {draft.categoryId && draft.categoryId !== 'movie' && !draft.topicId && 'pick a topic / format.'}
             </div>
@@ -491,7 +705,12 @@ export function SlotEditor({
             style={{ width: 'auto', padding: '10px 20px', fontSize: 15, opacity: valid ? 1 : 0.55 }}
             disabled={!valid}
             onClick={save}
-          >{valid ? 'Save Slot' : (isMovieMode ? 'Pick a movie' : !draft.categoryId ? 'Pick a category' : 'Pick a topic')}</button>
+          >{valid ? 'Save Slot' : (
+            isSportsMode ? 'Pick director/star' :
+            isMovieMode ? 'Pick a movie' :
+            !draft.categoryId && !draft.sportsRunLeagueId ? 'Pick a category' :
+            'Pick a topic'
+          )}</button>
         </div>
       </div>
     </div>
@@ -535,30 +754,54 @@ function TalentList({ list, categoryId, selectedId, onPick, isBooked, role }) {
   return (
     <>
       <div
-        className={`pickrow${!selectedId ? ' selected' : ''}`}
         onClick={() => onPick(null)}
-        style={{ background: !selectedId ? 'rgba(232,160,69,.08)' : undefined }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 9,
+          padding: '9px 11px', marginBottom: 5,
+          background: !selectedId ? 'rgba(232,160,69,.18)' : T.card,
+          border: `2px solid ${!selectedId ? T.accent : T.border}`,
+          borderRadius: 5,
+          cursor: 'pointer',
+        }}
       >
-        <span style={{ fontSize: 16 }}>—</span>
-        <div style={{ flex: 1, fontSize: 12, color: T.muted, fontStyle: 'italic' }}>None / unsigned</div>
+        <span style={{ fontSize: 16 }}>{!selectedId ? '✓' : '—'}</span>
+        <div style={{ flex: 1, fontSize: 12, color: !selectedId ? T.accent : T.muted, fontStyle: 'italic', fontWeight: !selectedId ? 600 : 400 }}>
+          None / unsigned
+        </div>
       </div>
-      <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+      <div style={{ maxHeight: 280, overflowY: 'auto' }}>
         {sorted.map(t => {
           const matches = t.specialty === categoryId
           const booked = isBooked(t.id) && t.id !== selectedId
+          const isSelected = selectedId === t.id
           return (
             <div
               key={t.id}
-              className={`pickrow${selectedId === t.id ? ' selected' : ''}${booked ? ' disabled' : ''}`}
               onClick={() => !booked && onPick(t.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '10px 11px', marginBottom: 5,
+                background: isSelected ? 'rgba(232,160,69,.20)' : T.card,
+                border: `2px solid ${isSelected ? T.accent : T.border}`,
+                borderRadius: 5,
+                cursor: booked ? 'not-allowed' : 'pointer',
+                opacity: booked ? 0.4 : 1,
+                boxShadow: isSelected ? `0 0 0 1px ${T.accent}55` : 'none',
+              }}
             >
+              {isSelected && <span style={{ fontSize: 14, color: T.accent, fontWeight: 700 }}>✓</span>}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{
+                  fontSize: 13, fontWeight: isSelected ? 700 : 600,
+                  color: isSelected ? T.accent : T.text,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
                   {t.name}
-                  {matches && <span style={{ fontSize: 9, color: T.green, fontWeight: 600 }}>★ FIT</span>}
+                  {isSelected && <span style={{ fontSize: 9, color: T.accent, fontWeight: 700, letterSpacing: '.1em' }}>SELECTED</span>}
+                  {matches && !isSelected && <span style={{ fontSize: 9, color: T.green, fontWeight: 600 }}>★ FIT</span>}
                   {booked && <span style={{ fontSize: 9, color: T.red, fontWeight: 600 }}>BOOKED</span>}
                 </div>
-                <div style={{ fontSize: 10, color: T.muted }}>
+                <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>
                   {CATEGORIES[t.specialty]?.label || t.specialty}
                   {' · '}Q +{t.q.toFixed(1)} · H +{t.h.toFixed(1)}
                 </div>
@@ -583,33 +826,55 @@ function IPList({ categoryId, selectedId, onPick, research }) {
   return (
     <>
       <div
-        className={`pickrow${!selectedId ? ' selected' : ''}`}
         onClick={() => onPick(null)}
-        style={{ background: !selectedId ? 'rgba(232,160,69,.08)' : undefined }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 9,
+          padding: '9px 11px', marginBottom: 5,
+          background: !selectedId ? 'rgba(232,160,69,.18)' : T.card,
+          border: `2px solid ${!selectedId ? T.accent : T.border}`,
+          borderRadius: 5,
+          cursor: 'pointer',
+        }}
       >
-        <span style={{ fontSize: 16 }}>—</span>
-        <div style={{ flex: 1, fontSize: 12, color: T.muted, fontStyle: 'italic' }}>No IP / original</div>
+        <span style={{ fontSize: 16 }}>{!selectedId ? '✓' : '—'}</span>
+        <div style={{ flex: 1, fontSize: 12, color: !selectedId ? T.accent : T.muted, fontStyle: 'italic', fontWeight: !selectedId ? 600 : 400 }}>
+          No IP / original
+        </div>
       </div>
-      <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-        {eligible.map(ip => (
-          <div
-            key={ip.id}
-            className={`pickrow${selectedId === ip.id ? ' selected' : ''}`}
-            onClick={() => onPick(ip.id)}
-          >
-            <span style={{ fontSize: 14 }}>📜</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{ip.name}</div>
-              <div style={{ fontSize: 10, color: T.muted }}>
-                Q +{ip.q.toFixed(1)} · H +{ip.h.toFixed(1)}
+      <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+        {eligible.map(ip => {
+          const isSelected = selectedId === ip.id
+          return (
+            <div
+              key={ip.id}
+              onClick={() => onPick(ip.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '10px 11px', marginBottom: 5,
+                background: isSelected ? 'rgba(232,160,69,.20)' : T.card,
+                border: `2px solid ${isSelected ? T.accent : T.border}`,
+                borderRadius: 5,
+                cursor: 'pointer',
+                boxShadow: isSelected ? `0 0 0 1px ${T.accent}55` : 'none',
+              }}
+            >
+              <span style={{ fontSize: 14 }}>{isSelected ? '✓' : '📜'}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: isSelected ? 700 : 600, color: isSelected ? T.accent : T.text }}>
+                  {ip.name}
+                  {isSelected && <span style={{ fontSize: 9, color: T.accent, fontWeight: 700, letterSpacing: '.1em', marginLeft: 6 }}>SELECTED</span>}
+                </div>
+                <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>
+                  Q +{ip.q.toFixed(1)} · H +{ip.h.toFixed(1)}
+                </div>
               </div>
+              <HTag tier={ip.tier} />
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: T.red, minWidth: 56, textAlign: 'right' }}>
+                ${(ip.cost * discount).toFixed(1)}M
+              </span>
             </div>
-            <HTag tier={ip.tier} />
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: T.red, minWidth: 56, textAlign: 'right' }}>
-              ${(ip.cost * discount).toFixed(1)}M
-            </span>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </>
   )

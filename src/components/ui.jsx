@@ -36,17 +36,25 @@ export function KV({ label, value, color, mono = true, big = false }) {
 }
 
 export function Pill({ label, active, onClick, color, disabled }) {
+  const accentColor = color || '#e8a045'
   return (
     <button
-      className={`pill${active ? ' on' : ''}`}
       onClick={onClick}
       disabled={disabled}
       style={{
-        opacity: disabled ? 0.35 : 1,
+        background: active ? accentColor + '33' : '#1a1825',
+        border: `2px solid ${active ? accentColor : '#2e2a40'}`,
+        borderRadius: 20,
+        padding: '6px 14px',
+        fontSize: 12,
+        fontWeight: active ? 700 : 500,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        ...(color && active ? { background: color + '22', borderColor: color, color } : {}),
+        opacity: disabled ? 0.35 : 1,
+        color: active ? accentColor : '#8a8499',
+        transition: 'all .15s',
+        boxShadow: active ? `0 0 0 1px ${accentColor}55` : 'none',
       }}
-    >{label}</button>
+    >{active ? '✓ ' : ''}{label}</button>
   )
 }
 
