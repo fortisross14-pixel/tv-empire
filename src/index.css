@@ -1,10 +1,9 @@
 /* ─── FONTS ──────────────────────────────────────────────────────────────
-   Anton — broadcast/poster display (denser than Bebas, more presence)
-   Fraunces — editorial serif for ident & hero numbers (a touch of magazine)
-   Inter Tight — refined sans for body
+   Anton — broadcast/poster display
+   Inter Tight — refined sans for body AND editorial-style hero titles
    JetBrains Mono — numerics & timecodes
 */
-@import url('https://fonts.googleapis.com/css2?family=Anton&family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter+Tight:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 :root {
   --bg:       #0a0910;
@@ -103,10 +102,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   font-weight: 400;
 }
 .editorial {
-  font-family: 'Fraunces', serif;
-  font-weight: 500;
-  font-variation-settings: 'opsz' 144, 'SOFT' 50;
-  letter-spacing: -.01em;
+  /* Was Fraunces serif; now a strong sans treatment to keep the type system
+     coherent. Use for hero titles / program names where Anton is too tall. */
+  font-family: 'Inter Tight', sans-serif;
+  font-weight: 700;
+  letter-spacing: -.015em;
 }
 .mono {
   font-family: 'JetBrains Mono', monospace;

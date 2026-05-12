@@ -1,21 +1,27 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { T } from '../theme.js'
 import {
   CATEGORIES, MARKETS, MARKETING_TIERS, IPS, SPORTS_LEAGUES, MONTHS,
   STAFF_ROLES, STAFF_SEARCHES, STAFF_SALARY_BY_TIER, STAFF_EFFECTS,
   STAFF_FIRE_PENALTY_MULT,
   IP_LICENSE_TERMS, NETWORK_CAMPAIGNS,
-  CONTRACT_TYPES, TIERS,
+  CONTRACT_TYPES, TIERS, MARKET_ORDER,
+  MOVIES, MOVIE_PACK_REBUY_HYPE_PENALTY, MOVIE_PACK_COOLDOWN_MONTHS,
 } from '../constants.js'
 import { HTag, Bar, Pill, SectionTitle } from './ui.jsx'
+import { Icon, CategoryIcon } from '../icons.jsx'
 import {
   findDirector, findStar, findIP, findLeague,
   staffSalaryTotal, contractCost, fameLabel, sportsLicenseCost,
   ipLicenseCost, ownsIP, activeIPLicenses, canHireStaffRole,
+  SPEC_GENRES, specThresholdFor, fmtM, canPromote,
+  specQualityBonus, specHypeBonus,
+  findOwnedActivePack, findLastConsumedPack, moviePackPurchaseHype,
 } from '../engine.js'
 
 // ─── SUB-TABS ────────────────────────────────────────────────────────────
 const SUB_TABS = [
+  { id: 'status',    label: 'Network Status' },
   { id: 'talent',    label: 'Talent' },
   { id: 'rights',    label: 'Purchase Rights' },
   { id: 'staff',     label: 'Staff' },
@@ -24,7 +30,7 @@ const SUB_TABS = [
 
 export function OperationsScreen(props) {
   const { onBack } = props
-  const [sub, setSub] = useState('talent')
+  const [sub, setSub] = useState('status')
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: 18 }}>
@@ -59,6 +65,7 @@ export function OperationsScreen(props) {
         ))}
       </div>
 
+      {sub === 'status'    && <StatusTab    {...props} />}
       {sub === 'talent'    && <TalentTab    {...props} />}
       {sub === 'rights'    && <RightsTab    {...props} />}
       {sub === 'staff'     && <StaffTab     {...props} />}
@@ -248,7 +255,7 @@ function FireConfirm({ role, id, t, onConfirm, onCancel }) {
 }
 
 // ─── 2. PURCHASE RIGHTS TAB ──────────────────────────────────────────────
-function RightsTab({ station, year, research, onBuyIP }) {
+function RightsTab({ station, year, monthIdx, research, onBuyIP, onBuyMoviePack }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
@@ -258,6 +265,16 @@ function RightsTab({ station, year, research, onBuyIP }) {
         License existing IPs (books, characters, franchises) to pair with scripts for hype + quality bumps. Sports league rights are in the <strong style={{ color: T.text }}>Market</strong> tab.
       </div>
       <IPBlock station={station} year={year} research={research} onBuy={onBuyIP} />
+
+      <div style={{ marginTop: 28 }}>
+        <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
+          MOVIE PACKS — OWNED & AVAILABLE
+        </div>
+        <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
+          Each pack gives you 3 airings of the same licensed film. When you exhaust a pack, it returns to the catalog — but re-buying within 12 months means reduced hype (overexposure).
+        </div>
+        <MoviePackBlock station={station} year={year} monthIdx={monthIdx} onBuy={onBuyMoviePack} />
+      </div>
     </div>
   )
 }
@@ -652,6 +669,658 @@ function ModalOverlay({ children, onClose }) {
         borderRadius: 8, maxWidth: 520, width: '100%', marginTop: 30,
       }}>
         {children}
+      </div>
+    </div>
+  )
+}
+
+// ─── NETWORK STATUS TAB ──────────────────────────────────────────────────
+//
+// Dashboard view: how is the network doing?
+//   1. Stat strip — current month/year/market/fame.
+//   2. Three-month trend — audience and revenue for the last 3 completed
+//      months side by side, each with a tiny sparkline-style mini bar chart
+//      and a direction arrow.
+//   3. Specialization grid — 8 genres, 5-star meter + XP progress.
+//   4. Awards by year — table of wins per year.
+//
+function StatusTab({ station, year, monthIdx, allShows, awardsByYear, onPromote }) {
+  const market = MARKETS[station.market]
+
+  // Determine if expansion is available right now.
+  const promotable = canPromote(station)
+  const idx = MARKET_ORDER.indexOf(station.market)
+  const nextMarket = idx < MARKET_ORDER.length - 1 ? MARKETS[MARKET_ORDER[idx + 1]] : null
+  const expansionCost = nextMarket?.promoteCost || 0
+  const canAffordExpansion = station.cash >= expansionCost
+
+  // ── Aggregate per-month audience + revenue from allShows ──────────────
+  // allShows is the flat list of every airing the player has ever produced
+  // across every year. We bucket by (year, monthIdx) and pull the last 3
+  // *completed* months for the trend view.
+  const monthBuckets = useMemo(() => {
+    const map = new Map()
+    for (const s of (allShows || [])) {
+      const key = `${s.year}-${s.month}`
+      if (!map.has(key)) map.set(key, { year: s.year, month: s.month, audience: 0, revenue: 0, count: 0 })
+      const b = map.get(key)
+      b.audience += s.audience || 0
+      b.revenue  += s.revenue || 0
+      b.count    += 1
+    }
+    return Array.from(map.values()).sort((a, b) => (a.year - b.year) || (a.month - b.month))
+  }, [allShows])
+
+  // Last completed month = (year, monthIdx-1) with wrap. We want the most
+  // recent 3 entries from monthBuckets that come BEFORE the current month.
+  const trend = useMemo(() => {
+    const filtered = monthBuckets.filter(b =>
+      b.year < year || (b.year === year && b.month < monthIdx)
+    )
+    return filtered.slice(-3)
+  }, [monthBuckets, year, monthIdx])
+
+  const audDirection = trendDirection(trend.map(t => t.audience))
+  const revDirection = trendDirection(trend.map(t => t.revenue))
+
+  // ── Awards aggregation ────────────────────────────────────────────────
+  const awardRows = useMemo(() => {
+    const rows = []
+    for (const [yearStr, aw] of Object.entries(awardsByYear || {})) {
+      const yr = Number(yearStr)
+      let count = 0
+      let cash  = 0
+      let fame  = 0
+      ;(aw.wins || []).forEach(w => { count += 1; cash += w.cashBonus || 0; fame += w.fameBonus || 0 })
+      if (aw.bestOverall) { count += 1; cash += aw.bestOverall.cashBonus || 0; fame += aw.bestOverall.fameBonus || 0 }
+      if (aw.mostWatched) { count += 1; cash += aw.mostWatched.cashBonus || 0; fame += aw.mostWatched.fameBonus || 0 }
+      rows.push({ year: yr, count, cash, fame })
+    }
+    rows.sort((a, b) => b.year - a.year)
+    return rows
+  }, [awardsByYear])
+
+  return (
+    <div>
+      {/* ─── STAT STRIP ─── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+        gap: 10,
+        marginBottom: 24,
+      }}>
+        <StatusStat label="Period"   value={`${MONTHS[monthIdx]} Y${year}`} accent={T.text} />
+        <StatusStat label="Market"   value={market.label}                   accent={T.teal} />
+        <StatusStat label="Cash"     value={fmtM(station.cash)}             accent={T.green} />
+        <StatusStat label="Fame"     value={`${station.fame.toFixed(1)} · ${fameLabel(station.fame)}`} accent={T.gold} />
+        {market.monthlyInfra > 0 && (
+          <StatusStat label="Infra"  value={`${fmtM(market.monthlyInfra)}/mo`} accent={T.red} />
+        )}
+      </div>
+
+      {/* ─── EXPANSION OPPORTUNITY (only when promotable) ─── */}
+      {promotable && nextMarket && (
+        <div style={{
+          background: 'linear-gradient(135deg, ' + T.teal + '18 0%, ' + T.teal + '08 100%)',
+          border: `1px solid ${T.teal}`,
+          borderRadius: 6, padding: 16, marginBottom: 24,
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
+          }}>
+            <Icon name="chart_up" size={18} color={T.teal} />
+            <div className="display" style={{
+              fontSize: 16, color: T.teal, letterSpacing: '.08em', textTransform: 'uppercase',
+            }}>Expansion Available</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: T.text, marginBottom: 12, lineHeight: 1.55 }}>
+            You've reached the fame threshold for <b>{nextMarket.label}</b>. {nextMarket.desc}
+          </div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+            gap: 8, marginBottom: 12,
+            padding: 10, background: 'rgba(0,0,0,.25)', borderRadius: 4,
+          }}>
+            <StatusStat label="One-time"      value={fmtM(expansionCost)}             accent={canAffordExpansion ? T.text : T.red} />
+            <StatusStat label="Monthly infra" value={`${fmtM(nextMarket.monthlyInfra)}/mo`} accent={T.text} />
+            <StatusStat label="Prod cost"     value={`×${nextMarket.prodCostMult.toFixed(2)}`} accent={T.text} />
+            <StatusStat label="Rev/viewer"    value={`$${nextMarket.revPerViewer.toFixed(1)}`} accent={T.green} />
+          </div>
+          <div style={{
+            fontSize: 11, color: T.gold, lineHeight: 1.55, marginBottom: 12,
+            padding: '8px 10px',
+            background: T.gold + '0c', border: `1px dashed ${T.gold}55`, borderRadius: 4,
+          }}>
+            ⚠ Specialization reset: only your specialty (min 0.5★) and any genre at 4★+ (kept at 1★) carry over.
+          </div>
+          <button
+            onClick={canAffordExpansion ? onPromote : undefined}
+            disabled={!canAffordExpansion}
+            style={{
+              background: canAffordExpansion ? T.teal : T.card,
+              color: canAffordExpansion ? T.bg : T.muted,
+              border: 'none', borderRadius: 4,
+              padding: '11px 18px',
+              fontFamily: 'Anton, sans-serif',
+              fontSize: 15, letterSpacing: '.08em',
+              textTransform: 'uppercase',
+              cursor: canAffordExpansion ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {canAffordExpansion ? `Expand for ${fmtM(expansionCost)} ▸` : `Need ${fmtM(expansionCost)} (have ${fmtM(station.cash)})`}
+          </button>
+        </div>
+      )}
+
+      {/* ─── TREND ─── */}
+      <SectionHeader>3-Month Trend</SectionHeader>
+      {trend.length === 0 ? (
+        <EmptyPanel
+          icon="chart_up"
+          title="No history yet"
+          subtitle="Trend appears after you've completed at least one month of airings."
+        />
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: 12, marginBottom: 24,
+        }}>
+          <TrendCard
+            label="Audience"
+            metric="audience"
+            unit="M"
+            color={T.teal}
+            data={trend}
+            direction={audDirection}
+          />
+          <TrendCard
+            label="Revenue"
+            metric="revenue"
+            unit="$"
+            color={T.green}
+            data={trend}
+            direction={revDirection}
+          />
+        </div>
+      )}
+
+      {/* ─── SPECIALIZATION ─── */}
+      <SectionHeader>Specialization</SectionHeader>
+      <div style={{ fontSize: 11.5, color: T.muted, marginBottom: 12, lineHeight: 1.55, maxWidth: 640 }}>
+        Your network's expertise per genre. Every airing earns XP toward the next
+        half-star (XP = airing rating). Stars boost the quality of new productions in
+        that genre — and at 3★+ they also boost hype, as audiences anticipate something
+        new from you. Going to Metro / National wipes most progress except your
+        specialty.
+      </div>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: 10, marginBottom: 28,
+      }}>
+        {SPEC_GENRES.map(g => (
+          <SpecGenreRow
+            key={g}
+            genre={g}
+            stars={(station.specStars || {})[g] || 0}
+            xp={(station.specXP || {})[g] || 0}
+            market={station.market}
+            isFocus={g === station.focus}
+          />
+        ))}
+      </div>
+
+      {/* ─── AWARDS BY YEAR ─── */}
+      <SectionHeader>Awards History</SectionHeader>
+      {awardRows.length === 0 ? (
+        <EmptyPanel
+          icon="trophy"
+          title="No awards yet"
+          subtitle="Awards are decided in December. Make a hit show and you'll have something here."
+        />
+      ) : (
+        <div style={{
+          background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '80px 1fr 1fr 1fr',
+            background: T.card,
+            padding: '8px 14px',
+            borderBottom: `1px solid ${T.border}`,
+            fontSize: 10.5, color: T.muted, letterSpacing: '.12em',
+            fontFamily: "'JetBrains Mono', monospace",
+          }}>
+            <span>YEAR</span>
+            <span style={{ textAlign: 'right' }}>WINS</span>
+            <span style={{ textAlign: 'right' }}>CASH BONUS</span>
+            <span style={{ textAlign: 'right' }}>FAME BONUS</span>
+          </div>
+          {awardRows.map(row => (
+            <div key={row.year} style={{
+              display: 'grid',
+              gridTemplateColumns: '80px 1fr 1fr 1fr',
+              padding: '10px 14px',
+              borderBottom: `1px solid ${T.border}`,
+              alignItems: 'center',
+            }}>
+              <span className="mono" style={{ fontSize: 13, color: T.text, fontWeight: 700 }}>
+                Y{row.year}
+              </span>
+              <span className="mono" style={{ fontSize: 13, color: T.text, textAlign: 'right', fontWeight: 500 }}>
+                {row.count}
+              </span>
+              <span className="mono" style={{ fontSize: 13, color: T.green, textAlign: 'right' }}>
+                +{fmtM(row.cash).replace('$','$')}
+              </span>
+              <span className="mono" style={{ fontSize: 13, color: T.gold, textAlign: 'right' }}>
+                +{row.fame.toFixed(1)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── STATUS HELPERS ──────────────────────────────────────────────────────
+
+function trendDirection(values) {
+  if (values.length < 2) return 'flat'
+  const first = values[0]
+  const last  = values[values.length - 1]
+  if (first === 0 && last === 0) return 'flat'
+  const change = (last - first) / Math.max(0.01, Math.abs(first))
+  if (change > 0.05)  return 'up'
+  if (change < -0.05) return 'down'
+  return 'flat'
+}
+
+function StatusStat({ label, value, accent }) {
+  return (
+    <div style={{
+      background: T.surface,
+      border: `1px solid ${T.border}`,
+      borderRadius: 5,
+      padding: '10px 12px',
+      minWidth: 0,
+    }}>
+      <div className="mono" style={{
+        fontSize: 9.5, color: T.muted, letterSpacing: '.12em',
+      }}>{label.toUpperCase()}</div>
+      <div className="mono" style={{
+        fontSize: 14, color: accent || T.text, fontWeight: 700,
+        marginTop: 4, letterSpacing: '-.01em',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>{value}</div>
+    </div>
+  )
+}
+
+function SectionHeader({ children }) {
+  return (
+    <div className="display" style={{
+      fontSize: 14, color: T.text, letterSpacing: '.06em',
+      textTransform: 'uppercase', marginBottom: 10,
+      paddingBottom: 6, borderBottom: `1px solid ${T.border}`,
+    }}>
+      {children}
+    </div>
+  )
+}
+
+function TrendCard({ label, metric, unit, color, data, direction }) {
+  // Compute max for bar scaling
+  const max = Math.max(0.01, ...data.map(d => d[metric] || 0))
+  const arrow = direction === 'up'   ? { icon: 'chart_up',   color: T.green, label: 'UP' }
+              : direction === 'down' ? { icon: 'chart_down', color: T.red,   label: 'DOWN' }
+              :                        { icon: 'dot',        color: T.muted, label: 'FLAT' }
+  return (
+    <div style={{
+      background: T.surface, border: `1px solid ${T.border}`,
+      borderRadius: 6, padding: 14,
+    }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 10,
+      }}>
+        <div className="mono" style={{ fontSize: 10.5, color: T.muted, letterSpacing: '.12em' }}>
+          {label.toUpperCase()}
+        </div>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          color: arrow.color,
+          fontSize: 10, letterSpacing: '.1em', fontWeight: 600,
+        }}>
+          <Icon name={arrow.icon} size={12} color={arrow.color} />
+          {arrow.label}
+        </div>
+      </div>
+
+      {/* Mini bar chart — 3 bars side by side */}
+      <div style={{
+        display: 'flex', alignItems: 'flex-end', gap: 10, height: 70,
+        marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${T.border}`,
+      }}>
+        {data.map((d, i) => {
+          const v = d[metric] || 0
+          const h = Math.max(6, (v / max) * 60)
+          const isLatest = i === data.length - 1
+          return (
+            <div key={i} style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', gap: 4,
+            }}>
+              <div className="mono" style={{ fontSize: 10, color: T.text, fontWeight: 500 }}>
+                {metric === 'revenue' ? `$${v.toFixed(1)}` : v.toFixed(1)}
+              </div>
+              <div style={{
+                width: '100%', maxWidth: 50, height: h,
+                background: isLatest ? color : color + '66',
+                borderRadius: '3px 3px 0 0',
+                boxShadow: isLatest ? `0 0 12px ${color}55` : 'none',
+                transition: 'all .3s',
+              }} />
+              <div className="mono" style={{ fontSize: 9, color: T.muted, letterSpacing: '.05em' }}>
+                {MONTHS[d.month]}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: T.muted }}>
+        <span>Earliest: {data[0] ? (metric === 'revenue' ? fmtM(data[0][metric]) : `${(data[0][metric]||0).toFixed(1)}M`) : '—'}</span>
+        <span>Latest: {data[data.length-1] ? (metric === 'revenue' ? fmtM(data[data.length-1][metric]) : `${(data[data.length-1][metric]||0).toFixed(1)}M`) : '—'}</span>
+      </div>
+    </div>
+  )
+}
+
+function SpecGenreRow({ genre, stars, xp, market, isFocus }) {
+  const cat = CATEGORIES[genre]
+  const label = cat?.label || genre
+  const color = cat?.color || T.accent
+  const threshold = specThresholdFor(stars, market)
+  const atCap = threshold == null
+  const pct = atCap ? 1 : Math.min(1, xp / threshold)
+  const qBonus = specQualityBonus(stars)
+  const hBonus = specHypeBonus(stars)
+  const hasAnyBonus = qBonus > 0 || hBonus > 0
+
+  return (
+    <div style={{
+      background: T.surface, border: `1px solid ${T.border}`,
+      borderLeft: `3px solid ${stars > 0 ? color : T.border}`,
+      borderRadius: 5, padding: '11px 13px',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 8, marginBottom: 7,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+          <CategoryIcon categoryId={genre} size={14} color={stars > 0 ? color : T.muted} />
+          <span style={{
+            fontSize: 13, color: T.text, fontWeight: 600,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{label}</span>
+          {isFocus && (
+            <span className="mono" style={{
+              fontSize: 8.5, color: T.gold, letterSpacing: '.1em',
+              padding: '1px 5px', borderRadius: 2,
+              border: `1px solid ${T.gold}55`,
+              background: T.gold + '12',
+              flexShrink: 0,
+            }}>SPECIALTY</span>
+          )}
+        </div>
+        <StarMeter stars={stars} color={color} />
+      </div>
+
+      {/* Active bonus badges — only when there's something to show. */}
+      {hasAnyBonus && (
+        <div style={{
+          display: 'flex', gap: 6, marginBottom: 7,
+        }}>
+          {qBonus > 0 && (
+            <span className="mono" style={{
+              fontSize: 9.5, color: color, fontWeight: 700,
+              padding: '2px 7px', borderRadius: 3,
+              background: color + '18',
+              border: `1px solid ${color}55`,
+              letterSpacing: '.06em',
+            }}>
+              Q +{qBonus.toFixed(2)}
+            </span>
+          )}
+          {hBonus > 0 && (
+            <span className="mono" style={{
+              fontSize: 9.5, color: T.gold, fontWeight: 700,
+              padding: '2px 7px', borderRadius: 3,
+              background: T.gold + '14',
+              border: `1px solid ${T.gold}66`,
+              letterSpacing: '.06em',
+            }}>
+              H +{hBonus.toFixed(2)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* XP bar */}
+      <div style={{
+        height: 4, background: T.border, borderRadius: 2, overflow: 'hidden',
+        marginBottom: 4,
+      }}>
+        <div style={{
+          height: '100%',
+          width: `${pct * 100}%`,
+          background: color,
+          transition: 'width .5s',
+        }} />
+      </div>
+      <div className="mono" style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontSize: 9.5, color: T.muted, letterSpacing: '.06em',
+      }}>
+        {atCap ? (
+          <span style={{ color: T.gold }}>MAX</span>
+        ) : (
+          <>
+            <span>XP {xp.toFixed(1)} / {threshold}</span>
+            <span>Next: {(stars + 0.5).toFixed(1)}★</span>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function StarMeter({ stars, color }) {
+  // Render 5 star slots. Each can be empty / half / full based on stars value.
+  const slots = []
+  for (let i = 0; i < 5; i++) {
+    const filled = stars - i
+    let state = 'empty'
+    if (filled >= 1) state = 'full'
+    else if (filled >= 0.5) state = 'half'
+    slots.push(state)
+  }
+  return (
+    <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+      {slots.map((s, i) => (
+        <StarSlot key={i} state={s} color={color} />
+      ))}
+    </div>
+  )
+}
+
+function StarSlot({ state, color }) {
+  // Approximate a 5-pointed star with an SVG polygon. Two layers: outline + fill clipped by state.
+  const path = "M8 1.2 L9.85 5.95 L15 6.4 L11.1 9.85 L12.35 14.85 L8 12.1 L3.65 14.85 L4.9 9.85 L1 6.4 L6.15 5.95 Z"
+  const fillId = `star-fill-${Math.random().toString(36).slice(2, 8)}`
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" style={{ display: 'block' }}>
+      <defs>
+        <clipPath id={fillId}>
+          <rect x="0" y="0" width={state === 'full' ? 16 : state === 'half' ? 8 : 0} height="16" />
+        </clipPath>
+      </defs>
+      {/* Outline always shows */}
+      <path d={path} fill="none" stroke={state === 'empty' ? T.borderHi : color} strokeWidth="1.2" strokeLinejoin="round" />
+      {/* Filled portion */}
+      <path d={path} fill={color} clipPath={`url(#${fillId})`} />
+    </svg>
+  )
+}
+
+function EmptyPanel({ icon, title, subtitle }) {
+  return (
+    <div style={{
+      background: T.surface, border: `1px solid ${T.border}`,
+      borderRadius: 6, padding: 28, textAlign: 'center', marginBottom: 24,
+    }}>
+      <Icon name={icon} size={24} color={T.muted} />
+      <div style={{ fontSize: 13.5, color: T.text, marginTop: 10, marginBottom: 4 }}>
+        {title}
+      </div>
+      <div style={{ fontSize: 11.5, color: T.muted, lineHeight: 1.5 }}>
+        {subtitle}
+      </div>
+    </div>
+  )
+}
+
+// ─── MOVIE PACKS BLOCK ───────────────────────────────────────────────────
+function MoviePackBlock({ station, year, monthIdx, onBuy }) {
+  const ownedPacks = (station.moviePacks || []).filter(p => (p.airingsLeft || 0) > 0)
+  const ownedIds = new Set(ownedPacks.map(p => p.packId))
+
+  // Sort the catalog: highest tier first
+  const tierOrder = { Legendary: 0, Epic: 1, Rare: 2, Uncommon: 3, Common: 4 }
+  const catalog = [...MOVIES].sort((a, b) =>
+    (tierOrder[a.tier] ?? 99) - (tierOrder[b.tier] ?? 99) || (b.h - a.h)
+  )
+
+  return (
+    <div>
+      {/* Owned packs */}
+      {ownedPacks.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, color: T.green, marginBottom: 6 }}>ON SHELF ({ownedPacks.length})</div>
+          <div style={{ display: 'grid', gap: 6,
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+            {ownedPacks.map(p => {
+              const pack = MOVIES.find(m => m.id === p.packId)
+              if (!pack) return null
+              const total = pack.packSize || 3
+              return (
+                <div key={p.packId} style={{
+                  padding: 10, background: T.green + '12',
+                  border: `1px solid ${T.green}55`, borderRadius: 5,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      🎞 {pack.name}
+                    </div>
+                    <div className="mono" style={{
+                      fontSize: 11, color: T.green, fontWeight: 600, flexShrink: 0,
+                      background: T.green + '22', padding: '2px 7px', borderRadius: 3,
+                    }}>
+                      {p.airingsLeft}/{total}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: T.muted, marginTop: 4 }}>
+                    {pack.tier} · Q {pack.q.toFixed(1)} · H {(p.purchaseHype ?? pack.h).toFixed(1)}
+                    {p.penaltyApplied && <span style={{ color: T.gold, marginLeft: 4 }}>· reduced hype</span>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Available catalog */}
+      <div style={{ fontSize: 10, color: T.muted, marginBottom: 6 }}>AVAILABLE TO LICENSE</div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {catalog.map(pack => {
+          const isOwned = ownedIds.has(pack.id)
+          const hypeInfo = moviePackPurchaseHype(station, pack.id, year, monthIdx)
+          const lastConsumed = findLastConsumedPack(station, pack.id)
+          const affordable = station.cash >= pack.cost
+          const tierColor = pack.tier === 'Legendary' ? T.gold
+                           : pack.tier === 'Epic' ? T.purple
+                           : pack.tier === 'Rare' ? T.teal
+                           : pack.tier === 'Uncommon' ? T.green
+                           : T.muted
+
+          let buttonLabel, buttonDisabled
+          if (isOwned) {
+            buttonLabel = 'ON SHELF'
+            buttonDisabled = true
+          } else if (!affordable) {
+            buttonLabel = `Need ${fmtM(pack.cost)}`
+            buttonDisabled = true
+          } else if (hypeInfo.penaltyApplied) {
+            buttonLabel = `Buy ${fmtM(pack.cost)} (−hype)`
+            buttonDisabled = false
+          } else {
+            buttonLabel = `Buy ${fmtM(pack.cost)}`
+            buttonDisabled = false
+          }
+
+          return (
+            <div key={pack.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '9px 11px',
+              background: isOwned ? 'rgba(91, 214, 135, .04)' : T.surface,
+              border: `1px solid ${isOwned ? T.green + '33' : T.border}`,
+              borderLeft: `3px solid ${tierColor}`,
+              borderRadius: 5,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 3 }}>
+                  {pack.name}
+                </div>
+                <div style={{ fontSize: 10.5, color: T.muted, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ color: tierColor }}>{pack.tier}</span>
+                  <span>· Q {pack.q.toFixed(1)}</span>
+                  <span>· H {hypeInfo.hype.toFixed(1)}{hypeInfo.penaltyApplied && <span style={{ color: T.gold }}> ↓</span>}</span>
+                  <span>· {pack.packSize || 3} airings</span>
+                  {hypeInfo.penaltyApplied && (
+                    <span style={{ color: T.gold }}>
+                      · cooldown: {hypeInfo.monthsUntilRestore} mo
+                    </span>
+                  )}
+                  {!isOwned && !hypeInfo.penaltyApplied && lastConsumed && (
+                    <span style={{ color: T.muted, fontStyle: 'italic' }}>· previously aired</span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={buttonDisabled ? undefined : () => onBuy(pack.id)}
+                disabled={buttonDisabled}
+                style={{
+                  background: buttonDisabled ? T.card : tierColor,
+                  color: buttonDisabled ? T.muted : T.bg,
+                  border: 'none', borderRadius: 4,
+                  padding: '6px 11px',
+                  fontFamily: 'Anton, sans-serif',
+                  fontSize: 11.5, letterSpacing: '.06em',
+                  cursor: buttonDisabled ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {buttonLabel}
+              </button>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

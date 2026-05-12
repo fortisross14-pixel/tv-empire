@@ -4,6 +4,7 @@ import {
   CATEGORIES, MARKETING_TIERS, RUN_LENGTHS, MOVIES, MONTHS,
   PROD_DESIGN_TIERS, SFX_TIERS, MUSIC_TIERS, AUDIO_TIERS, SUBTITLE_TIERS, VIDEO_TIERS,
   SPORTS_LEAGUES,
+  SCRIPT_TIER_RANK, STAR_TIER_MAX_FOR_SCRIPT,
 } from '../constants.js'
 import { HTag, SectionTitle, Card } from './ui.jsx'
 import {
@@ -85,6 +86,14 @@ export function ProductionView({
   const starsSorted = useMemo(() => sortBySpecialty(roster.stars, categoryId), [roster.stars, categoryId])
   const [directorId, setDirectorId] = useState(dirsSorted[0]?.id || null)
   const [starId, setStarId] = useState(starsSorted[0]?.id || null)
+  // Second star is super-only.
+  const [starId2, setStarId2] = useState(null)
+
+  // The script's tier drives a bunch of restrictions (which stars are allowed,
+  // which prod tiers, whether starId2 is available).
+  const scriptTier = script?.tier || 'normal'
+  const scriptTierRank = SCRIPT_TIER_RANK[scriptTier] ?? 0
+  const allowedStarTiers = STAR_TIER_MAX_FOR_SCRIPT[scriptTier] || []
 
   // Reset crew when category changes
   useEffect(() => {
@@ -96,6 +105,32 @@ export function ProductionView({
       setStarId(starsSorted[0]?.id || null)
     }
   }, [categoryId, needsCrew])
+
+  // If the script tier no longer allows the currently selected star, switch to
+  // the first allowed star. If we drop below 'super', clear the second star.
+  useEffect(() => {
+    if (!needsCrew) return
+    if (scriptTier !== 'super') setStarId2(null)
+    const curStar = roster.stars.find(s => s.id === starId)
+    if (curStar && !allowedStarTiers.includes(curStar.tier)) {
+      const firstAllowed = starsSorted.find(s => allowedStarTiers.includes(s.tier))
+      setStarId(firstAllowed?.id || null)
+    }
+  }, [scriptTier, needsCrew])
+
+  // Same idea for the production tier picks — reset any that now exceed the
+  // script tier when the user switches scripts to a lower-tier draft.
+  useEffect(() => {
+    const isLocked = (id, list) => {
+      const o = list.find(x => x.id === id)
+      const need = SCRIPT_TIER_RANK[o?.minScriptTier] ?? 0
+      return need > scriptTierRank
+    }
+    if (isLocked(prodDesignId, PROD_DESIGN_TIERS)) setProdDesignId('pd_realnormal')
+    if (isLocked(sfxId, SFX_TIERS))                setSfxId('sfx_none')
+    if (isLocked(subsId, SUBTITLE_TIERS))          setSubsId('subs_none')
+    if (isLocked(videoId, VIDEO_TIERS))            setVideoId('video_sd')
+  }, [scriptTierRank])
 
   // ── TIERS (blind — no good/bad badges) ───────────────────────────────────
   const [prodDesignId, setProdDesignId] = useState('pd_realnormal')
@@ -132,12 +167,14 @@ export function ProductionView({
     categoryId, topicId, ipId,
     directorId: needsCrew ? directorId : null,
     starId: needsCrew ? starId : null,
+    starId2: needsCrew && scriptTier === 'super' ? starId2 : null,
     prodDesignId, sfxId, musicId,
     audioId, subsId, videoId,
     marketingId,
     plannedRunMonths,
   }), [name, buildType, scriptId, movieId, sportsLeagueId, categoryId, topicId, ipId,
-       needsCrew, directorId, starId, prodDesignId, sfxId, musicId,
+       needsCrew, directorId, starId, starId2, scriptTier,
+       prodDesignId, sfxId, musicId,
        audioId, subsId, videoId, marketingId, plannedRunMonths])
 
   // ── LIVE ESTIMATE (re-rolls slightly each toggle due to noise; that's OK) ──
@@ -267,14 +304,26 @@ export function ProductionView({
             <select value={scriptId || ''} onChange={e => { setScriptId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
               {readyScripts.map(s => {
                 const cat = CATEGORIES[s.categoryId]
+                const tierLabel = (s.tier && s.tier !== 'normal') ? ` [${s.tier.toUpperCase()}]` : ''
                 return (
                   <option key={s.id} value={s.id}>
-                    {s.name} · {cat?.label || s.categoryId} · hype {Math.round(s.hype)}
+                    {s.name}{tierLabel} · {cat?.label || s.categoryId} · hype {Math.round(s.hype)}
                     {s.timesUsed > 0 ? ` (${s.timesUsed} uses)` : ''}
                   </option>
                 )
               })}
             </select>
+            {script && (
+              <div style={{
+                fontSize: 10.5, color: scriptTier === 'super' ? T.gold : (scriptTier === 'large' ? T.teal : T.muted),
+                marginTop: 4,
+                fontWeight: scriptTier !== 'normal' ? 600 : 400,
+              }}>
+                {scriptTier === 'super' ? '★ Super script — top-tier production unlocked, cast 2 stars'
+                  : scriptTier === 'large' ? '★ Large script — top-tier production unlocked'
+                  : 'Normal script — Common/Uncommon/Rare stars only, mid-tier production max'}
+              </div>
+            )}
             {script && script.timesUsed > 0 && (
               <div style={{ fontSize: 10, color: T.gold, marginTop: 4 }}>
                 ⚠ Already used {script.timesUsed} time(s). Each use decays hype 20%.
@@ -284,13 +333,46 @@ export function ProductionView({
         )}
 
         {buildType === 'movie' && (
-          <Field label="Movie">
-            <select value={movieId || ''} onChange={e => { setMovieId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
-              <option value="">— pick a movie —</option>
-              {MOVIES.map(m => (
-                <option key={m.id} value={m.id}>{m.name} · {m.tier} · {fmtM(m.cost)}</option>
-              ))}
-            </select>
+          <Field label="Movie Pack">
+            {(() => {
+              // Only packs the player currently owns and that still have airings left.
+              const ownedActivePacks = (station.moviePacks || [])
+                .filter(p => (p.airingsLeft || 0) > 0)
+                .map(p => {
+                  const pack = MOVIES.find(m => m.id === p.packId)
+                  return pack ? { ...p, pack } : null
+                })
+                .filter(Boolean)
+
+              if (ownedActivePacks.length === 0) {
+                return (
+                  <div style={{
+                    padding: '10px 12px',
+                    background: 'rgba(239, 69, 101, .06)',
+                    border: '1px dashed rgba(239, 69, 101, .4)',
+                    borderRadius: 4,
+                    fontSize: 12, color: '#ef4565', lineHeight: 1.5,
+                  }}>
+                    No movie packs on shelf. Buy one in <strong>Operations → Purchase Rights</strong> first.
+                  </div>
+                )
+              }
+
+              return (
+                <select
+                  value={movieId || ''}
+                  onChange={e => { setMovieId(e.target.value); setEstVersion(v => v+1) }}
+                  style={inputStyle}
+                >
+                  <option value="">— pick a pack —</option>
+                  {ownedActivePacks.map(p => (
+                    <option key={p.packId} value={p.packId}>
+                      {p.pack.name} · {p.pack.tier} · {p.airingsLeft}/{p.pack.packSize || 3} airings left
+                    </option>
+                  ))}
+                </select>
+              )
+            })()}
           </Field>
         )}
 
@@ -341,16 +423,43 @@ export function ProductionView({
               </select>
             </Field>
 
-            <Field label="Star">
+            <Field label={scriptTier === 'super' ? 'Lead Star' : 'Star'}>
               <select value={starId || ''} onChange={e => { setStarId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
                 {starsSorted.length === 0 && <option value="">— no stars on roster —</option>}
-                {starsSorted.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} · {s.tier} · best at {s.specialty}{s.specialty === categoryId ? ' ✓' : ''}
-                  </option>
-                ))}
+                {starsSorted.map(s => {
+                  const allowed = allowedStarTiers.includes(s.tier)
+                  return (
+                    <option key={s.id} value={s.id} disabled={!allowed}>
+                      {s.name} · {s.tier} · best at {s.specialty}{s.specialty === categoryId ? ' ✓' : ''}{!allowed ? ' 🔒' : ''}
+                    </option>
+                  )
+                })}
               </select>
+              {scriptTier !== 'super' && scriptTier !== 'large' && (
+                <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
+                  Epic/Legendary stars need Large/Super scripts.
+                </div>
+              )}
             </Field>
+
+            {scriptTier === 'super' && (
+              <Field label="Co-Star (Super scripts only)">
+                <select value={starId2 || ''} onChange={e => { setStarId2(e.target.value || null); setEstVersion(v => v+1) }} style={inputStyle}>
+                  <option value="">— none —</option>
+                  {starsSorted.filter(s => s.id !== starId).map(s => {
+                    const allowed = allowedStarTiers.includes(s.tier)
+                    return (
+                      <option key={s.id} value={s.id} disabled={!allowed}>
+                        {s.name} · {s.tier} · best at {s.specialty}{s.specialty === categoryId ? ' ✓' : ''}{!allowed ? ' 🔒' : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+                <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
+                  Adds a second lead at 75% weight — meaningful Q + H boost.
+                </div>
+              </Field>
+            )}
           </>
         )}
 
@@ -362,6 +471,7 @@ export function ProductionView({
                 tiers={PROD_DESIGN_TIERS}
                 selectedId={prodDesignId}
                 onPick={(id) => { setProdDesignId(id); setEstVersion(v => v+1) }}
+                scriptTierRank={scriptTierRank}
               />
             </Field>
 
@@ -370,6 +480,7 @@ export function ProductionView({
                 tiers={SFX_TIERS}
                 selectedId={sfxId}
                 onPick={(id) => { setSfxId(id); setEstVersion(v => v+1) }}
+                scriptTierRank={scriptTierRank}
               />
             </Field>
 
@@ -378,6 +489,7 @@ export function ProductionView({
                 tiers={MUSIC_TIERS}
                 selectedId={musicId}
                 onPick={(id) => { setMusicId(id); setEstVersion(v => v+1) }}
+                scriptTierRank={scriptTierRank}
               />
             </Field>
           </>
@@ -398,9 +510,9 @@ export function ProductionView({
             textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none',
             marginBottom: 4,
           }}>Technical Quality (tap to expand)</summary>
-          <TechRow label="Audio"     options={audioOpts}  selectedId={audioId} onPick={(id) => { setAudioId(id); setEstVersion(v => v+1) }} />
-          <TechRow label="Subtitles" options={subsOpts}   selectedId={subsId}  onPick={(id) => { setSubsId(id);  setEstVersion(v => v+1) }} />
-          <TechRow label="Video"     options={videoOpts}  selectedId={videoId} onPick={(id) => { setVideoId(id); setEstVersion(v => v+1) }} />
+          <TechRow label="Audio"     options={audioOpts}  selectedId={audioId} onPick={(id) => { setAudioId(id); setEstVersion(v => v+1) }} scriptTierRank={scriptTierRank} />
+          <TechRow label="Subtitles" options={subsOpts}   selectedId={subsId}  onPick={(id) => { setSubsId(id);  setEstVersion(v => v+1) }} scriptTierRank={scriptTierRank} />
+          <TechRow label="Video"     options={videoOpts}  selectedId={videoId} onPick={(id) => { setVideoId(id); setEstVersion(v => v+1) }} scriptTierRank={scriptTierRank} />
         </details>
 
         {/* ── MARKETING ──────────────────────────────────────────────── */}
@@ -522,20 +634,25 @@ export function ProductionView({
 }
 
 // ─── SUBCOMPONENTS ──────────────────────────────────────────────────────────
-function TierPicker({ tiers, selectedId, onPick }) {
+function TierPicker({ tiers, selectedId, onPick, scriptTierRank = 0 }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
       {tiers.map(t => {
         const isSel = t.id === selectedId
+        const needRank = SCRIPT_TIER_RANK[t.minScriptTier] ?? 0
+        const locked = needRank > scriptTierRank
         return (
           <button
             key={t.id}
-            onClick={() => onPick(t.id)}
+            onClick={() => !locked && onPick(t.id)}
+            disabled={locked}
             style={{
               background: isSel ? T.accent + '22' : T.card,
               border: `1.5px solid ${isSel ? T.accent : T.border}`,
               borderRadius: 5, padding: '8px 10px',
-              textAlign: 'left', cursor: 'pointer',
+              textAlign: 'left',
+              cursor: locked ? 'not-allowed' : 'pointer',
+              opacity: locked ? 0.45 : 1,
               color: T.text,
             }}
           >
@@ -543,7 +660,7 @@ function TierPicker({ tiers, selectedId, onPick }) {
               fontSize: 12, fontWeight: 700,
               color: isSel ? T.accent : T.text,
               marginBottom: 3, lineHeight: 1.2,
-            }}>{t.label}</div>
+            }}>{t.label}{locked && ' 🔒'}</div>
             <div style={{ fontSize: 10, color: T.muted, lineHeight: 1.3 }}>{t.desc}</div>
             <div style={{
               fontSize: 10, color: T.text, marginTop: 5,
@@ -551,6 +668,11 @@ function TierPicker({ tiers, selectedId, onPick }) {
             }}>
               {t.cost > 0 ? fmtM(t.cost) : 'free'}
             </div>
+            {locked && (
+              <div style={{ fontSize: 9, color: T.red, marginTop: 3 }}>
+                Requires {t.minScriptTier} script
+              </div>
+            )}
           </button>
         )
       })}
@@ -558,16 +680,20 @@ function TierPicker({ tiers, selectedId, onPick }) {
   )
 }
 
-function TechRow({ label, options, selectedId, onPick }) {
+function TechRow({ label, options, selectedId, onPick, scriptTierRank = 0 }) {
   return (
     <div style={{ marginBottom: 6 }}>
       <div style={{ fontSize: 10, color: T.muted, marginBottom: 3 }}>{label}</div>
       <select value={selectedId} onChange={e => onPick(e.target.value)} style={inputStyle}>
-        {options.map(o => (
-          <option key={o.id} value={o.id}>
-            {o.label} {o.cost ? `· ${fmtM(o.cost)}` : ''}
-          </option>
-        ))}
+        {options.map(o => {
+          const needRank = SCRIPT_TIER_RANK[o.minScriptTier] ?? 0
+          const locked = needRank > scriptTierRank
+          return (
+            <option key={o.id} value={o.id} disabled={locked}>
+              {o.label} {o.cost ? `· ${fmtM(o.cost)}` : ''}{locked ? ` 🔒 needs ${o.minScriptTier}` : ''}
+            </option>
+          )
+        })}
       </select>
     </div>
   )

@@ -69,6 +69,15 @@ import {
   r2,
   // 6 — ledger
   ledgerEntry,
+  // 7 — specialization
+  applySpecXP,
+  specOnMarketPromotion,
+  // 8 — movie packs
+  buyMoviePack,
+  canBuyMoviePack,
+  findOwnedActivePack,
+  findLastConsumedPack,
+  moviePackPurchaseHype,
 } from './engine'
 
 import { SetupScreen } from './components/SetupScreen'
@@ -88,7 +97,7 @@ import { play as playSound, initOnGesture, isMuted, toggleMuted } from './audio'
 import { Icon } from './icons.jsx'
 
 // ─── AUTO-SAVE ──────────────────────────────────────────────────────────
-const SAVE_KEY = 'tv-empire-save-v6'
+const SAVE_KEY = 'tv-empire-save-v9'
 
 function saveGame(game) {
   try {
@@ -116,13 +125,22 @@ function loadGame() {
     if (!g.station.scripts) g.station.scripts = []
     if (!g.station.programs) g.station.programs = []
     if (!g.station.brandId) g.station.brandId = 'ember'
+    if (!g.station.moviePacks) g.station.moviePacks = []
+    if (!g.station.specStars) {
+      // Default: focus genre 1★, everything else 0
+      g.station.specStars = { news: 0, reality: 0, series: 0, latenight: 0, sports: 0, movie: 0, family: 0, kids: 0 }
+      if (g.station.focus) g.station.specStars[g.station.focus] = 1
+    }
+    if (!g.station.specXP) g.station.specXP = { news: 0, reality: 0, series: 0, latenight: 0, sports: 0, movie: 0, family: 0, kids: 0 }
     if (!g.research.inProgress) g.research.inProgress = []
+    if (!g.research.scriptTiersUnlocked) g.research.scriptTiersUnlocked = []
     if (!g.pendingHires) g.pendingHires = []
     if (!g.pendingReviews) g.pendingReviews = []
     if (!g.ownedShows) g.ownedShows = []
     if (!g.allShows) g.allShows = []
     if (!g.competitorAllShows) g.competitorAllShows = []
     if (!g.ledger) g.ledger = []
+    if (!g.awardsByYear) g.awardsByYear = {}
     return g
   } catch (e) { return null }
 }
@@ -307,14 +325,15 @@ export default function App() {
     }, 0)
   }, [game.runs, game.monthIdx])
 
-  // Permanent contract per-month total + staff salaries + writer salaries
+  // Permanent contract per-month total + staff salaries + writer salaries + market infra
   const permanentCharge = useMemo(() => {
     if (!game.station) return 0
     const tally = (list) => (list || []).reduce((a, h) => a + (h.permanent ? (h.perMonthCharge || 0) : 0), 0)
     const talentMonthly = tally(game.station.hiredDirectors) + tally(game.station.hiredStars)
     const writerMonthly = writerSalaryTotal(game.station)
     const staffMonthly = staffSalaryTotal(game.station)
-    return talentMonthly + writerMonthly + staffMonthly
+    const infraMonthly = MARKETS[game.station.market]?.monthlyInfra || 0
+    return talentMonthly + writerMonthly + staffMonthly + infraMonthly
   }, [game.station])
 
   // ─── ADVANCE MONTH ────────────────────────────────────────────────────
@@ -354,6 +373,23 @@ export default function App() {
         a.net = r1((a.revenue || 0) - (a.cost || 0))
         playerRev += a.revenue || 0
         playerAud += a.audience || 0
+      })
+
+      // ── Phase 3b: specialization XP ──────────────────────────────────
+      // Every player airing contributes max(1, rating) XP to its genre.
+      // Movies count as 'movie', sports as 'sports', otherwise the program's
+      // categoryId. Star-ups are collected for the milestone log + audio cue.
+      let stationWithSpec = g.station
+      const starUpsThisMonth = []
+      playerAirings.forEach(a => {
+        const catForSpec = a.movieId ? 'movie'
+                         : a.sportsRunLeagueId ? 'sports'
+                         : a.categoryId
+        const res = applySpecXP(stationWithSpec, catForSpec, a.rating || 0)
+        stationWithSpec = res.station
+        if (res.starUps.length > 0) {
+          starUpsThisMonth.push(...res.starUps)
+        }
       })
 
       // Finalize player run histories
@@ -466,19 +502,40 @@ export default function App() {
           newReviews.push({ program: after, review: after.review })
         }
       })
-      // Programs whose runs expired this month → mark finished
+      // Programs whose runs expired this month → mark finished.
+      // Track which programs actually finished (vs movie packs going back to
+      // shelf) so we can log pack consumption.
+      let stationForFinish = { ...g.station, programs: programsAfterAirings, moviePacks: g.station.moviePacks || [] }
+      const finishLogs = []
       result.expiredRunIds.forEach(rid => {
         const expiredRun = g.runs.find(r => r.id === rid)
         if (!expiredRun?.programId) return
-        const upd = finishProgram({ programs: programsAfterAirings }, expiredRun.programId, null)
-        programsAfterAirings = upd.programs
+        const upd = finishProgram(stationForFinish, expiredRun.programId, null, g.year, g.monthIdx)
+        stationForFinish = upd.station
+        if (upd.packExhausted) {
+          finishLogs.push(`🎞 Pack exhausted: "${expiredRun.name}" — 12-month cooldown until full hype returns`)
+        } else if (upd.packConsumed) {
+          // Pack still has airings, the program returned to shelf
+          const remaining = findOwnedActivePack(stationForFinish, expiredRun.movieId)?.airingsLeft ?? 0
+          finishLogs.push(`🎞 "${expiredRun.name}" returned to shelf — ${remaining} airing${remaining === 1 ? '' : 's'} left`)
+        }
       })
+      programsAfterAirings = stationForFinish.programs
+      const moviePacksAfterAirings = stationForFinish.moviePacks
+      finishLogs.forEach(l => logLines.push(l))
 
-      const newCash = g.station.cash - playerCost + playerRev - ticked.perMonthCharge - salaryThisMonth
+      // Monthly market-tier infrastructure cost (studios, transmitters,
+      // bureaus, regulatory). Zero at local, $2M at metro, $5M at national.
+      const infraCost = MARKETS[g.station.market]?.monthlyInfra || 0
+
+      const newCash = g.station.cash - playerCost + playerRev - ticked.perMonthCharge - salaryThisMonth - infraCost
       const newFame = Math.max(0, g.station.fame + result.fameDeltaFromRatings)
 
       if (salaryThisMonth > 0) {
         logLines.push(`👥 Staff salaries: ${fmtM(-salaryThisMonth)}`)
+      }
+      if (infraCost > 0) {
+        logLines.push(`🏢 ${MARKETS[g.station.market].label} infrastructure: ${fmtM(-infraCost)}`)
       }
 
       // ── Build month ledger entries ─────────────────────────────────
@@ -538,6 +595,14 @@ export default function App() {
           amount: -salaryThisMonth,
         }))
       }
+      if (infraCost > 0) {
+        monthLedger.push(ledgerEntry({
+          year: g.year, month: g.monthIdx,
+          kind: 'infrastructure',
+          label: `${MARKETS[g.station.market].label} infrastructure`,
+          amount: -infraCost,
+        }))
+      }
 
       const station = {
         ...stationAfterStaff,
@@ -548,7 +613,21 @@ export default function App() {
         hiredWriters: ticked.hiredWriters,
         scripts: tickedScripts.scripts,
         programs: programsAfterAirings,
+        moviePacks: moviePacksAfterAirings,
         activeCampaign: null,  // campaigns last only the month they're launched
+        // v7: carry forward this month's specialization XP and any star-ups
+        specStars: stationWithSpec.specStars,
+        specXP:    stationWithSpec.specXP,
+      }
+
+      // Log + play audio for any star-ups this month
+      starUpsThisMonth.forEach(({ categoryId, newStars }) => {
+        const catLabel = (categoryId || '').toString().replace(/^./, c => c.toUpperCase())
+        logLines.push(`⭐ Specialty up: ${catLabel} now at ${newStars}★`)
+      })
+      if (starUpsThisMonth.length > 0) {
+        // Defer to next paint so it lands after results_reveal
+        setTimeout(() => playSound('confirm'), 1100)
       }
 
       const monthLabel = MONTHS[g.monthIdx]
@@ -589,6 +668,7 @@ export default function App() {
       const lastMonthResult = {
         airings: playerAirings,
         competitorAirings: competitorAiringsThisMonth,
+        starUps: starUpsThisMonth,
         totals: {
           cost: r1(playerCost),
           revenue: r1(playerRev),
@@ -652,6 +732,7 @@ export default function App() {
           ownedShows: newOwned,
           lastMonthResult,
           awards,
+          awardsByYear: { ...(g.awardsByYear || {}), [g.year]: awards },
           pendingReviews: newReviews,
           ledger: [...(g.ledger || []), ...monthLedger, ...awardLedger],
           phase: 'awards',
@@ -705,15 +786,35 @@ export default function App() {
 
   const promoteMarket = () => {
     if (!canPromote(game.station)) { playSound('error'); return }
+    const nextMarketId = promotedMarket(game.station)
+    const nextMarket = MARKETS[nextMarketId]
+    const cost = nextMarket?.promoteCost || 0
+    if (game.station.cash < cost) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ Need ${fmtM(cost)} to expand to ${nextMarket.label} — you have ${fmtM(g.station.cash)}`] }))
+      return
+    }
     playSound('confirm')
     setGame((g) => {
       if (!canPromote(g.station)) return g
-      const next = promotedMarket(g.station)
+      const prev = g.station.market
+      // Apply specialization reset: keep specialty min 0.5, keep ≥4 at 1, lose rest.
+      const withSpecReset = specOnMarketPromotion({ ...g.station, market: nextMarketId }, prev, nextMarketId)
+      const entry = cost > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'market_promotion',
+        label: `Expansion: ${MARKETS[prev].label} → ${nextMarket.label}`,
+        amount: -cost,
+      }) : null
       return {
         ...g,
-        station: { ...g.station, market: next, cash: g.station.cash + 25 },
-        competitors: initCompetitors(next),
-        log: [...g.log, `🚀 Expanded to ${MARKETS[next].label}! New competitors: ${initCompetitors(next).map(c=>c.name).join(', ')}`],
+        station: { ...withSpecReset, cash: r1(g.station.cash - cost) },
+        competitors: initCompetitors(nextMarketId),
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
+        log: [
+          ...g.log,
+          `🚀 Expanded to ${nextMarket.label} for ${fmtM(cost)}! Specialization reset — only specialty and elite genres retained.`,
+        ],
       }
     })
   }
@@ -889,10 +990,14 @@ export default function App() {
     setGame((g) => {
       const result = beginScript(g.station, opts)
       if (result.error) return { ...g, log: [...g.log, `⚠ Script: ${result.error}`] }
+      const tier = opts.tier || 'normal'
+      const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1)
+      const months = tier === 'normal' ? 1 : 2
+      const costNote = result.charged ? `, ${fmtM(result.charged)}` : ''
       return {
         ...g,
         station: result.station,
-        log: [...g.log, `📝 Began draft: "${opts.name}" (1 mo)`],
+        log: [...g.log, `📝 Began ${tierLabel} draft: "${opts.name}" (${months} mo${costNote})`],
       }
     })
   }
@@ -1099,6 +1204,33 @@ export default function App() {
     })
   }
 
+  // ─── MOVIE PACKS ────────────────────────────────────────────────────
+  const onBuyMoviePack = (packId) => {
+    const probe = buyMoviePack(game.station, packId, game.year, game.monthIdx)
+    if (probe.error) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ Movie pack: ${probe.error}`] }))
+      return
+    }
+    playSound('confirm')
+    setGame((g) => {
+      const result = buyMoviePack(g.station, packId, g.year, g.monthIdx)
+      if (result.error) return { ...g, log: [...g.log, `⚠ Movie pack: ${result.error}`] }
+      const entry = ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'rights_ip',  // bucket with IP rights for now
+        label: `Movie pack: ${result.pack.name}${result.penaltyApplied ? ' (cooldown — reduced hype)' : ''}`,
+        amount: -result.cost,
+      })
+      return {
+        ...g,
+        station: result.station,
+        ledger: [...(g.ledger || []), entry],
+        log: [...g.log, `🎞 Acquired ${result.pack.name} (${result.pack.packSize || 3} airings, ${fmtM(result.cost)})${result.penaltyApplied ? ' — overexposed, hype reduced' : ''}`],
+      }
+    })
+  }
+
   // ─── NETWORK CAMPAIGNS ──────────────────────────────────────────────
   const onLaunchCampaign = (campaignId) => {
     const probe = launchNetworkCampaign(game.station, campaignId, game.research)
@@ -1168,6 +1300,9 @@ export default function App() {
           marketRoster={game.marketRoster}
           research={game.research}
           year={game.year}
+          monthIdx={game.monthIdx}
+          allShows={game.allShows || []}
+          awardsByYear={game.awardsByYear || {}}
           pendingHires={game.pendingHires || []}
           onHire={onHire}
           onFire={onFire}
@@ -1176,7 +1311,9 @@ export default function App() {
           onPickCandidate={onPickCandidate}
           onFireStaff={onFireStaff}
           onBuyIP={onBuyIP}
+          onBuyMoviePack={onBuyMoviePack}
           onLaunchCampaign={onLaunchCampaign}
+          onPromote={promoteMarket}
           onBack={() => setView('plan')}
         />
       )}

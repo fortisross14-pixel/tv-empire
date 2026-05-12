@@ -2,12 +2,13 @@ import { useState, useMemo } from 'react'
 import { T } from '../theme.js'
 import {
   CATEGORIES, WRITERS_CAP, FIRE_PENALTY_MULT, MONTHS,
+  SCRIPT_TIERS, MARKET_ORDER,
 } from '../constants.js'
 import { HTag, SectionTitle, Card } from './ui.jsx'
 import {
   findWriter, findIP, findLeague, findMovie,
   activeWriters, activeIPLicenses, fmtM, r1,
-  getUnlocks,
+  getUnlocks, availableScriptTiers,
 } from '../engine.js'
 import { ProductionView } from './ProductionView.jsx'
 
@@ -756,6 +757,18 @@ function NewScriptModal({ station, year, research, onCancel, onConfirm }) {
     .map(lic => findIP(lic.ipId)).filter(Boolean)
     .filter(ip => (ip.fits || []).includes(categoryId))
 
+  // ── Script tier state ────────────────────────────────────────────────
+  // Always-available tiers come from research.scriptTiersUnlocked (+ 'normal').
+  const unlockedTierIds = useMemo(() => {
+    const set = new Set(research?.scriptTiersUnlocked || [])
+    set.add('normal')
+    return set
+  }, [research])
+  const [tier, setTier] = useState('normal')
+  const tierDef = SCRIPT_TIERS.find(t => t.id === tier) || SCRIPT_TIERS[0]
+  const tierCost = writer ? r1((writer.cost || 0) * (tierDef.costMult || 1)) : 0
+  const canAffordTier = station.cash >= tierCost
+
   const onCatChange = (newCat) => {
     setCategoryId(newCat)
     const nc = CATEGORIES[newCat]
@@ -765,7 +778,7 @@ function NewScriptModal({ station, year, research, onCancel, onConfirm }) {
   }
 
   const writerBusy = busyIds.has(writerId)
-  const canSubmit = writerId && categoryId && topicId && name.trim().length >= 2 && !writerBusy
+  const canSubmit = writerId && categoryId && topicId && name.trim().length >= 2 && !writerBusy && canAffordTier
 
   // If no categories are unlocked at all, show a guidance message
   if (unlockedCategoryIds.length === 0) {
@@ -857,18 +870,75 @@ function NewScriptModal({ station, year, research, onCancel, onConfirm }) {
         </select>
       </Field>
 
-      <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.5, marginTop: 6, marginBottom: 14 }}>
-        Drafting takes <strong style={{ color: T.text }}>1 month</strong>. The writer is locked until it ships.
-        Initial hype = writer skill + IP bonus + a roll. Each use of the finished script later drops hype 20%.
+      <Field label="Script Tier">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+          {SCRIPT_TIERS.map(t => {
+            const unlocked = unlockedTierIds.has(t.id)
+            const isActive = tier === t.id
+            // Why locked, if locked
+            let lockReason = null
+            if (!unlocked) {
+              const marketOk = !t.requiresMarket
+                || MARKET_ORDER.indexOf(station.market) >= MARKET_ORDER.indexOf(t.requiresMarket)
+              lockReason = !marketOk
+                ? `Needs ${t.requiresMarket} market`
+                : `Needs research`
+            }
+            return (
+              <button
+                key={t.id}
+                onClick={() => unlocked && setTier(t.id)}
+                disabled={!unlocked}
+                style={{
+                  background: isActive ? T.accent + '22' : 'transparent',
+                  border: `1px solid ${isActive ? T.accent : T.border}`,
+                  borderRadius: 5,
+                  padding: '8px 6px',
+                  cursor: unlocked ? 'pointer' : 'not-allowed',
+                  opacity: unlocked ? 1 : 0.5,
+                  textAlign: 'left',
+                  color: T.text,
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 600, color: isActive ? T.accent : T.text }}>
+                  {t.label}
+                </div>
+                <div style={{ fontSize: 9.5, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
+                  {t.months}mo · ×{t.costMult.toFixed(1)} cost<br/>
+                  Q≤{t.qCap.toFixed(1)} · H≤{t.hCap}
+                </div>
+                {lockReason && (
+                  <div style={{ fontSize: 9, color: T.red, marginTop: 4 }}>
+                    🔒 {lockReason}
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ fontSize: 10.5, color: T.muted, marginTop: 6, lineHeight: 1.5 }}>
+          {tierDef.desc}
+        </div>
+      </Field>
+
+      <div style={{
+        fontSize: 11, color: T.muted, lineHeight: 1.55, marginTop: 6, marginBottom: 14,
+        padding: '8px 10px', background: T.bg, borderRadius: 4,
+        border: `1px solid ${T.border}`,
+      }}>
+        Drafting takes <strong style={{ color: T.text }}>{tierDef.months} month{tierDef.months > 1 ? 's' : ''}</strong> · Cost <strong style={{ color: canAffordTier ? T.text : T.red }}>{fmtM(tierCost)}</strong> (writer salary × {tierDef.costMult.toFixed(1)})<br/>
+        Quality capped at <strong style={{ color: T.text }}>{tierDef.qCap.toFixed(1)}</strong>, hype at <strong style={{ color: T.text }}>{tierDef.hCap}</strong>. Writer is locked until it ships. Each later use drops hype 20%.
       </div>
 
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={onCancel} style={btnSecondary}>Cancel</button>
         <button
-          onClick={() => canSubmit && onConfirm({ writerId, name: name.trim(), categoryId, topicId, ipId })}
+          onClick={() => canSubmit && onConfirm({ writerId, name: name.trim(), categoryId, topicId, ipId, tier })}
           disabled={!canSubmit}
           style={{ ...btnPrimary, opacity: canSubmit ? 1 : 0.4, cursor: canSubmit ? 'pointer' : 'not-allowed' }}
-        >Begin Draft (1 mo)</button>
+        >
+          {writerBusy ? 'Writer busy' : !canAffordTier ? `Need ${fmtM(tierCost)}` : `Begin ${tierDef.label} Draft (${tierDef.months}mo)`}
+        </button>
       </div>
     </Modal>
   )

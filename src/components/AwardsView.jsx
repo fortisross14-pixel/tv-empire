@@ -1,6 +1,6 @@
 import { T } from '../theme.js'
 import { CATEGORIES, MARKETS, MARKET_ORDER } from '../constants.js'
-import { canPromote, fameLabel } from '../engine.js'
+import { canPromote, fameLabel, fmtM } from '../engine.js'
 
 export function AwardsView({ awards, station, year, onContinue, onPromote }) {
   const { wins, bestOverall, fameBar } = awards
@@ -8,6 +8,8 @@ export function AwardsView({ awards, station, year, onContinue, onPromote }) {
   const market = MARKETS[station.market]
   const idx = MARKET_ORDER.indexOf(station.market)
   const nextMarket = idx < MARKET_ORDER.length - 1 ? MARKETS[MARKET_ORDER[idx + 1]] : null
+  const expansionCost = nextMarket?.promoteCost || 0
+  const canAfford = station.cash >= expansionCost
 
   return (
     <div style={{ maxWidth: 880, margin: '0 auto', padding: '40px 20px' }} className="ani">
@@ -127,20 +129,51 @@ export function AwardsView({ awards, station, year, onContinue, onPromote }) {
             background: T.teal + '14',
             border: `1px solid ${T.teal}`,
             borderRadius: 5,
-            padding: 12,
+            padding: 14,
             marginTop: 12,
           }}>
-            <div className="bebas" style={{ fontSize: 14, color: T.teal, letterSpacing: '.1em', marginBottom: 4 }}>
-              EXPANSION OPPORTUNITY
+            <div className="display" style={{ fontSize: 14, color: T.teal, letterSpacing: '.08em', marginBottom: 6, textTransform: 'uppercase' }}>
+              Expansion Opportunity
             </div>
-            <div style={{ fontSize: 12, color: T.text, marginBottom: 8 }}>
+            <div style={{ fontSize: 12.5, color: T.text, marginBottom: 10, lineHeight: 1.55 }}>
               You've reached the fame threshold to graduate to <b>{nextMarket.label}</b>. {nextMarket.desc}
             </div>
+
+            {/* Deal terms */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+              gap: 8, marginBottom: 12,
+              padding: 10, background: 'rgba(0,0,0,.2)', borderRadius: 4,
+            }}>
+              <Term label="One-time cost"    value={fmtM(expansionCost)}                color={canAfford ? T.text : T.red} />
+              <Term label="Monthly infra"    value={`${fmtM(nextMarket.monthlyInfra)}/mo`} color={T.text} />
+              <Term label="Production cost"  value={`×${nextMarket.prodCostMult.toFixed(2)}`} color={T.text} />
+              <Term label="Revenue / viewer" value={`$${nextMarket.revPerViewer.toFixed(1)}`} color={T.green} />
+            </div>
+
+            {/* Warning about specialization reset */}
+            <div style={{
+              fontSize: 11, color: T.gold, lineHeight: 1.5,
+              padding: '8px 10px', marginBottom: 10,
+              background: T.gold + '0c',
+              border: `1px dashed ${T.gold}55`,
+              borderRadius: 4,
+            }}>
+              ⚠ Specialization reset: only your specialty (min 0.5★) and any genre at 4★+ (kept at 1★) carry over. Everything else is wiped.
+            </div>
+
             <button
               className="cta teal"
-              onClick={onPromote}
-              style={{ width: 'auto', padding: '8px 16px', fontSize: 14 }}
-            >Expand to {nextMarket.label}</button>
+              onClick={canAfford ? onPromote : undefined}
+              disabled={!canAfford}
+              style={{
+                width: 'auto', padding: '10px 18px', fontSize: 14,
+                opacity: canAfford ? 1 : 0.45,
+                cursor: canAfford ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {canAfford ? `Expand for ${fmtM(expansionCost)}` : `Need ${fmtM(expansionCost)} (have ${fmtM(station.cash)})`}
+            </button>
           </div>
         )}
       </div>
@@ -148,6 +181,19 @@ export function AwardsView({ awards, station, year, onContinue, onPromote }) {
       <button className="cta" onClick={onContinue}>
         Begin Year {year + 1} →
       </button>
+    </div>
+  )
+}
+
+function Term({ label, value, color }) {
+  return (
+    <div>
+      <div className="mono" style={{
+        fontSize: 9, color: T.muted, letterSpacing: '.12em',
+      }}>{label.toUpperCase()}</div>
+      <div className="mono" style={{
+        fontSize: 13, color: color || T.text, fontWeight: 700, marginTop: 3,
+      }}>{value}</div>
     </div>
   )
 }

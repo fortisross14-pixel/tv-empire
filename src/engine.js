@@ -18,6 +18,8 @@ import {
   STAFF_ROLES, STAFF_EFFECTS, STAFF_FIRST_NAMES, STAFF_LAST_NAMES,
   SEARCH_TIERS, STAFF_MONTHLY_SALARY,
   IP_LICENSE_TERMS, NETWORK_CAMPAIGNS,
+  MOVIE_PACK_REBUY_HYPE_PENALTY, MOVIE_PACK_COOLDOWN_MONTHS,
+  SCRIPT_TIERS, findScriptTier, SCRIPT_TIER_RANK, STAR_TIER_MAX_FOR_SCRIPT,
   WRITERS, WRITERS_CAP, SCRIPT_HYPE_DECAY, SCRIPT_HYPE_MIN, SCRIPT_HYPE_MAX,
   PROD_DESIGN_TIERS, SFX_TIERS, PRODUCTION_METHODS,
   AFFINITY_GOOD_Q, AFFINITY_GOOD_H, AFFINITY_BAD_Q, AFFINITY_BAD_COST_MULT,
@@ -297,9 +299,12 @@ function rollScriptQuality(writer, ipId) {
   return r1(clamp(skillPart + ipPart + noise + 1.5, 1, 10))
 }
 
-/** Begin drafting a new script. Writer must be hired and not already busy. */
+/** Begin drafting a new script. Writer must be hired and not already busy.
+ *  Optionally takes a tier: 'normal' (default) | 'large' | 'super'. Larger
+ *  tiers cost more (×writer salary), take longer to write, and have higher
+ *  quality/hype caps. They also unlock richer production options. */
 export function beginScript(station, opts) {
-  const { writerId, name, categoryId, topicId, ipId = null } = opts || {}
+  const { writerId, name, categoryId, topicId, ipId = null, tier = 'normal' } = opts || {}
   const writer = findWriter(writerId)
   if (!writer) return { station, error: 'Writer not found' }
   const hired = (station.hiredWriters || []).find(h => h.talentId === writerId)
@@ -319,6 +324,14 @@ export function beginScript(station, opts) {
     if (!lic) return { station, error: 'No active license for that IP' }
   }
 
+  // Tier validation. Larger tiers cost extra writer salary upfront.
+  const tierDef = findScriptTier(tier)
+  if (!tierDef) return { station, error: 'Unknown script tier' }
+  const upfront = r1((writer.cost || 0) * (tierDef.costMult || 1.0))
+  if (station.cash < upfront) {
+    return { station, error: `Need ${fmtM(upfront)} to begin a ${tierDef.label} script` }
+  }
+
   const script = {
     id: uid(),
     name: name.trim(),
@@ -326,8 +339,9 @@ export function beginScript(station, opts) {
     categoryId,
     topicId,
     ipId,
+    tier,
     status: 'drafting',
-    monthsRemaining: 1,
+    monthsRemaining: tierDef.months,
     baseQuality: 0,        // rolled on completion
     hype: 0,
     originalHype: 0,
@@ -335,7 +349,12 @@ export function beginScript(station, opts) {
     refreshing: false,
   }
   return {
-    station: { ...station, scripts: [...(station.scripts || []), script] },
+    station: {
+      ...station,
+      cash: r1(station.cash - upfront),
+      scripts: [...(station.scripts || []), script],
+    },
+    charged: upfront,
     error: null,
   }
 }
@@ -409,12 +428,14 @@ export function tickScripts(station) {
     // Completed
     const writer = findWriter(s.writerId)
     const isRefresh = !!s.refreshing
+    const tierDef = findScriptTier(s.tier || 'normal')
     let baseQuality = s.baseQuality
     let originalHype = s.originalHype
     if (!isRefresh) {
-      // First-time completion: roll base quality & original hype
-      baseQuality = rollScriptQuality(writer, s.ipId)
-      originalHype = rollScriptHype(writer, s.ipId)
+      // First-time completion: roll base quality & original hype, then clamp
+      // to the tier's caps. A normal script will never exceed Q 7 / H 70.
+      baseQuality = r1(Math.min(tierDef.qCap, rollScriptQuality(writer, s.ipId)))
+      originalHype = r1(Math.min(tierDef.hCap, rollScriptHype(writer, s.ipId)))
     }
     const finished = {
       ...s,
@@ -602,13 +623,19 @@ function affinityComponents(prodDesignId, sfxId, categoryId) {
 function rollProgramComponents(opts, station, research) {
   // ── MOVIE PATH ──────────────────────────────────────────────────────────
   // Movies arrive finished. Only marketing + tech tiers can nudge the score;
-  // our prod-design/SFX/music tier choices don't apply.
+  // our prod-design/SFX/music tier choices don't apply. Hype is read from the
+  // active pack (locked in at purchase, possibly penalized by a cooldown).
   if (opts.movieId) {
     const m = findMovie(opts.movieId)
     const mkt = findMarketing(opts.marketingId)
     const tech = techBonus(opts.audioId, opts.subsId, opts.videoId)
-    const q = clamp((m?.q || 5) + (mkt?.q || 0) + tech.q, 0, 10)
-    const h = clamp((m?.h || 5) + (mkt?.h || 0) + tech.h, 0, 10)
+    const baseH = moviePackAiringHype(station, opts.movieId)
+    const rawQ = clamp((m?.q || 5) + (mkt?.q || 0) + tech.q, 0, 10)
+    const rawH = clamp(baseH + (mkt?.h || 0) + tech.h, 0, 10)
+    // Specialization bonus — movies count as 'movie' genre
+    const bumped = applySpecBonuses(rawQ, rawH, station, 'movie')
+    const q = bumped.q
+    const h = bumped.h
     // Synthesize components clustered around q so UI is consistent
     return {
       narrative: r1(clamp(q + rnd(-0.5, 0.5), 0, 10)),
@@ -658,10 +685,12 @@ function rollProgramComponents(opts, station, research) {
       + rnd(-0.3, 0.3)
     , 0, 10)
     const h = clamp((lg?.baseH || 5) + (mkt?.h || 0) + tech.h, 0, 10)
-    const q = weightedQuality({ narrative, art, innovation, technical }, opts.categoryId)
+    const rawQ = weightedQuality({ narrative, art, innovation, technical }, opts.categoryId)
+    // Specialization bonus — sports broadcasts count as 'sports' genre
+    const bumped = applySpecBonuses(rawQ, h, station, 'sports')
     return {
       narrative: r1(narrative), art: r1(art), innovation: r1(innovation), technical: r1(technical),
-      q: r1(q), h: r1(h),
+      q: r1(bumped.q), h: r1(bumped.h),
     }
   }
 
@@ -671,6 +700,9 @@ function rollProgramComponents(opts, station, research) {
   const topic = cat?.topics?.find(t => t.id === opts.topicId)
   const dir = findDirector(opts.directorId)
   const star = findStar(opts.starId)
+  // Second star: super-only. Contributes at 0.75× weight so casting 2 mid-tier
+  // stars beats 1 mid-tier star but a single top-tier + co-star is the real win.
+  const star2 = opts.starId2 ? findStar(opts.starId2) : null
   const ip = opts.ipId ? findIP(opts.ipId) : null
   const mkt = findMarketing(opts.marketingId)
   const tech = techBonus(opts.audioId, opts.subsId, opts.videoId)
@@ -683,12 +715,16 @@ function rollProgramComponents(opts, station, research) {
 
   const dirMatch = dir && dir.specialty === opts.categoryId ? 1.0 : 0.5
   const starMatch = star && star.specialty === opts.categoryId ? 1.0 : 0.5
+  const star2Match = star2 && star2.specialty === opts.categoryId ? 1.0 : 0.5
+  // Combined star contribution: lead at 1.0, co-lead at 0.75.
+  const starQContrib = (star ? star.q * starMatch : 0) + (star2 ? star2.q * star2Match * 0.75 : 0)
+  const starHContrib = (star ? star.h * starMatch : 0) + (star2 ? star2.h * star2Match * 0.75 : 0)
 
   // ── NARRATIVE ──────────────────────────────────────────────────────────
   // The writer's skill carries the most weight here, via the script.
   const writerNarr = writer ? writer.skill * 5.5 * (writer.specialty === opts.categoryId ? 1 : 0.6) : 0
   const scriptNarr = script ? (script.baseQuality - 5) * 0.5 : 0
-  const starNarr = star ? star.q * starMatch * 0.6 : 0
+  const starNarr = starQContrib * 0.6
   const ipNarr = ip ? (ip.q || 0) * 0.7 : 0
   const musicNarr = music?.narrativeBonus || 0
   const narrative = clamp(
@@ -698,7 +734,7 @@ function rollProgramComponents(opts, station, research) {
   // ── ART ─────────────────────────────────────────────────────────────────
   // Prod-design and music drive this most. Star contributes presence.
   const dirArt = dir ? dir.q * dirMatch * 0.4 : 0
-  const starArt = star ? star.q * starMatch * 0.4 : 0
+  const starArt = starQContrib * 0.4
   const ipArt = ip ? (ip.q || 0) * 0.3 : 0
   const musicArt = music?.artBonus || 0
   const art = clamp(
@@ -721,23 +757,28 @@ function rollProgramComponents(opts, station, research) {
   , 0, 10)
 
   // Weighted overall Q
-  const q = weightedQuality({ narrative, art, innovation, technical }, opts.categoryId)
+  const rawQ = weightedQuality({ narrative, art, innovation, technical }, opts.categoryId)
 
   // ── HYPE ───────────────────────────────────────────────────────────────
   // Hype is its own track — script hype, star+director hype, IP hype, marketing.
   const scriptH = script ? (script.hype / 100) * 3 : 0
   const dirH = dir ? dir.h * dirMatch : 0
-  const starH = star ? star.h * starMatch : 0
+  const starH = starHContrib
   const ipH = ip ? (ip.h || 0) : 0
-  const h = clamp(baseH + scriptH + dirH + starH + ipH + (mkt?.h || 0) + tech.h + rnd(-0.4, 0.4), 0, 10)
+  const rawH = clamp(baseH + scriptH + dirH + starH + ipH + (mkt?.h || 0) + tech.h + rnd(-0.4, 0.4), 0, 10)
+
+  // ── SPECIALIZATION BONUS ───────────────────────────────────────────────
+  // Apply the station's per-genre star bonus. Stars 0.5+ give Q; stars 3+
+  // also give H. Movies/sports paths apply this in their own branches above.
+  const bumped = applySpecBonuses(rawQ, rawH, station, opts.categoryId)
 
   return {
     narrative: r1(narrative),
     art: r1(art),
     innovation: r1(innovation),
     technical: r1(technical),
-    q: r1(q),
-    h: r1(h),
+    q: r1(bumped.q),
+    h: r1(bumped.h),
   }
 }
 
@@ -789,6 +830,51 @@ export function beginProgram(station, research, year, opts) {
     if (script.status !== 'ready') return { station, error: 'Script must be ready' }
     if (!opts.directorId) return { station, error: 'Director required' }
     if (!opts.starId) return { station, error: 'Star required' }
+
+    // ── Tier-based gates ────────────────────────────────────────────────
+    const tier = script.tier || 'normal'
+    const tierRank = SCRIPT_TIER_RANK[tier] ?? 0
+    // Star tier must be allowed for this script tier
+    const star = findStar(opts.starId)
+    if (star) {
+      const allowed = STAR_TIER_MAX_FOR_SCRIPT[tier] || []
+      if (!allowed.includes(star.tier)) {
+        return { station, error: `${star.tier} stars require ${star.tier === 'Legendary' ? 'a Super' : 'a Large or Super'} script` }
+      }
+    }
+    // Second star: super-only
+    if (opts.starId2) {
+      if (tier !== 'super') {
+        return { station, error: 'Second star is only available on Super scripts' }
+      }
+      if (opts.starId2 === opts.starId) {
+        return { station, error: 'Pick two different stars' }
+      }
+      const star2 = findStar(opts.starId2)
+      if (star2) {
+        const allowed = STAR_TIER_MAX_FOR_SCRIPT[tier] || []
+        if (!allowed.includes(star2.tier)) {
+          return { station, error: `Second star: ${star2.tier} requires Super script` }
+        }
+      }
+    }
+    // Production tiers — check minScriptTier on each chosen option
+    const checks = [
+      [opts.prodDesignId, PROD_DESIGN_TIERS, 'Production design'],
+      [opts.sfxId, SFX_TIERS, 'SFX'],
+      [opts.audioId, AUDIO_TIERS, 'Audio'],
+      [opts.subsId, SUBTITLE_TIERS, 'Subtitles'],
+      [opts.videoId, VIDEO_TIERS, 'Video'],
+    ]
+    for (const [chosenId, tierList, label] of checks) {
+      if (!chosenId) continue
+      const opt = (tierList || []).find(o => o.id === chosenId)
+      if (!opt?.minScriptTier) continue
+      const need = SCRIPT_TIER_RANK[opt.minScriptTier] ?? 0
+      if (tierRank < need) {
+        return { station, error: `${label} "${opt.label}" requires a ${opt.minScriptTier} script` }
+      }
+    }
   } else {
     if (!opts.movieId) return { station, error: 'Movie required' }
   }
@@ -837,10 +923,19 @@ export function beginProgram(station, research, year, opts) {
   const dq = q * ESTIMATION_RANGE
   const dh = h * ESTIMATION_RANGE
 
+  // Inherit tier from script if there is one; otherwise 'normal' as a default
+  // (movies/sports don't really need this but it's a safe default).
+  let scriptTier = 'normal'
+  if (opts.scriptId) {
+    const s = (station.scripts || []).find(x => x.id === opts.scriptId)
+    if (s?.tier) scriptTier = s.tier
+  }
+
   const program = {
     id: uid(),
     name: opts.name.trim(),
     type: method,
+    tier: scriptTier,
     scriptId: opts.scriptId || null,
     movieId: opts.movieId || null,
     sportsLeagueId: opts.sportsLeagueId || null,
@@ -849,6 +944,7 @@ export function beginProgram(station, research, year, opts) {
     ipId: opts.ipId || null,
     directorId: opts.directorId || null,
     starId: opts.starId || null,
+    starId2: opts.starId2 || null,     // super-only, second lead
     prodDesignId: opts.prodDesignId,
     sfxId: opts.sfxId,
     musicId: opts.musicId || 'mus_basic',
@@ -994,21 +1090,67 @@ export function revealProgramOnAir(station, programId) {
   return { ...station, programs: newPrograms }
 }
 
-/** Mark a program 'finished' after its run expires (history retained). */
-export function finishProgram(station, programId, finalStats) {
+/** Mark a program 'finished' after its run expires (history retained).
+ *  Movie packs: a movie program ties to a pack. Each completed airing consumes
+ *  one airing from the pack. If airings remain, the program flips back to
+ *  'shelf' status (you can air it again). If the pack is exhausted, the
+ *  program enters 'finished' and the pack consumption is stamped for the
+ *  12-month cooldown. Returns { station, packConsumed, packExhausted }. */
+export function finishProgram(station, programId, finalStats, year, month) {
   const programs = station.programs || []
-  const newPrograms = programs.map(p => {
-    if (p.id !== programId) return p
+  const p = programs.find(pp => pp.id === programId)
+  if (!p) return { station, packConsumed: false, packExhausted: false }
+
+  // ── MOVIE PACK PATH ──────────────────────────────────────────────────
+  if (p.movieId) {
+    const owned = findOwnedActivePack(station, p.movieId)
+    if (!owned) {
+      // No pack found (legacy or edge case) — just mark finished
+      const newPrograms = programs.map(pp => pp.id === programId
+        ? { ...pp, status: 'finished',
+            airingsCount: finalStats?.airingsCount ?? pp.airingsCount,
+            totalAudience: finalStats?.totalAudience ?? pp.totalAudience,
+            totalRevenue: finalStats?.totalRevenue ?? pp.totalRevenue,
+            totalCost: finalStats?.totalCost ?? pp.totalCost,
+          }
+        : pp)
+      return { station: { ...station, programs: newPrograms }, packConsumed: false, packExhausted: false }
+    }
+    // Decrement pack airings
+    const consumed = consumeMoviePackAiring(station, p.movieId, year ?? 0, month ?? 0)
+    const packExhausted = consumed.consumed
+    // Update program: keep stats accumulating across airings; flip status
+    // back to 'shelf' if pack has airings left, otherwise 'finished'.
+    const newStatus = packExhausted ? 'finished' : 'shelf'
+    const newPrograms = programs.map(pp => pp.id === programId
+      ? { ...pp,
+          status: newStatus,
+          airingsCount: finalStats?.airingsCount ?? pp.airingsCount,
+          totalAudience: finalStats?.totalAudience ?? pp.totalAudience,
+          totalRevenue: finalStats?.totalRevenue ?? pp.totalRevenue,
+          totalCost: finalStats?.totalCost ?? pp.totalCost,
+        }
+      : pp)
     return {
-      ...p,
+      station: { ...consumed.station, programs: newPrograms },
+      packConsumed: true,
+      packExhausted,
+    }
+  }
+
+  // ── NON-MOVIE PATH (unchanged) ───────────────────────────────────────
+  const newPrograms = programs.map(pp => {
+    if (pp.id !== programId) return pp
+    return {
+      ...pp,
       status: 'finished',
-      airingsCount: finalStats?.airingsCount ?? p.airingsCount,
-      totalAudience: finalStats?.totalAudience ?? p.totalAudience,
-      totalRevenue: finalStats?.totalRevenue ?? p.totalRevenue,
-      totalCost: finalStats?.totalCost ?? p.totalCost,
+      airingsCount: finalStats?.airingsCount ?? pp.airingsCount,
+      totalAudience: finalStats?.totalAudience ?? pp.totalAudience,
+      totalRevenue: finalStats?.totalRevenue ?? pp.totalRevenue,
+      totalCost: finalStats?.totalCost ?? pp.totalCost,
     }
   })
-  return { ...station, programs: newPrograms }
+  return { station: { ...station, programs: newPrograms }, packConsumed: false, packExhausted: false }
 }
 
 /** Helper: aggregate per-airing stats onto a program after each month. */
@@ -1274,6 +1416,128 @@ export function activeIPLicenses(station, currentYear) {
   return (station?.ipLicenses || []).filter(l => l.expiresYear >= currentYear)
 }
 
+// ─── MOVIE PACKS ─────────────────────────────────────────────────────────────
+// A movie pack is bought as a unit and grants `packSize` airings (default 3).
+// Each airing decrements `airingsLeft`. When airingsLeft hits 0 the pack is
+// "consumed" (lastConsumedY/M recorded) and the entry stays in the station's
+// history so the cooldown logic can find it on a re-buy attempt.
+//
+// Station-side shape: station.moviePacks = [{
+//   packId,           // matches MOVIES[i].id
+//   airingsLeft,      // remaining airings (decrements from packSize)
+//   purchasedY, purchasedM,
+//   purchaseHype,     // hype value used at purchase (after any rebuy penalty)
+//   lastConsumedY, lastConsumedM,   // only set after airingsLeft hits 0
+// }]
+
+const MONTHS_PER_YEAR_LOCAL = 12
+
+function monthsBetween(y1, m1, y2, m2) {
+  return (y2 - y1) * MONTHS_PER_YEAR_LOCAL + (m2 - m1)
+}
+
+/** Find a currently active (not yet consumed) pack on the shelf. */
+export function findOwnedActivePack(station, packId) {
+  return (station?.moviePacks || []).find(p => p.packId === packId && (p.airingsLeft || 0) > 0) || null
+}
+
+/** Most recent consumed entry for this pack (used to compute cooldown). */
+export function findLastConsumedPack(station, packId) {
+  const consumed = (station?.moviePacks || []).filter(p =>
+    p.packId === packId && (p.airingsLeft || 0) === 0 && p.lastConsumedY != null
+  )
+  if (consumed.length === 0) return null
+  // Sort by (year, month) desc, return the latest
+  consumed.sort((a, b) => (b.lastConsumedY - a.lastConsumedY) || (b.lastConsumedM - a.lastConsumedM))
+  return consumed[0]
+}
+
+/** Effective hype for a pack purchase right now. If the pack was consumed
+ *  within MOVIE_PACK_COOLDOWN_MONTHS, hype is reduced by the penalty.
+ *  Returns { hype, penaltyApplied, monthsUntilRestore }. */
+export function moviePackPurchaseHype(station, packId, currentYear, currentMonth) {
+  const pack = MOVIES.find(m => m.id === packId)
+  if (!pack) return { hype: 0, penaltyApplied: false, monthsUntilRestore: 0 }
+  const baseHype = pack.h || 0
+  const last = findLastConsumedPack(station, packId)
+  if (!last) return { hype: baseHype, penaltyApplied: false, monthsUntilRestore: 0 }
+  const elapsed = monthsBetween(last.lastConsumedY, last.lastConsumedM, currentYear, currentMonth)
+  if (elapsed >= MOVIE_PACK_COOLDOWN_MONTHS) {
+    return { hype: baseHype, penaltyApplied: false, monthsUntilRestore: 0 }
+  }
+  return {
+    hype: r1(baseHype * (1 - MOVIE_PACK_REBUY_HYPE_PENALTY)),
+    penaltyApplied: true,
+    monthsUntilRestore: MOVIE_PACK_COOLDOWN_MONTHS - elapsed,
+  }
+}
+
+/** Can we buy this pack right now? Always yes unless it's already on the
+ *  shelf with airings remaining (you don't need two copies). */
+export function canBuyMoviePack(station, packId) {
+  const owned = findOwnedActivePack(station, packId)
+  return !owned
+}
+
+/** Buy a movie pack. Pays the pack's cost upfront, locks in current hype
+ *  (which may be penalized by an active cooldown). */
+export function buyMoviePack(station, packId, year, month) {
+  const pack = MOVIES.find(m => m.id === packId)
+  if (!pack) return { station, error: 'Unknown pack' }
+  if (!canBuyMoviePack(station, packId)) {
+    return { station, error: 'Already on shelf' }
+  }
+  if (station.cash < pack.cost) {
+    return { station, error: 'Not enough cash' }
+  }
+  const hypeInfo = moviePackPurchaseHype(station, packId, year, month)
+  const newEntry = {
+    packId,
+    airingsLeft: pack.packSize || 3,
+    purchasedY: year, purchasedM: month,
+    purchaseHype: hypeInfo.hype,
+    penaltyApplied: hypeInfo.penaltyApplied,
+  }
+  return {
+    station: {
+      ...station,
+      cash: r1(station.cash - pack.cost),
+      moviePacks: [...(station.moviePacks || []), newEntry],
+    },
+    cost: pack.cost,
+    pack,
+    penaltyApplied: hypeInfo.penaltyApplied,
+    error: null,
+  }
+}
+
+/** Decrement airings on a pack. If it hits zero, stamp lastConsumedY/M. */
+export function consumeMoviePackAiring(station, packId, year, month) {
+  const packs = (station?.moviePacks || []).map(p => ({ ...p }))
+  // Find the active entry for this packId
+  const idx = packs.findIndex(p => p.packId === packId && (p.airingsLeft || 0) > 0)
+  if (idx < 0) return { station, consumed: false }
+  packs[idx].airingsLeft -= 1
+  let consumed = false
+  if (packs[idx].airingsLeft <= 0) {
+    packs[idx].airingsLeft = 0
+    packs[idx].lastConsumedY = year
+    packs[idx].lastConsumedM = month
+    consumed = true
+  }
+  return { station: { ...station, moviePacks: packs }, consumed }
+}
+
+/** Effective hype for a movie airing — looks up the active pack's locked-in
+ *  purchase hype. Falls back to MOVIES base hype if no pack is found (legacy
+ *  saves or edge cases). */
+export function moviePackAiringHype(station, packId) {
+  const owned = findOwnedActivePack(station, packId)
+  if (owned?.purchaseHype != null) return owned.purchaseHype
+  const pack = MOVIES.find(m => m.id === packId)
+  return pack?.h || 0
+}
+
 // ─── RESEARCH IN PROGRESS ────────────────────────────────────────────────────
 /** Compute adjusted cost + months for a research item given station state.
  *  Innovation Director discounts both. Domain affinity (already unlocked content
@@ -1310,7 +1574,13 @@ export function researchAdjusted(researchId, station, research) {
 export function beginResearch(researchId, station, research, year, month) {
   const r = RESEARCH.find(x => x.id === researchId)
   if (!r) return { error: 'No such research' }
-  if (!canResearch(researchId, research)) return { error: 'Cannot research now' }
+  // v7: require an Innovation Director on staff to start any research project.
+  // The director also discounts cost/time (via researchAdjusted), but without
+  // one, the R&D function doesn't exist as a department at all.
+  if (!station.staff?.innovation) {
+    return { error: 'Hire an Innovation Director first (Operations → Staff)' }
+  }
+  if (!canResearch(researchId, research, station)) return { error: 'Cannot research now' }
   if ((research.inProgress || []).some(p => p.id === researchId)) {
     return { error: 'Already in progress' }
   }
@@ -1469,7 +1739,10 @@ export function ownsLicense(station, leagueId, year) {
 export function baseProductionCost(categoryId, marketId, station) {
   const cat = CATEGORIES[categoryId]
   const market = MARKETS[marketId]
-  const marketMult = market.id === 'local' ? 0.7 : market.id === 'metro' ? 1.0 : 1.4
+  // Production scales with market tier: local is cheap, metro mid, national
+  // expensive. Sourced from MARKETS.prodCostMult so promotion costs / infra /
+  // production scaling all live in one place.
+  const marketMult = market?.prodCostMult ?? 1.0
   const opsEff = staffEffect(station, 'operations')
   const opsMult = opsEff.prodCost || 1.0
   return r1(1.0 * (cat?.cost_mult || 1.0) * marketMult * opsMult)
@@ -1504,8 +1777,12 @@ export function programCost(planned, stationOrMarket, research, year) {
   const techCost = techMonthlyCost(planned)
 
   if (planned.movieId) {
+    // Pack license was paid upfront at purchase. Each airing only pays
+    // transmission + marketing + tech. Use a small fixed transmission slice
+    // proportional to the pack price for cost-visibility purposes.
     const m = findMovie(planned.movieId)
-    return r1(((m?.cost || 0) * slotMult) + marketingCost(planned.marketingId || 'none', market.id, research, station) + techCost)
+    const transmission = r1(((m?.cost || 0) * 0.05) * slotMult)
+    return r1(transmission + marketingCost(planned.marketingId || 'none', market.id, research, station) + techCost)
   }
   if (planned.sportsRunLeagueId) {
     const opsEff = staffEffect(station, 'operations')
@@ -1593,9 +1870,14 @@ export function projectShow(planned, station, research, monthIdx = 0) {
     const tech = techBonuses(planned)
     const campHype = station.activeCampaign?.hypeBoost || 0
 
+    const rawQ = clamp(lg.baseQ + (dir?.q || 0) * dMatch + (star?.q || 0) * sMatch + focusQ + contentQ + tech.q, 1, 10)
+    const rawH = clamp(lg.baseH + (dir?.h || 0) * dMatch + (star?.h || 0) * sMatch + focusH + fameH + slotBonusH + seasonBonusH + peakBonus + tech.h + campHype, 1, 10)
+    // Specialization bonus — sports broadcasts use 'sports' genre
+    const bumped = applySpecBonuses(rawQ, rawH, station, 'sports')
+
     return {
-      quality: clamp(lg.baseQ + (dir?.q || 0) * dMatch + (star?.q || 0) * sMatch + focusQ + contentQ + tech.q, 1, 10),
-      hype:    clamp(lg.baseH + (dir?.h || 0) * dMatch + (star?.h || 0) * sMatch + focusH + fameH + slotBonusH + seasonBonusH + peakBonus + tech.h + campHype, 1, 10),
+      quality: bumped.q,
+      hype:    bumped.h,
       tier:    isPeak ? 'Legendary' : 'Rare',
       slotBonusH, seasonBonusH, peakBonus, isPeak,
     }
@@ -1609,9 +1891,13 @@ export function projectShow(planned, station, research, monthIdx = 0) {
     const contentQ = (staffEffect(station, 'content').qBonus) || 0
     const tech = techBonuses(planned)
     const campHype = station.activeCampaign?.hypeBoost || 0
+    const rawQ = clamp(m.q + mktg.q + contentQ + tech.q, 1, 10)
+    const rawH = clamp(m.h + mktg.h * mktgImpact + slotBonusH + seasonBonusH + tech.h + campHype, 1, 10)
+    // Specialization bonus — movies use 'movie' genre
+    const bumped = applySpecBonuses(rawQ, rawH, station, 'movie')
     return {
-      quality: clamp(m.q + mktg.q + contentQ + tech.q, 1, 10),
-      hype:    clamp(m.h + mktg.h * mktgImpact + slotBonusH + seasonBonusH + tech.h + campHype, 1, 10),
+      quality: bumped.q,
+      hype:    bumped.h,
       tier:    m.tier,
       slotBonusH, seasonBonusH,
     }
@@ -1622,12 +1908,14 @@ export function projectShow(planned, station, research, monthIdx = 0) {
   const topic = cat.topics.find(t => t.id === planned.topicId) || { q: 0, h: 0 }
   const dir   = findDirector(planned.directorId)
   const star  = findStar(planned.starId)
+  const star2 = planned.starId2 ? findStar(planned.starId2) : null
   const ip    = findIP(planned.ipId)
   const mktg  = MARKETING_TIERS.find(t => t.id === (planned.marketingId || 'none')) || MARKETING_TIERS[0]
   const focus = findFocus(station.focus) || {}
 
   const dMatch = matchFactor(dir,  planned.categoryId)
   const sMatch = matchFactor(star, planned.categoryId)
+  const s2Match = matchFactor(star2, planned.categoryId)
 
   const localBonus = (planned.categoryId === 'news' && planned.topicId === 'local' && station.market === 'local') ? 1.0 : 0
   const seqBonus = sequelBonusFor(planned) + (research?.sequelBonus && planned.seqSeason ? research.sequelBonus : 0)
@@ -1648,22 +1936,30 @@ export function projectShow(planned, station, research, monthIdx = 0) {
   const tech = techBonuses(planned)
   const campHype = station.activeCampaign?.hypeBoost || 0
 
-  const quality = clamp(
+  const rawQuality = clamp(
     cat.base_q + topic.q
     + (dir?.q || 0) * dMatch
     + (star?.q || 0) * sMatch
+    + (star2?.q || 0) * s2Match * 0.75
     + ipQ + mktg.q + focusQ + localBonus + seqBonus
     + contentQ + tech.q,
     1, 10,
   )
-  const hype = clamp(
+  const rawHype = clamp(
     cat.base_h + topic.h
     + (dir?.h || 0) * dMatch
     + (star?.h || 0) * sMatch
+    + (star2?.h || 0) * s2Match * 0.75
     + ipH + mktg.h * mktgImpact + focusH + fameH + slotBonusH + seasonBonusH
     + tech.h + campHype,
     1, 10,
   )
+
+  // Specialization bonus (per category). Keeps projections consistent with
+  // what the airing roll will actually produce.
+  const bumped = applySpecBonuses(rawQuality, rawHype, station, planned.categoryId)
+  const quality = bumped.q
+  const hype = bumped.h
 
   const tierIdx = Math.max(
     dir  ? TIERS.indexOf(dir.tier)  : -1,
@@ -2195,12 +2491,26 @@ export function applyResearch(researchState, researchId) {
       // Already tracked via the `unlocked` array
       return
     }
+    if (k === 'unlockScriptTier') {
+      // Track which script tiers are unlocked. Normal is always available;
+      // large / super are gated.
+      next.scriptTiersUnlocked = Array.from(new Set([...(next.scriptTiersUnlocked || []), v]))
+      return
+    }
     next[k] = v
   })
   return { research: next, addSlotType, refreshRoster, unlockSearchTier }
 }
 
-export function canResearch(researchId, researchState) {
+/** Which script tiers can the station use right now? Normal always; large/super
+ *  if their respective research has unlocked them. */
+export function availableScriptTiers(research) {
+  const unlocked = new Set(research?.scriptTiersUnlocked || [])
+  unlocked.add('normal')
+  return SCRIPT_TIERS.filter(t => unlocked.has(t.id))
+}
+
+export function canResearch(researchId, researchState, station) {
   const r = RESEARCH.find(x => x.id === researchId)
   if (!r) return false
   const unlocked = researchState.unlocked || []
@@ -2208,6 +2518,13 @@ export function canResearch(researchId, researchState) {
   if (!r.repeatable && unlocked.includes(researchId)) return false
   if (inProgress.includes(researchId)) return false
   if (r.requires && !r.requires.every(req => unlocked.includes(req))) return false
+  // Market-tier gate: some research items only unlock at metro / national.
+  // If station is provided, enforce; if not (legacy callers), skip the check.
+  if (r.requiresMarket && station) {
+    const need = MARKET_ORDER.indexOf(r.requiresMarket)
+    const have = MARKET_ORDER.indexOf(station.market)
+    if (have < need) return false
+  }
   return true
 }
 
@@ -2303,6 +2620,12 @@ export function initGame(setup) {
     },
     openPositions: [],          // [{role, tierId, monthsLeft, monthsTotal, cost}]
     activeCampaign: null,       // {tierId, hypeBoost}
+    moviePacks: [],             // [{packId, airingsLeft, purchasedY/M, purchaseHype, ...}]
+    specStars: SPEC_GENRES.reduce((acc, g) => {
+      acc[g] = g === focusCat ? 1 : 0
+      return acc
+    }, {}),
+    specXP: SPEC_GENRES.reduce((acc, g) => { acc[g] = 0; return acc }, {}),
   }
 
   return {
@@ -2366,6 +2689,156 @@ export function fameLabel(fame) {
   return 'Legendary'
 }
 
+// ─── SPECIALIZATION ──────────────────────────────────────────────────────────
+// Stations level up in each genre by airing programs there. Each airing's
+// rating is added to that genre's XP. Crossing a threshold awards a half-star.
+// Range: 0 → 5 stars, in 0.5 increments → 10 tiers.
+//
+// XP threshold to advance from star tier N (0..9, where N=0 is "0 stars") to
+// star tier N+1 (so N=0 means earning the FIRST half-star, requiring 10 XP):
+export const SPEC_THRESHOLDS_LOCAL = [10, 20, 30, 40, 55, 70, 85, 100, 120, 140]
+
+// Metro and national tiers raise the bar — same content earns less progress.
+// Once stars actually impact production (v8), the curves will matter more.
+export const SPEC_THRESHOLDS_METRO    = SPEC_THRESHOLDS_LOCAL.map(t => Math.round(t * 1.4))
+export const SPEC_THRESHOLDS_NATIONAL = SPEC_THRESHOLDS_LOCAL.map(t => Math.round(t * 1.9))
+
+// Genres that participate in the specialization system (8 total).
+export const SPEC_GENRES = ['news', 'reality', 'series', 'latenight', 'sports', 'movie', 'family', 'kids']
+
+/** Convert star count (0..5 in 0.5 steps) to current tier-index (0..9). */
+export function specTierIndex(stars) {
+  return Math.max(0, Math.min(9, Math.round(stars * 2)))
+}
+
+/** Look up the XP needed to climb FROM the current star tier to the next.
+ *  Returns null when already at the cap (5 stars). */
+export function specThresholdFor(stars, market) {
+  if (stars >= 5) return null
+  const table = market === 'national' ? SPEC_THRESHOLDS_NATIONAL
+              : market === 'metro'    ? SPEC_THRESHOLDS_METRO
+              :                         SPEC_THRESHOLDS_LOCAL
+  return table[specTierIndex(stars)]
+}
+
+/** Apply an airing's XP gain to the station's specialization state.
+ *  Mutates a new station object (pure: returns new state).
+ *  Returns { station, starUps: [{categoryId, oldStars, newStars}] }.
+ *
+ *  XP rule: each airing contributes max(1, rating) per airing. A flop floors
+ *  to 1, so you learn slowly even from bad shows. A hit (9 rating) gives 9.
+ *  Sports leagues and movies have categoryIds 'sports' and 'movie' so they
+ *  count too.
+ */
+export function applySpecXP(station, categoryId, rating) {
+  if (!categoryId || !SPEC_GENRES.includes(categoryId)) {
+    return { station, starUps: [] }
+  }
+  const xpGain = Math.max(1, rating || 0)
+  const specXP = { ...(station.specXP || {}) }
+  const specStars = { ...(station.specStars || {}) }
+  const cur = specStars[categoryId] || 0
+  const accumulated = (specXP[categoryId] || 0) + xpGain
+
+  // Climb as many tiers as the accumulated XP allows (handle very high ratings
+  // spanning a tier; in practice unlikely with rating ≤ 10).
+  let stars = cur
+  let pool = accumulated
+  const starUps = []
+  while (stars < 5) {
+    const need = specThresholdFor(stars, station.market)
+    if (need == null || pool < need) break
+    pool -= need
+    const newStars = Math.round((stars + 0.5) * 10) / 10
+    starUps.push({ categoryId, oldStars: stars, newStars })
+    stars = newStars
+  }
+  specXP[categoryId] = pool
+  specStars[categoryId] = stars
+
+  return {
+    station: { ...station, specXP, specStars },
+    starUps,
+  }
+}
+
+/** Apply market promotion to specialization state (v8 will call this).
+ *  Local → Metro:    keep specialty (min 0.5) + any star ≥ 4 (clamped to 1),
+ *                    everything else resets.
+ *  Metro → National: same rule.
+ */
+export function specOnMarketPromotion(station, oldMarket, newMarket) {
+  const oldStars = station.specStars || {}
+  const next = {}
+  for (const g of SPEC_GENRES) {
+    const s = oldStars[g] || 0
+    if (g === station.focus) {
+      next[g] = Math.max(0.5, s >= 4 ? 1 : 0.5)
+    } else if (s >= 4) {
+      next[g] = 1
+    } else {
+      next[g] = 0
+    }
+  }
+  return { ...station, specStars: next, specXP: {} }
+}
+
+// ─── SPECIALIZATION BONUSES ──────────────────────────────────────────────────
+// Lookup tables — index by half-star tier (0..10, where 10 = 5 stars).
+// Quality bonus applies from the very first half-star and grows mildly
+// accelerated (each star is slightly more than the last). Hype bonus is zero
+// until 3 stars — at that point your network is known enough that audiences
+// anticipate something new in that genre.
+//
+//   stars  | q bonus | h bonus
+//   0      |  0      |  0
+//   0.5    | +0.1    |  0
+//   1.0    | +0.2    |  0
+//   1.5    | +0.35   |  0
+//   2.0    | +0.5    |  0
+//   2.5    | +0.7    |  0
+//   3.0    | +0.9    | +0.3
+//   3.5    | +1.1    | +0.5
+//   4.0    | +1.3    | +0.7
+//   4.5    | +1.5    | +1.0
+//   5.0    | +1.8    | +1.3
+const SPEC_Q_BONUS = [0, 0.1, 0.2, 0.35, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.8]
+const SPEC_H_BONUS = [0, 0,   0,   0,    0,   0,   0.3, 0.5, 0.7, 1.0, 1.3]
+
+/** Lookup the quality bonus for a given star count. Star count is in 0.5
+ *  increments. Out-of-range values clamp to bounds. */
+export function specQualityBonus(stars) {
+  if (!stars || stars <= 0) return 0
+  const idx = Math.max(0, Math.min(10, Math.round(stars * 2)))
+  return SPEC_Q_BONUS[idx] || 0
+}
+
+/** Lookup the hype bonus for a given star count. Zero below 3 stars. */
+export function specHypeBonus(stars) {
+  if (!stars || stars <= 0) return 0
+  const idx = Math.max(0, Math.min(10, Math.round(stars * 2)))
+  return SPEC_H_BONUS[idx] || 0
+}
+
+/** Apply specialization bonuses to a rolled (q, h) pair given a station +
+ *  category. Returns { q, h, qBonus, hBonus } with the bonuses already
+ *  folded into q and h (still clamped to 0..10). The raw bonuses are exposed
+ *  so the UI can show the player what they earned. */
+export function applySpecBonuses(q, h, station, categoryId) {
+  if (!categoryId || !SPEC_GENRES.includes(categoryId)) {
+    return { q, h, qBonus: 0, hBonus: 0 }
+  }
+  const stars = (station?.specStars || {})[categoryId] || 0
+  const qBonus = specQualityBonus(stars)
+  const hBonus = specHypeBonus(stars)
+  return {
+    q: clamp(q + qBonus, 0, 10),
+    h: clamp(h + hBonus, 0, 10),
+    qBonus,
+    hBonus,
+  }
+}
+
 // ─── LEDGER ──────────────────────────────────────────────────────────────────
 // A flat array of cash-flow events. Pushed to game.ledger throughout the month.
 // At month-end, the Financials screen filters/groups these for the prior month.
@@ -2425,6 +2898,8 @@ export function summarizeLedger(entries) {
     hires: [],
     firePenalties: [],
     awards: [],
+    infrastructure: [],
+    promotion: [],
     misc: [],
   }
 
@@ -2455,6 +2930,8 @@ export function summarizeLedger(entries) {
       case 'hire_signing':  other.hires.push({ label: e.label, amount: e.amount }); break
       case 'fire_penalty':  other.firePenalties.push({ label: e.label, amount: e.amount }); break
       case 'award_bonus':   other.awards.push({ label: e.label, amount: e.amount }); break
+      case 'infrastructure': other.infrastructure.push({ label: e.label, amount: e.amount }); break
+      case 'market_promotion': other.promotion.push({ label: e.label, amount: e.amount }); break
       default:              other.misc.push({ label: e.label, amount: e.amount })
     }
   }
@@ -2490,6 +2967,8 @@ export function summarizeLedger(entries) {
     sum(other.hires) +
     sum(other.firePenalties) +
     sum(other.awards) +
+    sum(other.infrastructure) +
+    sum(other.promotion) +
     sum(other.misc)
   )
 

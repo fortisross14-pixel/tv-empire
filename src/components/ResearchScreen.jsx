@@ -16,6 +16,7 @@ export function ResearchScreen({ research, station, cash, onBuy, onBack }) {
   const items = RESEARCH.filter(r => r.group === activeGroup)
   const unlocks = getUnlocks(station, research)
   const inProgress = research?.inProgress || []
+  const hasInnovationDir = !!station.staff?.innovation
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: 18 }}>
@@ -34,6 +35,24 @@ export function ResearchScreen({ research, station, cash, onBuy, onBack }) {
         Research takes time (months) and money. An Innovation Director discounts both.
         Researching in a domain you already know is faster.
       </div>
+
+      {/* Innovation Director gate banner */}
+      {!hasInnovationDir && (
+        <div style={{
+          marginBottom: 16, padding: '12px 14px',
+          background: 'rgba(239, 69, 101, .08)',
+          border: `1px solid rgba(239, 69, 101, .35)`,
+          borderRadius: 6,
+        }}>
+          <div style={{ fontSize: 12.5, color: T.red, fontWeight: 600, marginBottom: 4 }}>
+            R&amp;D department closed
+          </div>
+          <div style={{ fontSize: 11.5, color: T.textDim, lineHeight: 1.5 }}>
+            Hire an Innovation Director (Operations → Staff) before any research can begin.
+            Without one, the department doesn't exist.
+          </div>
+        </div>
+      )}
 
       {/* In-progress projects */}
       {inProgress.length > 0 && (
@@ -94,6 +113,7 @@ export function ResearchScreen({ research, station, cash, onBuy, onBack }) {
             station={station}
             cash={cash}
             unlocks={unlocks}
+            hasInnovationDir={hasInnovationDir}
             onBuy={() => onBuy(r.id)}
           />
         ))}
@@ -118,14 +138,14 @@ function GroupTab({ label, count, active, onClick }) {
   )
 }
 
-function ResearchCard({ item, research, station, cash, unlocks, onBuy }) {
+function ResearchCard({ item, research, station, cash, unlocks, onBuy, hasInnovationDir }) {
   const owned = (research.unlocked || []).includes(item.id) && !item.repeatable
   const inProgress = (research.inProgress || []).some(p => p.id === item.id)
-  const available = canResearch(item.id, research) && !inProgress
+  const available = canResearch(item.id, research, station) && !inProgress
   const adj = researchAdjusted(item.id, station, research)
   const affordable = cash >= adj.cost
 
-  const enabled = !owned && available && affordable && !inProgress
+  const enabled = !owned && available && affordable && !inProgress && hasInnovationDir
 
   let alreadyHaveAll = false
   if (item.effect?.unlockContent && !owned) {
@@ -152,13 +172,23 @@ function ResearchCard({ item, research, station, cash, unlocks, onBuy }) {
   let buttonLabel
   if (isReallyOwned) buttonLabel = hasSlot ? 'HAVE' : alreadyHaveAll ? 'KNOWN' : 'OWNED'
   else if (inProgress) buttonLabel = 'RUNNING'
+  else if (!hasInnovationDir) buttonLabel = 'NO R&D'
   else if (!available) buttonLabel = 'LOCKED'
   else if (!affordable) buttonLabel = `$${adj.cost.toFixed(1)}M`
   else buttonLabel = 'BEGIN'
 
-  const prereqText = item.requires && !item.requires.every(req => (research.unlocked || []).includes(req))
+  const missingPrereqs = item.requires && !item.requires.every(req => (research.unlocked || []).includes(req))
     ? `Requires: ${item.requires.map(id => RESEARCH.find(r => r.id === id)?.label || id).join(', ')}`
     : null
+
+  // Market-tier gate
+  const stationMarketIdx = ['local','metro','national'].indexOf(station.market)
+  const requiredMarketIdx = item.requiresMarket ? ['local','metro','national'].indexOf(item.requiresMarket) : -1
+  const missingMarket = requiredMarketIdx > stationMarketIdx
+    ? `Requires ${item.requiresMarket === 'metro' ? 'Metro' : 'National'} market`
+    : null
+
+  const prereqText = [missingPrereqs, missingMarket].filter(Boolean).join(' · ')
 
   return (
     <div style={{

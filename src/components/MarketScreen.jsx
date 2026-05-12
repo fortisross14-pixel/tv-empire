@@ -51,7 +51,7 @@ export function MarketScreen({
       </div>
 
       {sub === 'networks' && (
-        <NetworksTab station={station} competitors={competitors} year={year} />
+        <NetworksTab station={station} competitors={competitors} year={year} yearShows={yearShows || []} />
       )}
       {sub === 'thisyear' && (
         <ThisYearTab
@@ -70,10 +70,13 @@ export function MarketScreen({
 }
 
 // ─── NETWORKS TAB (was the whole screen) ─────────────────────────────────
-function NetworksTab({ station, competitors, year }) {
+function NetworksTab({ station, competitors, year, yearShows }) {
   const market = MARKETS[station.market]
+  // Player YTD = sum of all this year's airings audience. Previously hardcoded
+  // to 0, which is why the "YTD Aud" cell showed 0 in months 2+.
+  const playerAudYTD = (yearShows || []).reduce((a, s) => a + (s.audience || 0), 0)
   const allYTD = [
-    { name: station.name, fame: station.fame, cash: station.cash, audYTD: 0, audLY: 0, isPlayer: true },
+    { name: station.name, fame: station.fame, cash: station.cash, audYTD: playerAudYTD, audLY: 0, isPlayer: true },
     ...(competitors || []).map(c => ({
       name: c.name, fame: c.fame, cash: c.cash,
       audYTD: c.yearAudienceTotal || 0,

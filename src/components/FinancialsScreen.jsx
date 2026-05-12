@@ -261,6 +261,20 @@ function Statement({ summary }) {
           </Subgroup>
         )}
 
+        {/* Infrastructure */}
+        {other.infrastructure && other.infrastructure.length > 0 && (
+          <Subgroup label="Infrastructure">
+            {other.infrastructure.map((r, i) => <Row key={i} label={r.label} amount={r.amount} />)}
+          </Subgroup>
+        )}
+
+        {/* Market Promotion */}
+        {other.promotion && other.promotion.length > 0 && (
+          <Subgroup label="Market Expansion">
+            {other.promotion.map((r, i) => <Row key={i} label={r.label} amount={r.amount} />)}
+          </Subgroup>
+        )}
+
         {/* Award bonuses */}
         {other.awards.length > 0 && (
           <Subgroup label="Award Bonuses">
@@ -279,6 +293,8 @@ function Statement({ summary }) {
           other.salaries.total === 0 && other.research.length === 0 &&
           other.marketing.length === 0 && other.hires.length === 0 &&
           other.firePenalties.length === 0 && other.awards.length === 0 &&
+          (!other.infrastructure || other.infrastructure.length === 0) &&
+          (!other.promotion || other.promotion.length === 0) &&
           other.misc.length === 0 && (
           <EmptyRow note="No other transactions this month" />
         )}

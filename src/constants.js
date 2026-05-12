@@ -163,18 +163,29 @@ export const MARKETS = {
     desc: 'A mid-size city of 2M. Friendly. Limited reach.',
     pop: 2.0, audCap: 1.6, revPerViewer: 5.5,
     fameThreshold: 0, nextFame: 25, famePerWin: 1.2, marketingMult: 0.6,
+    monthlyInfra: 0,
+    prodCostMult: 0.7,
+    promoteCost: 0,
   },
   metro: {
     id: 'metro', label: 'Tri-State Metro',
     desc: '20M people across the Northeast corridor. Real competition.',
     pop: 20, audCap: 12, revPerViewer: 6.5,
     fameThreshold: 25, nextFame: 60, famePerWin: 1.0, marketingMult: 1.0,
+    // Operating at metro scale costs more. Studios, transmitters, bureaus.
+    monthlyInfra: 2.0,
+    prodCostMult: 1.25,
+    // One-time cost to ascend FROM local TO this tier
+    promoteCost: 40,
   },
   national: {
     id: 'national', label: 'National Network',
     desc: '380M Americans. The big leagues.',
     pop: 380, audCap: 90, revPerViewer: 9.0,
     fameThreshold: 60, nextFame: null, famePerWin: 0.7, marketingMult: 1.6,
+    monthlyInfra: 5.0,
+    prodCostMult: 1.6,
+    promoteCost: 120,
   },
 }
 
@@ -568,6 +579,7 @@ export const PROD_DESIGN_TIERS = [
     qBonus: 0.7,
     prefers: ['series', 'family', 'kids', 'contest'],
     dislikes: ['news', 'sports'],
+    minScriptTier: 'large',
   },
 ]
 
@@ -599,6 +611,7 @@ export const SFX_TIERS = [
     qBonus: 0.6,
     prefers: ['series', 'family', 'kids'],
     dislikes: ['news', 'latenight', 'reality'],
+    minScriptTier: 'large',
   },
 ]
 
@@ -895,22 +908,98 @@ export const IPS = [
 ]
 
 // ─── MOVIE CATALOG ───────────────────────────────────────────────────────────
+// ─── MOVIE PACKS ─────────────────────────────────────────────────────────────
+// Each entry is a *pack* of films you license as a unit. A pack has a number
+// of airings (packSize, default 3) you can use before it's exhausted. After
+// the last airing the pack is consumed and goes back to the catalog. If you
+// re-buy a consumed pack within 12 months, its hype is reduced (overexposure).
+//
+// q/h are pack-level — the same numbers apply to every airing from the pack.
 export const MOVIES = [
-  { id: 'mv_titanic',    name: 'Titanic Returns',         tier: 'Legendary', q: 9.0, h: 8.5, cost: 22  },
-  { id: 'mv_avatar',     name: 'Avatar 3: The Reef',      tier: 'Legendary', q: 8.5, h: 9.0, cost: 24  },
-  { id: 'mv_oppen',      name: 'Atomicore',               tier: 'Epic',      q: 9.0, h: 7.0, cost: 12  },
-  { id: 'mv_barbie',     name: 'Doll House',              tier: 'Epic',      q: 7.5, h: 8.5, cost: 11  },
-  { id: 'mv_inception',  name: 'Dream Layers',            tier: 'Epic',      q: 8.5, h: 7.5, cost: 11  },
-  { id: 'mv_marvel1',    name: 'Heroes Unite',            tier: 'Rare',      q: 7.0, h: 7.5, cost: 5.5 },
-  { id: 'mv_pixar',      name: 'Animated Adventure',      tier: 'Rare',      q: 8.0, h: 6.5, cost: 5   },
-  { id: 'mv_horror1',    name: 'Cabin Screams',           tier: 'Rare',      q: 6.5, h: 7.0, cost: 4.5 },
-  { id: 'mv_action1',    name: 'Fast & Loud 12',          tier: 'Rare',      q: 6.0, h: 7.5, cost: 5   },
-  { id: 'mv_indie1',     name: 'Sundance Darling',        tier: 'Uncommon',  q: 7.5, h: 4.5, cost: 2   },
-  { id: 'mv_romcom1',    name: 'Coffee Shop Romance',     tier: 'Uncommon',  q: 6.0, h: 5.5, cost: 1.8 },
-  { id: 'mv_oldclassic', name: 'Classic Hollywood Pack',  tier: 'Common',    q: 6.5, h: 4.0, cost: 1.0 },
-  { id: 'mv_btv1',       name: 'B-Movie Saturday',        tier: 'Common',    q: 4.5, h: 4.0, cost: 0.6 },
-  { id: 'mv_btv2',       name: 'Direct-to-Video Pack',    tier: 'Common',    q: 4.0, h: 3.5, cost: 0.5 },
+  { id: 'mv_titanic',    name: 'Titanic Returns Pack',    tier: 'Legendary', q: 9.0, h: 8.5, cost: 22,  packSize: 3 },
+  { id: 'mv_avatar',     name: 'Avatar Trilogy Pack',     tier: 'Legendary', q: 8.5, h: 9.0, cost: 24,  packSize: 3 },
+  { id: 'mv_oppen',      name: 'Atomicore Pack',          tier: 'Epic',      q: 9.0, h: 7.0, cost: 12,  packSize: 3 },
+  { id: 'mv_barbie',     name: 'Doll House Pack',         tier: 'Epic',      q: 7.5, h: 8.5, cost: 11,  packSize: 3 },
+  { id: 'mv_inception',  name: 'Dream Layers Pack',       tier: 'Epic',      q: 8.5, h: 7.5, cost: 11,  packSize: 3 },
+  { id: 'mv_marvel1',    name: 'Heroes Unite Pack',       tier: 'Rare',      q: 7.0, h: 7.5, cost: 5.5, packSize: 3 },
+  { id: 'mv_pixar',      name: 'Animated Adventure Pack', tier: 'Rare',      q: 8.0, h: 6.5, cost: 5,   packSize: 3 },
+  { id: 'mv_horror1',    name: 'Cabin Screams Pack',      tier: 'Rare',      q: 6.5, h: 7.0, cost: 4.5, packSize: 3 },
+  { id: 'mv_action1',    name: 'Fast & Loud Pack',        tier: 'Rare',      q: 6.0, h: 7.5, cost: 5,   packSize: 3 },
+  { id: 'mv_indie1',     name: 'Sundance Darling Pack',   tier: 'Uncommon',  q: 7.5, h: 4.5, cost: 2,   packSize: 3 },
+  { id: 'mv_romcom1',    name: 'Coffee Shop Romance Pack',tier: 'Uncommon',  q: 6.0, h: 5.5, cost: 1.8, packSize: 3 },
+  { id: 'mv_oldclassic', name: 'Classic Hollywood Pack',  tier: 'Common',    q: 6.5, h: 4.0, cost: 1.0, packSize: 3 },
+  { id: 'mv_btv1',       name: 'B-Movie Saturday Pack',   tier: 'Common',    q: 4.5, h: 4.0, cost: 0.6, packSize: 3 },
+  { id: 'mv_btv2',       name: 'Direct-to-Video Pack',    tier: 'Common',    q: 4.0, h: 3.5, cost: 0.5, packSize: 3 },
 ]
+
+// Hype penalty applied when a pack is re-bought within MOVIE_PACK_COOLDOWN_MONTHS
+// of its previous consumption. After cooldown, full hype is restored.
+export const MOVIE_PACK_REBUY_HYPE_PENALTY = 0.40   // −40% hype
+export const MOVIE_PACK_COOLDOWN_MONTHS    = 12
+
+// ─── SCRIPT TIERS ────────────────────────────────────────────────────────────
+// Scripts come in three flavors. Normal is the always-available default;
+// large and super are unlocked via research that requires the metro / national
+// market tier respectively. Bigger tiers cost more, take longer, but produce
+// scripts with higher quality/hype caps AND unlock richer production options.
+//
+// Stat caps clamp the rolled (baseQuality, originalHype) at script-completion
+// time. A normal script will never exceed Q 7 or H 70 — even with a top
+// writer + Legendary IP — so super scripts produce genuinely better content.
+//
+// Production-side gates: tiers on PROD_DESIGN_TIERS, SFX_TIERS, VIDEO_TIERS,
+// SUBTITLE_TIERS that have `minScriptTier` set require the script's tier to
+// match or exceed. The "2 stars" mechanic is a super-only feature handled in
+// production state directly.
+export const SCRIPT_TIERS = [
+  {
+    id: 'normal',
+    label: 'Normal',
+    desc: '1-month write. Standard production envelope. Available from day one.',
+    months: 1,
+    costMult: 1.0,           // ×writer salary
+    qCap: 7.0,
+    hCap: 70,                // hype is on 0..100 scale
+    requiresResearch: null,
+    requiresMarket: null,
+  },
+  {
+    id: 'large',
+    label: 'Large',
+    desc: '2-month write. Unlocks top-tier production design, 4K video, multi-lang subs, heavy SFX. Up to 8.5 quality.',
+    months: 2,
+    costMult: 2.0,
+    qCap: 8.5,
+    hCap: 85,
+    requiresResearch: 'script_large',
+    requiresMarket: 'metro',
+  },
+  {
+    id: 'super',
+    label: 'Super',
+    desc: '2-month write. Everything Large has, plus cast TWO stars. Up to 10 quality. Required for Legendary stars.',
+    months: 2,
+    costMult: 4.0,
+    qCap: 10.0,
+    hCap: 100,
+    requiresResearch: 'script_super',
+    requiresMarket: 'national',
+  },
+]
+
+export const findScriptTier = id => SCRIPT_TIERS.find(t => t.id === id) || SCRIPT_TIERS[0]
+
+// Ranking: which tiers does this tier "satisfy" for gating purposes?
+// super >= large >= normal. Used to compare production-option requirements.
+export const SCRIPT_TIER_RANK = { normal: 0, large: 1, super: 2 }
+
+// Star tier requirements per script tier. A script of tier T can use a star
+// up to the highest STAR_TIER_MAX_FOR_SCRIPT[T] tier. Above that → locked.
+export const STAR_TIER_MAX_FOR_SCRIPT = {
+  normal: ['Common', 'Uncommon', 'Rare'],          // No Epic / Legendary
+  large:  ['Common', 'Uncommon', 'Rare', 'Epic'],  // No Legendary
+  super:  ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'],
+}
 
 // ─── COMPETITORS PER MARKET ──────────────────────────────────────────────────
 // Each competitor has:
@@ -1312,6 +1401,23 @@ export const RESEARCH = [
     desc: '−20% on IP licensing costs.',
     cost: 8,  months: 3,
     effect: { ipDiscount: 0.8 },
+  },
+  {
+    id: 'script_large', group: 'ops',
+    label: 'Large Script Format', icon: '📝',
+    desc: 'Unlock large-format scripts (2 mo write). Higher caps + access to top-tier production (4K, multilingual subs, heavy SFX, ad-hoc design). Requires Metro market.',
+    cost: 12, months: 4,
+    requiresMarket: 'metro',
+    effect: { unlockScriptTier: 'large' },
+  },
+  {
+    id: 'script_super', group: 'ops',
+    label: 'Super Script Format', icon: '🏆',
+    desc: 'Unlock super-format scripts (2 mo write). Highest caps; cast TWO stars; required for Legendary stars. Requires National market + Large Script Format.',
+    cost: 30, months: 6,
+    requires: ['script_large'],
+    requiresMarket: 'national',
+    effect: { unlockScriptTier: 'super' },
   },
 ]
 
@@ -1745,12 +1851,12 @@ export const TECH_QUALITY = {
   subtitles: [
     { id: 'subs_none',  label: 'No Subtitles',     q: 0,    h: 0,   cost: 0,   requires: null },
     { id: 'subs_basic', label: 'Basic Subtitles',  q: 0.3,  h: 0.05,cost: 0.3, requires: 'tech_subs_basic' },
-    { id: 'subs_multi', label: 'Multilingual',     q: 0.7,  h: 0.2, cost: 0.8, requires: 'tech_subs_multi' },
+    { id: 'subs_multi', label: 'Multilingual',     q: 0.7,  h: 0.2, cost: 0.8, requires: 'tech_subs_multi', minScriptTier: 'large' },
   ],
   video: [
     { id: 'video_sd',  label: 'Standard Def',  q: 0,    h: 0,   cost: 0,   requires: null },
     { id: 'video_hd',  label: 'HD',            q: 0.6,  h: 0.3, cost: 0.6, requires: 'tech_video_hd' },
-    { id: 'video_uhd', label: '4K UHD',        q: 1.2,  h: 0.5, cost: 1.5, requires: 'tech_video_uhd' },
+    { id: 'video_uhd', label: '4K UHD',        q: 1.2,  h: 0.5, cost: 1.5, requires: 'tech_video_uhd', minScriptTier: 'large' },
   ],
 }
 export const AUDIO_TIERS    = TECH_QUALITY.audio
