@@ -27,7 +27,7 @@ export function KV({ label, value, color, mono = true, big = false }) {
     <div>
       <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.07em', textTransform: 'uppercase', marginBottom: 1 }}>{label}</div>
       <div style={{
-        fontFamily: mono ? "'DM Mono',monospace" : 'inherit',
+        fontFamily: mono ? "'JetBrains Mono', monospace" : 'inherit',
         fontSize: big ? 17 : 13,
         color: color || T.text, fontWeight: 600,
       }}>{value}</div>
@@ -68,7 +68,7 @@ export function Ticker({ items }) {
     <div style={{ background: T.accent, height: 27, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', height: '100%', animation: 'ticker 38s linear infinite', whiteSpace: 'nowrap', width: 'max-content' }}>
         {d.map((x, i) => (
-          <span key={i} style={{ color: T.bg, fontWeight: 700, fontSize: 11, fontFamily: "'DM Mono',monospace", marginRight: 44 }}>▸ {x}</span>
+          <span key={i} style={{ color: T.bg, fontWeight: 700, fontSize: 11, fontFamily: "'JetBrains Mono', monospace", marginRight: 44 }}>▸ {x}</span>
         ))}
       </div>
     </div>

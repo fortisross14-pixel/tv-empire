@@ -49,7 +49,7 @@ export function OperationsScreen(props) {
             style={{
               background: 'transparent', border: 'none',
               color: sub === t.id ? T.accent : T.muted,
-              fontFamily: 'Bebas Neue', fontSize: 14, letterSpacing: '.1em',
+              fontFamily: 'Anton, sans-serif', fontSize: 14, letterSpacing: '.1em',
               padding: '8px 14px', cursor: 'pointer',
               borderBottom: `2px solid ${sub === t.id ? T.accent : 'transparent'}`,
               marginBottom: -1,
@@ -135,7 +135,7 @@ function RosterGroup({ title, items, role, onFire }) {
               </div>
             </div>
             <HTag tier={t.tier} />
-            <div style={{ textAlign: 'right', fontFamily: 'DM Mono', fontSize: 10,
+            <div style={{ textAlign: 'right', fontFamily: 'JetBrains Mono', fontSize: 10,
                           color: item.permanent ? T.gold : T.green, fontWeight: 600 }}>
               {item.permanent ? 'PERMANENT' : `${item.monthsLeft} mo`}
             </div>
@@ -210,7 +210,7 @@ function HireModal({ role, t, cash, onConfirm, onCancel }) {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
                   <span style={{ fontWeight: 600, fontSize: 13 }}>{ct.label}</span>
-                  <span style={{ fontFamily: 'DM Mono', fontSize: 11,
+                  <span style={{ fontFamily: 'JetBrains Mono', fontSize: 11,
                                  color: ct.months === -1 ? T.gold : T.green }}>{label}</span>
                 </div>
                 <div style={{ fontSize: 10, color: T.muted }}>{ct.desc}</div>
@@ -248,61 +248,16 @@ function FireConfirm({ role, id, t, onConfirm, onCancel }) {
 }
 
 // ─── 2. PURCHASE RIGHTS TAB ──────────────────────────────────────────────
-function RightsTab({ station, year, research, onBuyIP, onBuySportsLicense }) {
+function RightsTab({ station, year, research, onBuyIP }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-        SPORTS RIGHTS — YEAR {year}
-      </div>
-      <SportsBlock station={station} year={year} onBuy={onBuySportsLicense} />
-
-      <div style={{ marginTop: 24, fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
         IP LICENSES — OWNED & AVAILABLE
       </div>
+      <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
+        License existing IPs (books, characters, franchises) to pair with scripts for hype + quality bumps. Sports league rights are in the <strong style={{ color: T.text }}>Market</strong> tab.
+      </div>
       <IPBlock station={station} year={year} research={research} onBuy={onBuyIP} />
-    </div>
-  )
-}
-
-function SportsBlock({ station, year, onBuy }) {
-  const owned = new Set((station.sportsLicenses || []).filter(l => l.year === year).map(l => l.leagueId))
-  return (
-    <div style={{
-      display: 'grid', gap: 8,
-      gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-    }}>
-      {SPORTS_LEAGUES.map(lg => {
-        const ownedNow = owned.has(lg.id)
-        const cost = sportsLicenseCost(lg.id, station.market)
-        const affordable = station.cash >= cost
-        return (
-          <div key={lg.id} style={{
-            background: ownedNow ? T.green + '15' : T.card,
-            border: `1px solid ${ownedNow ? T.green : T.border}`,
-            borderRadius: 5, padding: 10,
-          }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: ownedNow ? T.green : T.text }}>
-              {lg.icon} {lg.label} {ownedNow && '✓'}
-            </div>
-            <div style={{ fontSize: 10, color: T.muted, marginTop: 3 }}>
-              Season: {lg.season.length} mo · Peak: {MONTHS[lg.peakMonth]} ({lg.peakLabel})
-            </div>
-            {!ownedNow ? (
-              <button disabled={!affordable} onClick={() => onBuy(lg.id)} style={{
-                marginTop: 7, width: '100%', padding: '5px 8px',
-                background: affordable ? T.accent : T.border,
-                color: affordable ? T.bg : T.muted,
-                border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700,
-                cursor: affordable ? 'pointer' : 'not-allowed',
-              }}>${cost.toFixed(0)}M BUY</button>
-            ) : (
-              <div style={{ marginTop: 7, fontSize: 10, color: T.green, fontStyle: 'italic' }}>
-                Owned · Assign in slot editor
-              </div>
-            )}
-          </div>
-        )
-      })}
     </div>
   )
 }
@@ -403,7 +358,7 @@ function IPLicenseModal({ ip, station, year, research, onConfirm, onCancel }) {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
                   <span style={{ fontWeight: 600, fontSize: 13 }}>{term.label}</span>
-                  <span style={{ fontFamily: 'DM Mono', fontSize: 11, color: T.green }}>
+                  <span style={{ fontFamily: 'JetBrains Mono', fontSize: 11, color: T.green }}>
                     ${cost.toFixed(1)}M · expires Y{expYear}
                   </span>
                 </div>
@@ -446,7 +401,7 @@ function StaffTab({ station, pendingHires, onOpenPosition, onCancelPosition, onP
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <div style={{ fontSize: 12 }}>Monthly salary burn</div>
-        <div style={{ fontFamily: 'DM Mono', fontSize: 14, color: salary > 0 ? T.red : T.muted, fontWeight: 700 }}>
+        <div style={{ fontFamily: 'JetBrains Mono', fontSize: 14, color: salary > 0 ? T.red : T.muted, fontWeight: 700 }}>
           {salary > 0 ? `$${salary.toFixed(1)}M/mo` : 'None hired'}
         </div>
       </div>
@@ -668,7 +623,7 @@ function MarketingTab({ station, research, onLaunchCampaign }) {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontSize: 14, fontWeight: 700 }}>{c.icon} {c.label}</span>
-                <span style={{ fontFamily: 'DM Mono', fontSize: 12, color: T.red, fontWeight: 700 }}>
+                <span style={{ fontFamily: 'JetBrains Mono', fontSize: 12, color: T.red, fontWeight: 700 }}>
                   ${adjustedCost.toFixed(1)}M
                 </span>
               </div>

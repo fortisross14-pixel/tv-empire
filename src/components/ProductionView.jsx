@@ -46,17 +46,21 @@ export function ProductionView({
 
   // ── NAME ─────────────────────────────────────────────────────────────────
   const [name, setName] = useState('')
+  const [nameTouched, setNameTouched] = useState(false)
   const script = scriptId ? readyScripts.find(s => s.id === scriptId) : null
   const movie = movieId ? findMovie(movieId) : null
   const league = sportsLeagueId ? findLeague(sportsLeagueId) : null
 
-  // Auto-fill name from selected entity once
+  // Auto-fill name from the currently selected source — but only as long as
+  // the user hasn't manually typed in the field. Switching sources should
+  // always update the suggested title.
   useEffect(() => {
-    if (name) return
+    if (nameTouched) return
     if (buildType === 'script' && script) setName(script.name)
     else if (buildType === 'movie' && movie) setName(movie.name)
     else if (buildType === 'sports' && league) setName(`${league.label} ${year}`)
-  }, [buildType, scriptId, movieId, sportsLeagueId])
+    else setName('')
+  }, [buildType, scriptId, movieId, sportsLeagueId, script?.name, movie?.name, league?.label])
 
   // ── DERIVED CATEGORY/TOPIC/IP ─────────────────────────────────────────────
   // For script-based: category/topic/ip come from the script.
@@ -315,7 +319,8 @@ export function ProductionView({
         {/* ── NAME ───────────────────────────────────────────────────── */}
         <Field label="Program Title">
           <input
-            value={name} onChange={e => setName(e.target.value)}
+            value={name}
+            onChange={e => { setName(e.target.value); setNameTouched(true) }}
             placeholder="e.g. The Last Frontier"
             style={inputStyle}
             maxLength={48}
@@ -445,19 +450,19 @@ export function ProductionView({
               <div style={{ flex: 1, minWidth: 100 }}>
                 <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.07em', textTransform: 'uppercase' }}>Quality</div>
                 <div style={{
-                  fontFamily: "'DM Mono',monospace", fontSize: 18, color: T.text, fontWeight: 700,
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: T.text, fontWeight: 700,
                 }}>{estimate.qRange[0]}–{estimate.qRange[1]}</div>
               </div>
               <div style={{ flex: 1, minWidth: 100 }}>
                 <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.07em', textTransform: 'uppercase' }}>Hype</div>
                 <div style={{
-                  fontFamily: "'DM Mono',monospace", fontSize: 18, color: T.gold, fontWeight: 700,
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: T.gold, fontWeight: 700,
                 }}>{estimate.hRange[0]}–{estimate.hRange[1]}</div>
               </div>
               <div style={{ flex: 1, minWidth: 100 }}>
                 <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.07em', textTransform: 'uppercase' }}>Production</div>
                 <div style={{
-                  fontFamily: "'DM Mono',monospace", fontSize: 14, color: T.text, fontWeight: 600,
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: T.text, fontWeight: 600,
                 }}>
                   {method === 'instant' ? 'Instant' : `${prodMonths} mo`}
                 </div>
@@ -474,19 +479,19 @@ export function ProductionView({
           }}>
             <div style={{ flex: 1 }}>
               <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Upfront</div>
-              <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 16, color: insufficient ? T.red : T.text, fontWeight: 700 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: insufficient ? T.red : T.text, fontWeight: 700 }}>
                 {fmtM(prepCost)}
               </div>
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Per Airing</div>
-              <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 16, color: T.text, fontWeight: 700 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: T.text, fontWeight: 700 }}>
                 {perAiring > 0 ? fmtM(perAiring) : '—'}
               </div>
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Total Cost</div>
-              <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 16, color: T.text, fontWeight: 700 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: T.text, fontWeight: 700 }}>
                 {fmtM(totalCost)}
               </div>
             </div>
@@ -542,7 +547,7 @@ function TierPicker({ tiers, selectedId, onPick }) {
             <div style={{ fontSize: 10, color: T.muted, lineHeight: 1.3 }}>{t.desc}</div>
             <div style={{
               fontSize: 10, color: T.text, marginTop: 5,
-              fontFamily: "'DM Mono',monospace", fontWeight: 600,
+              fontFamily: "'JetBrains Mono', monospace", fontWeight: 600,
             }}>
               {t.cost > 0 ? fmtM(t.cost) : 'free'}
             </div>

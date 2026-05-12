@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react'
-import { T } from './theme'
+import React, { useState, useMemo, useEffect } from 'react'
+import { T, findBrand } from './theme'
 import {
   MARKETS, RESEARCH, MOVIES, SLOT_TYPES, MONTHS,
   SPORTS_LEAGUES, IPS, IPS as IPS_FOR_NAMES,
@@ -67,6 +67,8 @@ import {
   finishProgram,
   r1,
   r2,
+  // 6 — ledger
+  ledgerEntry,
 } from './engine'
 
 import { SetupScreen } from './components/SetupScreen'
@@ -77,14 +79,16 @@ import { AwardsView } from './components/AwardsView'
 import { ResearchScreen } from './components/ResearchScreen'
 import { OperationsScreen } from './components/OperationsScreen'
 import { HistoryScreen } from './components/HistoryScreen'
-import { ThisYearScreen } from './components/ThisYearScreen'
 import { MarketScreen } from './components/MarketScreen'
 import { ContentScreen } from './components/ContentScreen'
 import { ReviewModal } from './components/ReviewModal'
+import { FinancialsScreen } from './components/FinancialsScreen'
 import { SectionTitle } from './components/ui'
+import { play as playSound, initOnGesture, isMuted, toggleMuted } from './audio'
+import { Icon } from './icons.jsx'
 
 // ─── AUTO-SAVE ──────────────────────────────────────────────────────────
-const SAVE_KEY = 'tv-empire-save-v5'
+const SAVE_KEY = 'tv-empire-save-v6'
 
 function saveGame(game) {
   try {
@@ -111,12 +115,14 @@ function loadGame() {
     if (!g.station.hiredWriters) g.station.hiredWriters = []
     if (!g.station.scripts) g.station.scripts = []
     if (!g.station.programs) g.station.programs = []
+    if (!g.station.brandId) g.station.brandId = 'ember'
     if (!g.research.inProgress) g.research.inProgress = []
     if (!g.pendingHires) g.pendingHires = []
     if (!g.pendingReviews) g.pendingReviews = []
     if (!g.ownedShows) g.ownedShows = []
     if (!g.allShows) g.allShows = []
     if (!g.competitorAllShows) g.competitorAllShows = []
+    if (!g.ledger) g.ledger = []
     return g
   } catch (e) { return null }
 }
@@ -175,11 +181,49 @@ export default function App() {
   })
   const [editingSlotIdx, setEditingSlotIdx] = useState(null)
   const [view, setView] = useState('plan')
+  const [muted, setMutedState] = useState(() => isMuted())
+  const prevPhase = React.useRef(game.phase)
 
   // Auto-save on every game state change
   React.useEffect(() => {
     saveGame(game)
   }, [game])
+
+  // Unlock Web Audio on first user interaction anywhere in the document.
+  // (Browsers require a gesture before sound can play.)
+  React.useEffect(() => {
+    const unlock = () => initOnGesture()
+    window.addEventListener('pointerdown', unlock, { once: true })
+    window.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
+
+  // Phase-transition sounds. Fires once per transition, not per render.
+  React.useEffect(() => {
+    if (prevPhase.current === game.phase) return
+    if (game.phase === 'results') playSound('results_reveal')
+    else if (game.phase === 'awards') playSound('award')
+    prevPhase.current = game.phase
+  }, [game.phase])
+
+  const onToggleMute = () => {
+    const m = toggleMuted()
+    setMutedState(m)
+    if (!m) playSound('tick') // confirmation that audio is back
+  }
+
+  // Apply the chosen brand's CSS variables on the root element.
+  // These power `.cta`, `.ident`, and any brand-tinted UI elsewhere.
+  useEffect(() => {
+    const brand = findBrand(game?.station?.brandId)
+    const root = document.documentElement
+    root.style.setProperty('--brand-bg',     brand.bg)
+    root.style.setProperty('--brand-fg',     brand.fg)
+    root.style.setProperty('--brand-accent', brand.accent)
+  }, [game?.station?.brandId])
 
   // ─── SETUP ───────────────────────────────────────────────────────────
   const startGame = (setup) => {
@@ -203,10 +247,19 @@ export default function App() {
       if (run.programId) {
         programs = programs.map(p => p.id === run.programId ? { ...p, status: 'shelf' } : p)
       }
+      const entry = penalty > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'fire_penalty',
+        label: `Cancelled "${run.name || 'program'}"`,
+        amount: -penalty,
+        programId: run.programId,
+        programName: run.name,
+      }) : null
       return {
         ...g,
         runs,
         station: { ...g.station, cash: g.station.cash - penalty, programs },
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
         log: [...g.log, `❌ Cancelled "${run.name || 'program'}" — penalty ${fmtM(-penalty)}${run.programId ? ' (program returned to shelf)' : ''}`],
       }
     })
@@ -266,7 +319,11 @@ export default function App() {
 
   // ─── ADVANCE MONTH ────────────────────────────────────────────────────
   const advanceMonth = () => {
-    if (nextMonthCost + permanentCharge > game.station.cash) return
+    if (nextMonthCost + permanentCharge > game.station.cash) {
+      playSound('error')
+      return
+    }
+    playSound('month_advance')
 
     setGame((g) => {
       // ── Phase 1: produce airings (no audience yet) ───────────────────
@@ -424,6 +481,64 @@ export default function App() {
         logLines.push(`👥 Staff salaries: ${fmtM(-salaryThisMonth)}`)
       }
 
+      // ── Build month ledger entries ─────────────────────────────────
+      // Per-airing entries: revenue (positive) and airing cost (negative).
+      // We group revenue and cost separately so the Financials view can
+      // show "Program revenue → Program A: X" and "Program expense → Program A: Y"
+      // as sibling lines under the same program.
+      const monthLedger = []
+      playerAirings.forEach(a => {
+        if (!a.programId) return
+        const prog = programsAfterAirings.find(p => p.id === a.programId)
+                  || g.station.programs.find(p => p.id === a.programId)
+        const progName = prog?.name
+                     || (a.sportsRunLeagueId ? `${findLeague(a.sportsRunLeagueId)?.label || 'Sports'} Coverage` : null)
+                     || 'Untitled'
+        if ((a.revenue || 0) > 0) {
+          monthLedger.push(ledgerEntry({
+            year: g.year, month: g.monthIdx,
+            kind: 'program_revenue',
+            label: 'Airing revenue',
+            amount: a.revenue,
+            programId: a.programId, programName: progName,
+          }))
+        }
+        if ((a.cost || 0) > 0) {
+          monthLedger.push(ledgerEntry({
+            year: g.year, month: g.monthIdx,
+            kind: 'program_airing',
+            label: 'Airing / transmission cost',
+            amount: -a.cost,
+            programId: a.programId, programName: progName,
+          }))
+        }
+      })
+      // Salaries (talent permanent + writer + staff)
+      if ((ticked.talentCharge || 0) > 0) {
+        monthLedger.push(ledgerEntry({
+          year: g.year, month: g.monthIdx,
+          kind: 'salary_talent',
+          label: 'Talent salaries (permanent)',
+          amount: -ticked.talentCharge,
+        }))
+      }
+      if ((ticked.writerCharge || 0) > 0) {
+        monthLedger.push(ledgerEntry({
+          year: g.year, month: g.monthIdx,
+          kind: 'salary_writer',
+          label: 'Writer salaries',
+          amount: -ticked.writerCharge,
+        }))
+      }
+      if (salaryThisMonth > 0) {
+        monthLedger.push(ledgerEntry({
+          year: g.year, month: g.monthIdx,
+          kind: 'salary_staff',
+          label: 'Staff salaries',
+          amount: -salaryThisMonth,
+        }))
+      }
+
       const station = {
         ...stationAfterStaff,
         cash: r1(newCash),
@@ -491,9 +606,34 @@ export default function App() {
         const awards = buildAwards(allYearShows, station)
         let cash = station.cash
         let fame = station.fame
-        awards.wins.forEach(w => { cash += w.cashBonus; fame += w.fameBonus })
-        if (awards.bestOverall) { cash += awards.bestOverall.cashBonus; fame += awards.bestOverall.fameBonus }
-        if (awards.mostWatched) { cash += awards.mostWatched.cashBonus; fame += awards.mostWatched.fameBonus }
+        const awardLedger = []
+        awards.wins.forEach(w => {
+          cash += w.cashBonus; fame += w.fameBonus
+          if (w.cashBonus > 0) awardLedger.push(ledgerEntry({
+            year: g.year, month: g.monthIdx,
+            kind: 'award_bonus',
+            label: `Award: ${w.label || w.category || 'Win'}`,
+            amount: w.cashBonus,
+          }))
+        })
+        if (awards.bestOverall) {
+          cash += awards.bestOverall.cashBonus; fame += awards.bestOverall.fameBonus
+          if (awards.bestOverall.cashBonus > 0) awardLedger.push(ledgerEntry({
+            year: g.year, month: g.monthIdx,
+            kind: 'award_bonus',
+            label: `Award: Best Overall`,
+            amount: awards.bestOverall.cashBonus,
+          }))
+        }
+        if (awards.mostWatched) {
+          cash += awards.mostWatched.cashBonus; fame += awards.mostWatched.fameBonus
+          if (awards.mostWatched.cashBonus > 0) awardLedger.push(ledgerEntry({
+            year: g.year, month: g.monthIdx,
+            kind: 'award_bonus',
+            label: `Award: Most Watched`,
+            amount: awards.mostWatched.cashBonus,
+          }))
+        }
         competitors.forEach(c => rolloverCompetitorYear(c, g.year))
 
         return {
@@ -513,6 +653,7 @@ export default function App() {
           lastMonthResult,
           awards,
           pendingReviews: newReviews,
+          ledger: [...(g.ledger || []), ...monthLedger, ...awardLedger],
           phase: 'awards',
           log: logLines,
         }
@@ -535,6 +676,7 @@ export default function App() {
         ownedShows: newOwned,
         lastMonthResult,
         pendingReviews: newReviews,
+        ledger: [...(g.ledger || []), ...monthLedger],
         phase: playerAirings.length > 0 ? 'results' : 'plan',
         log: logLines,
       }
@@ -562,6 +704,8 @@ export default function App() {
   }
 
   const promoteMarket = () => {
+    if (!canPromote(game.station)) { playSound('error'); return }
+    playSound('confirm')
     setGame((g) => {
       if (!canPromote(g.station)) return g
       const next = promotedMarket(g.station)
@@ -576,15 +720,30 @@ export default function App() {
 
   // ─── RESEARCH ────────────────────────────────────────────────────────
   const startResearch = (id) => {
+    const probe = beginResearch(id, game.station, game.research, game.year, game.monthIdx)
+    if (probe.error) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ Research: ${probe.error}`] }))
+      return
+    }
+    playSound('confirm')
     setGame((g) => {
       const result = beginResearch(id, g.station, g.research, g.year, g.monthIdx)
       if (result.error) return { ...g, log: [...g.log, `⚠ Research: ${result.error}`] }
       const adj = researchAdjusted(id, g.station, g.research)
+      const r = RESEARCH.find(x => x.id === id)
+      const entry = ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'research',
+        label: `Research: ${r?.label || id}`,
+        amount: -adj.cost,
+      })
       return {
         ...g,
         station: result.station,
         research: result.research,
-        log: [...g.log, `🔬 Began research: ${RESEARCH.find(r=>r.id===id)?.label} (${adj.months} mo, ${fmtM(adj.cost)})`],
+        ledger: [...(g.ledger || []), entry],
+        log: [...g.log, `🔬 Began research: ${r?.label} (${adj.months} mo, ${fmtM(adj.cost)})`],
       }
     })
   }
@@ -592,10 +751,17 @@ export default function App() {
   // ─── SPORTS LICENSES ──────────────────────────────────────────────────
   const buySportsLicense = (leagueId) => {
     const cost = sportsLicenseCost(leagueId, game.station.market)
-    if (game.station.cash < cost) return
-    if (ownsLicense(game.station, leagueId, game.year)) return
+    if (game.station.cash < cost) { playSound('error'); return }
+    if (ownsLicense(game.station, leagueId, game.year)) { playSound('error'); return }
+    playSound('confirm')
     setGame((g) => {
       const lg = findLeague(leagueId)
+      const entry = ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'rights_sports',
+        label: `${lg.label} rights (Y${g.year})`,
+        amount: -cost,
+      })
       return {
         ...g,
         station: {
@@ -603,6 +769,7 @@ export default function App() {
           cash: g.station.cash - cost,
           sportsLicenses: [...(g.station.sportsLicenses || []), { leagueId, year: g.year }],
         },
+        ledger: [...(g.ledger || []), entry],
         log: [...g.log, `🏆 Acquired ${lg.label} rights for Y${g.year} (${fmtM(-cost)})`],
       }
     })
@@ -610,6 +777,13 @@ export default function App() {
 
   // ─── TALENT ──────────────────────────────────────────────────────────
   const onHire = (role, talent, contractTypeId) => {
+    const probe = hireTalent(game.station, role, talent, contractTypeId)
+    if (probe.error) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ ${probe.error}`] }))
+      return
+    }
+    playSound('confirm')
     setGame((g) => {
       const result = hireTalent(g.station, role, talent, contractTypeId)
       if (result.error) return { ...g, log: [...g.log, `⚠ ${result.error}`] }
@@ -617,10 +791,17 @@ export default function App() {
         directors: g.marketRoster.directors.filter(d => !(role === 'director' && d.id === talent.id)),
         stars:     g.marketRoster.stars.filter(s => !(role === 'star' && s.id === talent.id)),
       }
+      const entry = result.charged > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'hire_signing',
+        label: `Signed ${talent.name} (${role})`,
+        amount: -result.charged,
+      }) : null
       return {
         ...g,
         station: result.station,
         marketRoster,
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
         log: [...g.log, `✍ Signed ${talent.name} (${contractTypeId}) for ${fmtM(result.charged)}`],
       }
     })
@@ -630,9 +811,16 @@ export default function App() {
     setGame((g) => {
       const result = fireTalent(g.station, role, talentId)
       if (result.error) return { ...g, log: [...g.log, `⚠ ${result.error}`] }
+      const entry = result.charged > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'fire_penalty',
+        label: `Fire penalty (${role})`,
+        amount: -result.charged,
+      }) : null
       return {
         ...g,
         station: result.station,
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
         log: [...g.log, `🚪 Fired talent (penalty ${fmtM(result.charged)})`],
       }
     })
@@ -640,6 +828,13 @@ export default function App() {
 
   // ─── WRITERS ─────────────────────────────────────────────────────────
   const onHireWriter = (writer) => {
+    const probe = hireWriter(game.station, writer)
+    if (probe.error) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ Writer: ${probe.error}`] }))
+      return
+    }
+    playSound('confirm')
     setGame((g) => {
       const result = hireWriter(g.station, writer)
       if (result.error) return { ...g, log: [...g.log, `⚠ Writer: ${result.error}`] }
@@ -647,10 +842,17 @@ export default function App() {
         ...g.marketRoster,
         writers: (g.marketRoster.writers || []).filter(w => w.id !== writer.id),
       }
+      const entry = result.charged > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'hire_signing',
+        label: `Hired writer ${writer.name}`,
+        amount: -result.charged,
+      }) : null
       return {
         ...g,
         station: result.station,
         marketRoster,
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
         log: [...g.log, `✍ Hired writer ${writer.name} (${fmtM(result.charged)} signing, ${fmtM(writer.cost)}/mo permanent)`],
       }
     })
@@ -660,11 +862,16 @@ export default function App() {
     setGame((g) => {
       const result = fireWriter(g.station, writerId)
       if (result.error) return { ...g, log: [...g.log, `⚠ Writer: ${result.error}`] }
-      const w = g.station.hiredWriters.find(h => h.talentId === writerId)
-      const writer = w ? (g.marketRoster.writers || []).find(x => x.id === w.talentId) : null
+      const entry = result.charged > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'fire_penalty',
+        label: `Fire penalty (writer)`,
+        amount: -result.charged,
+      }) : null
       return {
         ...g,
         station: result.station,
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
         log: [...g.log, `🚪 Fired writer (penalty ${fmtM(result.charged)})`],
       }
     })
@@ -672,6 +879,13 @@ export default function App() {
 
   // ─── SCRIPTS ─────────────────────────────────────────────────────────
   const onBeginScript = (opts) => {
+    const probe = beginScript(game.station, opts)
+    if (probe.error) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ Script: ${probe.error}`] }))
+      return
+    }
+    playSound('script_start')
     setGame((g) => {
       const result = beginScript(g.station, opts)
       if (result.error) return { ...g, log: [...g.log, `⚠ Script: ${result.error}`] }
@@ -724,12 +938,28 @@ export default function App() {
 
   // ─── PROGRAMS ────────────────────────────────────────────────────────
   const onBeginProgram = (opts) => {
+    const probe = beginProgram(game.station, game.research, game.year, opts)
+    if (probe.error) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ Production: ${probe.error}`] }))
+      return
+    }
+    playSound('production_start')
     setGame((g) => {
       const result = beginProgram(g.station, g.research, g.year, opts)
       if (result.error) return { ...g, log: [...g.log, `⚠ Production: ${result.error}`] }
+      const entry = ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'program_build',
+        label: `Production: ${opts.name}`,
+        amount: -result.program.prepCostPaid,
+        programId: result.program.id,
+        programName: result.program.name,
+      })
       return {
         ...g,
         station: result.station,
+        ledger: [...(g.ledger || []), entry],
         log: [...g.log, `🎬 Started production: "${opts.name}" (${fmtM(result.program.prepCostPaid)} upfront, ${result.program.prodMonthsTotal} mo)`],
       }
     })
@@ -750,6 +980,13 @@ export default function App() {
 
   // Schedule a shelf program into a slot — creates a run
   const onScheduleProgram = (programId, slotTypeId, runMonths) => {
+    const probe = scheduleProgram(game.station, programId, slotTypeId, runMonths)
+    if (probe.error) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ Schedule: ${probe.error}`] }))
+      return
+    }
+    playSound('confirm')
     setGame((g) => {
       const result = scheduleProgram(g.station, programId, slotTypeId, runMonths)
       if (result.error) return { ...g, log: [...g.log, `⚠ Schedule: ${result.error}`] }
@@ -768,9 +1005,16 @@ export default function App() {
       const result = openStaffPosition(g.station, role, tierId)
       if (result.error) return { ...g, log: [...g.log, `⚠ ${result.error}`] }
       const tierCost = result.station.openPositions.find(p => p.role === role)?.cost || 0
+      const entry = tierCost > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'hire_signing',
+        label: `${role} search (${tierId})`,
+        amount: -tierCost,
+      }) : null
       return {
         ...g,
         station: result.station,
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
         log: [...g.log, `📋 Opened ${role} position (${tierId} search, ${fmtM(tierCost)})`],
       }
     })
@@ -780,17 +1024,24 @@ export default function App() {
     setGame((g) => {
       const result = cancelStaffPosition(g.station, role)
       if (result.error) return { ...g, log: [...g.log, `⚠ ${result.error}`] }
+      const entry = result.refund > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'hire_signing',  // negative expense → reimbursement
+        label: `Search refund (${role})`,
+        amount: result.refund,
+      }) : null
       return {
         ...g,
         station: result.station,
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
         log: [...g.log, `❌ Cancelled ${role} search (refund ${fmtM(result.refund)})`],
       }
     })
   }
 
   const onPickCandidate = (role, candidate) => {
+    playSound('confirm')
     setGame((g) => {
-      // hireStaffCandidate returns the updated station directly, not wrapped
       const newStation = hireStaffCandidate(g.station, role, candidate, g.year, g.monthIdx)
       const pendingHires = (g.pendingHires || []).filter(p => p.role !== role)
       return {
@@ -805,9 +1056,16 @@ export default function App() {
   const onFireStaff = (role) => {
     setGame((g) => {
       const result = fireStaffMember(g.station, role)
+      const entry = result.penalty > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'fire_penalty',
+        label: `Severance (${role})`,
+        amount: -result.penalty,
+      }) : null
       return {
         ...g,
         station: result.station,
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
         log: [...g.log, `🚪 Fired ${role} director (severance ${fmtM(result.penalty)})`],
       }
     })
@@ -815,13 +1073,27 @@ export default function App() {
 
   // ─── IP RIGHTS ──────────────────────────────────────────────────────
   const onBuyIP = (ipId, termId) => {
+    const probe = buyIPLicense(game.station, ipId, termId, game.year, game.research)
+    if (probe.error) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ IP: ${probe.error}`] }))
+      return
+    }
+    playSound('confirm')
     setGame((g) => {
       const result = buyIPLicense(g.station, ipId, termId, g.year, g.research)
       if (result.error) return { ...g, log: [...g.log, `⚠ IP: ${result.error}`] }
       const ipObj = IPS_FOR_NAMES.find(i => i.id === ipId)
+      const entry = ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'rights_ip',
+        label: `${ipObj?.name || ipId} (${termId.replace('y','-yr')})`,
+        amount: -result.cost,
+      })
       return {
         ...g,
         station: result.station,
+        ledger: [...(g.ledger || []), entry],
         log: [...g.log, `📜 Licensed ${ipObj?.name || ipId} (${termId.replace('y','-year')}, ${fmtM(result.cost)})`],
       }
     })
@@ -829,12 +1101,26 @@ export default function App() {
 
   // ─── NETWORK CAMPAIGNS ──────────────────────────────────────────────
   const onLaunchCampaign = (campaignId) => {
+    const probe = launchNetworkCampaign(game.station, campaignId, game.research)
+    if (probe.error) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ Campaign: ${probe.error}`] }))
+      return
+    }
+    playSound('confirm')
     setGame((g) => {
       const result = launchNetworkCampaign(g.station, campaignId, g.research)
       if (result.error) return { ...g, log: [...g.log, `⚠ Campaign: ${result.error}`] }
+      const entry = ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'marketing',
+        label: `Network campaign: ${result.label}`,
+        amount: -(result.cost || 0),
+      })
       return {
         ...g,
         station: result.station,
+        ledger: [...(g.ledger || []), entry],
         log: [...g.log, `📣 Network campaign launched: ${result.label}`],
       }
     })
@@ -859,6 +1145,8 @@ export default function App() {
         nextMonthCost={nextMonthCost}
         onContinueResults={continueAfterResults}
         onContinueAwards={newYear}
+        muted={muted}
+        onToggleMute={onToggleMute}
       />
 
       {game.phase === 'plan' && view === 'plan' && (
@@ -871,7 +1159,6 @@ export default function App() {
           onOpenSlot={openSlot}
           onCancelRun={cancelRun}
           onAdvanceMonth={advanceMonth}
-          onBuySportsLicense={buySportsLicense}
         />
       )}
 
@@ -889,7 +1176,6 @@ export default function App() {
           onPickCandidate={onPickCandidate}
           onFireStaff={onFireStaff}
           onBuyIP={onBuyIP}
-          onBuySportsLicense={buySportsLicense}
           onLaunchCampaign={onLaunchCampaign}
           onBack={() => setView('plan')}
         />
@@ -924,14 +1210,6 @@ export default function App() {
         />
       )}
 
-      {game.phase === 'plan' && view === 'thisyear' && (
-        <ThisYearScreen
-          yearShows={game.yearShows || []}
-          year={game.year}
-          onBack={() => setView('plan')}
-        />
-      )}
-
       {game.phase === 'plan' && view === 'history' && (
         <HistoryScreen
           stationName={game.station.name}
@@ -947,6 +1225,17 @@ export default function App() {
           station={game.station}
           competitors={game.competitors || []}
           year={game.year}
+          monthIdx={game.monthIdx}
+          yearShows={game.yearShows || []}
+          competitorAllShows={game.competitorAllShows || []}
+          onBuySportsLicense={buySportsLicense}
+          onBack={() => setView('plan')}
+        />
+      )}
+
+      {game.phase === 'plan' && view === 'financials' && (
+        <FinancialsScreen
+          game={game}
           onBack={() => setView('plan')}
         />
       )}
@@ -997,9 +1286,10 @@ export default function App() {
 }
 
 // ─── TOP BAR ────────────────────────────────────────────────────────────
-function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCost, onContinueResults, onContinueAwards }) {
+function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCost, onContinueResults, onContinueAwards, muted, onToggleMute }) {
   const m = MARKETS[game.station.market]
   const isInPlanFlow = game.phase === 'plan'
+  const brand = findBrand(game.station.brandId)
 
   // Continue button: in plan flow advances month from any tab; in results dismisses; in awards goes to new year
   const continueAction =
@@ -1010,54 +1300,102 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
   const continueLabel =
     game.phase === 'results' ? 'Continue' :
     game.phase === 'awards' ? 'New Year' :
-    'Continue'
+    'Air Month'
   const continueEnabled = !!continueAction
+
+  // Ident label = first 12 chars uppercased, like a real channel ident
+  const identLabel = (game.station.name || 'CHANNEL').slice(0, 12).toUpperCase()
 
   return (
     <div style={{
-      background: T.surface, borderBottom: `1px solid ${T.border}`,
+      background: `linear-gradient(180deg, ${T.surface} 0%, ${T.bg} 100%)`,
+      borderBottom: `1px solid ${T.border}`,
       position: 'sticky', top: 0, zIndex: 50,
+      boxShadow: `0 2px 20px rgba(0,0,0,.4)`,
     }}>
-      {/* ROW 1: identity + stats + continue */}
+      {/* ROW 1: ident + stats + date + continue */}
       <div style={{
-        display: 'flex', gap: 8, padding: '8px 10px',
+        display: 'flex', gap: 10, padding: '10px 12px',
         alignItems: 'center',
       }}>
+        {/* IDENT — uses brand colors */}
+        <div style={{
+          display: 'inline-flex',
+          background: brand.bg, color: brand.fg,
+          padding: '6px 10px',
+          fontFamily: 'Anton, sans-serif',
+          fontSize: 15, letterSpacing: '.06em',
+          borderRadius: 3,
+          border: `1.5px solid ${brand.fg}`,
+          textTransform: 'uppercase',
+          lineHeight: 1,
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
+        }}>
+          {identLabel}
+        </div>
+
+        {/* Market subtitle (mobile-collapsed) */}
         <div style={{ flex: '1 1 0', minWidth: 0 }}>
-          <div style={{
-            fontFamily: 'Bebas Neue', fontSize: 15, letterSpacing: '.05em', lineHeight: 1,
+          <div className="mono" style={{
+            fontSize: 9.5, color: T.muted, letterSpacing: '.12em',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
-            {game.station.name}
+            {m.label.toUpperCase()}
           </div>
           <div style={{
-            fontSize: 9, color: T.muted, marginTop: 2,
+            fontSize: 11, color: T.textDim, marginTop: 2,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            display: 'flex', alignItems: 'center', gap: 4,
           }}>
-            {m.label}
+            <span className="onair-dot" style={{ width: 5, height: 5 }} />
+            <span style={{ color: T.red, fontSize: 9.5, letterSpacing: '.1em', fontWeight: 600 }}>LIVE</span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
           <MiniStat label="CASH" value={fmtM(game.station.cash)} accent={T.green} />
           <MiniStat label="FAME" value={game.station.fame.toFixed(1)} accent={T.gold} />
         </div>
 
-        {/* DATE + Continue chip */}
+        {/* Mute toggle */}
+        <button
+          onClick={onToggleMute}
+          aria-label={muted ? 'Unmute' : 'Mute'}
+          title={muted ? 'Audio muted' : 'Audio on'}
+          style={{
+            background: 'transparent',
+            border: `1px solid ${T.border}`,
+            color: muted ? T.muted : T.text,
+            borderRadius: 4,
+            width: 32, height: 32,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+            flexShrink: 0,
+            transition: 'all .15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = T.border }}
+        >
+          <Icon name={muted ? 'speaker_off' : 'speaker_on'} size={15} color="currentColor" />
+        </button>
+
+        {/* DATE + Continue */}
         <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0 }}>
           <div style={{
-            background: T.card,
+            background: T.surface,
             border: `1px solid ${T.border}`,
-            borderRadius: '5px 0 0 5px',
+            borderRadius: '4px 0 0 4px',
             borderRight: 'none',
-            padding: '4px 8px',
-            textAlign: 'center', minWidth: 42,
+            padding: '5px 9px',
+            textAlign: 'center', minWidth: 46,
             display: 'flex', flexDirection: 'column', justifyContent: 'center',
           }}>
-            <div style={{ fontSize: 9, color: T.muted, letterSpacing: 1, lineHeight: 1 }}>
-              {MONTHS[game.monthIdx]}
+            <div className="mono" style={{ fontSize: 9, color: T.muted, letterSpacing: '.1em', lineHeight: 1 }}>
+              {MONTHS[game.monthIdx].toUpperCase()}
             </div>
-            <div style={{ fontSize: 10, color: T.text, fontWeight: 700, marginTop: 2, lineHeight: 1 }}>
+            <div className="display" style={{ fontSize: 13, color: T.text, marginTop: 3, lineHeight: 1, letterSpacing: '.04em' }}>
               Y{game.year}
             </div>
           </div>
@@ -1065,19 +1403,23 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
             onClick={continueEnabled ? continueAction : undefined}
             disabled={!continueEnabled}
             style={{
-              background: continueEnabled
-                ? 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)'
-                : T.card,
+              background: continueEnabled ? brand.accent : T.card,
               border: 'none',
-              borderRadius: '0 5px 5px 0',
-              color: continueEnabled ? '#fff' : T.muted,
-              padding: '0 10px',
-              fontFamily: 'Bebas Neue', fontSize: 12, letterSpacing: '.08em',
+              borderRadius: '0 4px 4px 0',
+              color: continueEnabled ? brand.bg : T.muted,
+              padding: '0 14px',
+              fontFamily: 'Anton, sans-serif',
+              fontSize: 13.5,
+              letterSpacing: '.07em',
+              textTransform: 'uppercase',
               cursor: continueEnabled ? 'pointer' : 'not-allowed',
-              minWidth: 60,
+              minWidth: 70,
+              transition: 'filter .12s',
             }}
+            onMouseEnter={e => { if (continueEnabled) e.currentTarget.style.filter = 'brightness(1.12)' }}
+            onMouseLeave={e => { e.currentTarget.style.filter = 'none' }}
           >
-            {continueLabel} ▶
+            {continueLabel} ▸
           </button>
         </div>
       </div>
@@ -1085,44 +1427,58 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
       {/* ROW 2: main tabs */}
       {isInPlanFlow && (
         <div style={{
-          display: 'flex', gap: 0, padding: '0 6px',
+          display: 'flex', gap: 0, padding: '0 8px',
           borderTop: `1px solid ${T.border}`,
           overflowX: 'auto', scrollbarWidth: 'none',
         }}>
-          <NavTab label="Programming" active={view === 'plan'} onClick={() => setView('plan')} />
-          <NavTab label="Content" active={view === 'content'} onClick={() => setView('content')} />
-          <NavTab label="Operations" active={view === 'operations'} onClick={() => setView('operations')} />
-          <NavTab label="Research" active={view === 'research'} onClick={() => setView('research')} />
-          <NavTab label="This Year" active={view === 'thisyear'} onClick={() => setView('thisyear')} />
-          <NavTab label="History" active={view === 'history'} onClick={() => setView('history')} />
-          <NavTab label="Market" active={view === 'market'} onClick={() => setView('market')} />
+          <NavTab label="Programming" active={view === 'plan'} onClick={() => setView('plan')} brand={brand} />
+          <NavTab label="Content" active={view === 'content'} onClick={() => setView('content')} brand={brand} />
+          <NavTab label="Operations" active={view === 'operations'} onClick={() => setView('operations')} brand={brand} />
+          <NavTab label="Research" active={view === 'research'} onClick={() => setView('research')} brand={brand} />
+          <NavTab label="History" active={view === 'history'} onClick={() => setView('history')} brand={brand} />
+          <NavTab label="Market" active={view === 'market'} onClick={() => setView('market')} brand={brand} />
+          <NavTab label="Financials" active={view === 'financials'} onClick={() => setView('financials')} brand={brand} />
         </div>
       )}
     </div>
   )
 }
 
-function NavTab({ label, active, onClick }) {
+function NavTab({ label, active, onClick, brand }) {
+  const activeColor = brand?.accent || T.accent
+  const handleClick = () => {
+    if (!active) playSound('tap')
+    onClick()
+  }
   return (
-    <button onClick={onClick} style={{
+    <button onClick={handleClick} style={{
       background: 'transparent', border: 'none',
-      color: active ? T.accent : T.muted,
-      fontFamily: 'Bebas Neue', fontSize: 13, letterSpacing: '.08em',
-      padding: '9px 11px', cursor: 'pointer',
-      borderBottom: `2px solid ${active ? T.accent : 'transparent'}`,
+      color: active ? activeColor : T.muted,
+      fontFamily: "'Inter Tight', sans-serif",
+      fontSize: 12, fontWeight: active ? 600 : 500,
+      letterSpacing: '.02em',
+      padding: '11px 13px', cursor: 'pointer',
+      borderBottom: `2px solid ${active ? activeColor : 'transparent'}`,
       marginBottom: -1, whiteSpace: 'nowrap',
-    }}>{label}</button>
+      transition: 'color .15s',
+    }}
+    onMouseEnter={e => { if (!active) e.currentTarget.style.color = T.text }}
+    onMouseLeave={e => { if (!active) e.currentTarget.style.color = T.muted }}
+    >{label}</button>
   )
 }
 
 function MiniStat({ label, value, accent }) {
   return (
-    <div style={{ textAlign: 'right', minWidth: 40 }}>
-      <div style={{ fontSize: 8, letterSpacing: 1, color: T.muted, lineHeight: 1 }}>{label}</div>
-      <div style={{
-        fontFamily: 'DM Mono', fontSize: 11, fontWeight: 700,
-        color: accent || T.text, marginTop: 2, lineHeight: 1,
+    <div style={{ textAlign: 'right', minWidth: 48 }}>
+      <div className="mono" style={{
+        fontSize: 8.5, letterSpacing: '.12em', color: T.muted, lineHeight: 1,
+      }}>{label}</div>
+      <div className="mono" style={{
+        fontSize: 14, fontWeight: 700,
+        color: accent || T.text, marginTop: 3, lineHeight: 1,
         whiteSpace: 'nowrap',
+        letterSpacing: '-.02em',
       }}>{value}</div>
     </div>
   )
@@ -1131,10 +1487,11 @@ function MiniStat({ label, value, accent }) {
 function Stat({ label, value, accent }) {
   return (
     <div style={{ minWidth: 80 }}>
-      <div style={{ fontSize: 9, letterSpacing: 1.5, color: T.muted }}>{label}</div>
-      <div style={{
-        fontFamily: 'DM Mono', fontSize: 16, fontWeight: 600,
-        color: accent || T.text, marginTop: 2,
+      <div className="mono" style={{ fontSize: 10, letterSpacing: '.12em', color: T.muted }}>{label}</div>
+      <div className="mono" style={{
+        fontSize: 18, fontWeight: 700,
+        color: accent || T.text, marginTop: 4,
+        letterSpacing: '-.01em',
       }}>{value}</div>
     </div>
   )
@@ -1143,19 +1500,50 @@ function Stat({ label, value, accent }) {
 // ─── PLAN VIEW ──────────────────────────────────────────────────────────
 function PlanView({
   game, runsBySlot, nextMonthCost, permanentCharge, cashBlocker,
-  onOpenSlot, onCancelRun, onAdvanceMonth, onBuySportsLicense,
+  onOpenSlot, onCancelRun, onAdvanceMonth,
 }) {
   const totalCost = nextMonthCost + permanentCharge
+  const filledCount = game.station.slotIds.filter((_, i) => runsBySlot[i]).length
+  const totalSlots = game.station.slotIds.length
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: 18 }}>
-      <SectionTitle>
-        {MONTHS[game.monthIdx]} · Year {game.year}
-      </SectionTitle>
-
-      <div style={{ fontSize: 12, color: T.muted, marginBottom: 14, lineHeight: 1.5 }}>
-        Fill empty slots with programs (1, 3, 6, or 12-month commitments) or sports rights.
-        Active programs auto-air each month. Advance the month when ready.
+      {/* Broadcast schedule header */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
+        marginBottom: 18, gap: 16, flexWrap: 'wrap',
+      }}>
+        <div>
+          <div className="mono" style={{
+            fontSize: 11, color: T.muted, letterSpacing: '.15em', marginBottom: 4,
+          }}>
+            BROADCAST SCHEDULE · {MONTHS[game.monthIdx].toUpperCase()} Y{game.year}
+          </div>
+          <h1 className="display" style={{
+            fontSize: 32, color: T.text, letterSpacing: '.04em',
+            textTransform: 'uppercase', lineHeight: 1,
+          }}>
+            Programming
+          </h1>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 8, lineHeight: 1.5, maxWidth: 520 }}>
+            Fill empty slots with programs (1, 3, 6, or 12-month commitments) or sports rights.
+            Active programs auto-air each month.
+          </div>
+        </div>
+        <div style={{
+          display: 'flex', alignItems: 'baseline', gap: 8,
+          padding: '10px 16px',
+          background: T.surface, border: `1px solid ${T.border}`,
+          borderRadius: 5,
+        }}>
+          <div className="mono" style={{ fontSize: 28, color: T.text, fontWeight: 700, letterSpacing: '-.02em' }}>
+            {filledCount}
+            <span style={{ color: T.muted, fontSize: 18, fontWeight: 400 }}> / {totalSlots}</span>
+          </div>
+          <div className="mono" style={{ fontSize: 10, color: T.muted, letterSpacing: '.1em' }}>
+            SLOTS<br/>FILLED
+          </div>
+        </div>
       </div>
 
       <div style={{
@@ -1182,37 +1570,40 @@ function PlanView({
         })}
       </div>
 
-      {/* Sports Rights Panel */}
-      <SportsRightsPanel
-        station={game.station}
-        year={game.year}
-        onBuy={onBuySportsLicense}
-      />
-
       {/* Next month preview — Continue button is now in the top bar */}
       <div style={{
-        marginTop: 22, padding: 14,
-        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+        marginTop: 22, padding: 16,
+        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 140 }}>
-            <div style={{ fontSize: 10, color: T.muted, letterSpacing: 1.5 }}>NEXT MONTH COST</div>
-            <div style={{
-              fontFamily: 'DM Mono', fontSize: 20,
+            <div className="mono" style={{ fontSize: 10, color: T.muted, letterSpacing: '.15em' }}>
+              NEXT MONTH BUDGET
+            </div>
+            <div className="mono" style={{
+              fontSize: 22, fontWeight: 700,
               color: cashBlocker ? T.red : T.text,
+              marginTop: 4,
+              letterSpacing: '-.02em',
             }}>{fmtM(totalCost)}</div>
-            <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
+            <div style={{ fontSize: 11.5, color: T.muted, marginTop: 3 }}>
               {game.runs.length} active program{game.runs.length === 1 ? '' : 's'}
               {permanentCharge > 0 && ` · ${fmtM(permanentCharge)} contracts`}
             </div>
           </div>
-          <div style={{ fontSize: 11, color: T.muted, fontStyle: 'italic', maxWidth: 200, textAlign: 'right' }}>
-            Tap <strong style={{ color: T.accent }}>Continue ▶</strong> at the top to advance to {MONTHS[(game.monthIdx + 1) % 12]}.
+          <div style={{ fontSize: 11.5, color: T.muted, fontStyle: 'italic', maxWidth: 220, textAlign: 'right' }}>
+            Tap <strong style={{ color: T.accent }}>Air Month ▸</strong> at the top to advance to {MONTHS[(game.monthIdx + 1) % 12]}.
           </div>
         </div>
         {cashBlocker && (
-          <div style={{ marginTop: 10, fontSize: 11, color: T.red }}>
-            Not enough cash to advance — cancel a run, fire someone, or check finances.
+          <div style={{
+            marginTop: 12, padding: '8px 12px',
+            background: 'rgba(239, 69, 101, .08)',
+            border: `1px solid rgba(239, 69, 101, .3)`,
+            borderRadius: 4,
+            fontSize: 11.5, color: T.red,
+          }}>
+            Not enough cash to advance — cancel a run, fire someone, or check Financials.
           </div>
         )}
       </div>
@@ -1221,9 +1612,9 @@ function PlanView({
 
       <div style={{
         marginTop: 16, padding: '10px 14px',
-        fontSize: 10, color: T.muted, textAlign: 'center',
+        fontSize: 10.5, color: T.muted, textAlign: 'center',
       }}>
-        💾 Auto-saved.{' '}
+        Auto-saved.{' '}
         <button
           onClick={() => {
             if (window.confirm('Reset the game and start a new station? Current save will be deleted.')) {
@@ -1234,7 +1625,7 @@ function PlanView({
           style={{
             background: 'transparent', border: 'none',
             color: T.muted, textDecoration: 'underline',
-            cursor: 'pointer', fontSize: 10,
+            cursor: 'pointer', fontSize: 10.5,
           }}
         >Reset game</button>
       </div>
@@ -1243,81 +1634,21 @@ function PlanView({
 }
 
 // ─── SPORTS RIGHTS PANEL ────────────────────────────────────────────────
-function SportsRightsPanel({ station, year, onBuy }) {
-  const owned = (station.sportsLicenses || []).filter(l => l.year === year)
-  const ownedIds = new Set(owned.map(l => l.leagueId))
-  const market = station.market
-
-  return (
-    <div style={{
-      marginTop: 22, padding: 16,
-      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
-    }}>
-      <div style={{ fontSize: 11, color: T.muted, letterSpacing: 1.5, marginBottom: 8 }}>
-        SPORTS RIGHTS · YEAR {year}
-      </div>
-      <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
-        Buy a full year of rights, then assign them to a slot. Each league runs only during its real season — and gets a big bump on its peak month.
-      </div>
-
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-        gap: 8,
-      }}>
-        {SPORTS_LEAGUES.map(lg => {
-          const isOwned = ownedIds.has(lg.id)
-          const cost = sportsLicenseCost(lg.id, market)
-          const affordable = station.cash >= cost
-          return (
-            <div key={lg.id} style={{
-              background: isOwned ? T.green + '15' : T.card,
-              border: `1px solid ${isOwned ? T.green : T.border}`,
-              borderRadius: 5, padding: 9,
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: isOwned ? T.green : T.text }}>
-                {lg.icon} {lg.label} {isOwned && '✓'}
-              </div>
-              <div style={{ fontSize: 10, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
-                Season: {lg.season.length} mo · Peak: {MONTHS[lg.peakMonth]} ({lg.peakLabel})
-              </div>
-              {!isOwned && (
-                <button
-                  onClick={() => onBuy(lg.id)}
-                  disabled={!affordable}
-                  style={{
-                    width: '100%', marginTop: 6, padding: '5px 8px',
-                    background: affordable ? T.accent : T.border,
-                    color: affordable ? T.bg : T.muted,
-                    border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700,
-                    cursor: affordable ? 'pointer' : 'not-allowed',
-                  }}
-                >${cost.toFixed(0)}M · BUY</button>
-              )}
-              {isOwned && (
-                <div style={{ marginTop: 6, fontSize: 10, color: T.green, fontStyle: 'italic' }}>
-                  Owned · Use in slot editor
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
+// (moved to MarketScreen — kept marker for findability)
 
 function ActivityLog({ log }) {
   const tail = log.slice(-6).reverse()
   return (
     <div style={{
       marginTop: 18, padding: 14,
-      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
     }}>
-      <div style={{ fontSize: 10, letterSpacing: 1.5, color: T.muted, marginBottom: 8 }}>ACTIVITY</div>
+      <div className="mono" style={{
+        fontSize: 10, letterSpacing: '.15em', color: T.muted, marginBottom: 10,
+      }}>ACTIVITY</div>
       {tail.map((line, i) => (
-        <div key={i} style={{
-          fontFamily: 'DM Mono', fontSize: 11,
+        <div key={i} className="mono" style={{
+          fontSize: 11.5,
           color: i === 0 ? T.text : T.muted, padding: '3px 0',
         }}>{line}</div>
       ))}

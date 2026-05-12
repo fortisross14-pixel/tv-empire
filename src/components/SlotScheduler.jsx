@@ -4,6 +4,7 @@ import {
   CATEGORIES, SLOT_TYPES, MONTHS, RUN_LENGTHS,
 } from '../constants.js'
 import { HTag } from './ui.jsx'
+import { Icon, SlotIcon, CategoryIcon } from '../icons.jsx'
 import {
   findDirector, findStar, findIP, findLeague,
   isSportsInSeason, getSeasonalPref, fmtM,
@@ -55,25 +56,38 @@ export function SlotScheduler({
   return (
     <Modal onClose={onClose}>
       {/* Header */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em' }}>SCHEDULE PROGRAM IN</div>
-        <div className="bebas" style={{ fontSize: 22, color: T.accent, letterSpacing: '.08em', marginTop: 2 }}>
-          {slotType.icon} {slotType.label.toUpperCase()}
+      <div style={{ marginBottom: 16 }}>
+        <div className="mono" style={{ fontSize: 10, color: T.muted, letterSpacing: '.15em' }}>
+          SCHEDULE PROGRAM IN
         </div>
-        <div style={{ fontSize: 11, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginTop: 6,
+        }}>
+          <SlotIcon slotTypeId={slotType.id} size={22} color={T.accent} />
+          <div className="display" style={{
+            fontSize: 22, color: T.accent, letterSpacing: '.04em',
+            textTransform: 'uppercase', lineHeight: 1,
+          }}>
+            {slotType.label}
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: T.muted, marginTop: 6, lineHeight: 1.5 }}>
           {slotType.desc}
         </div>
         {seasonal && (
           <div style={{
-            fontSize: 10, padding: '5px 8px', marginTop: 8,
-            background: T.gold + '14', border: `1px solid ${T.gold}44`,
+            fontSize: 11, padding: '7px 10px', marginTop: 10,
+            background: 'rgba(255, 209, 102, .07)',
+            border: `1px solid rgba(255, 209, 102, .3)`,
             color: T.gold, borderRadius: 4,
+            display: 'flex', alignItems: 'center', gap: 7,
           }}>
-            🌟 {MONTHS[cycleIdx]}: {seasonal.label || 'Seasonal bonus this month'}
+            <Icon name="star" size={12} color={T.gold} />
+            <span>{MONTHS[cycleIdx]}: {seasonal.label || 'Seasonal bonus this month'}</span>
           </div>
         )}
         <div style={{
-          fontSize: 10, color: T.muted, marginTop: 6, fontStyle: 'italic',
+          fontSize: 10.5, color: T.muted, marginTop: 8, fontStyle: 'italic',
         }}>
           Prefers: {(slotType.prefersCategory || []).map(c => CATEGORIES[c]?.label || c).join(', ')}
         </div>
@@ -127,28 +141,32 @@ export function SlotScheduler({
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: isSel ? T.accent : T.text, lineHeight: 1.2 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: isSel ? T.accent : T.text, lineHeight: 1.2 }}>
                         {p.name}
                       </div>
-                      <div style={{ fontSize: 10, color: T.muted, marginTop: 3 }}>
-                        {cat?.icon} {cat?.label || p.categoryId}
-                        {p.ipId && ' · 📜 IP'}
-                        {p.movieId && ' · 🎞 Movie'}
-                        {isSportsP && ` · ${findLeague(p.sportsLeagueId)?.label || 'Sports'}`}
-                        {isMatch && <span style={{ color: T.green, marginLeft: 4 }}>✓ matches slot</span>}
-                        {isSportOOS && <span style={{ color: T.red, marginLeft: 4 }}>· out of season</span>}
+                      <div style={{
+                        fontSize: 10.5, color: T.muted, marginTop: 4,
+                        display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
+                      }}>
+                        {cat && <CategoryIcon categoryId={p.categoryId} size={11} color={cat.color || T.muted} />}
+                        <span>{cat?.label || p.categoryId}</span>
+                        {p.ipId && <span>· IP</span>}
+                        {p.movieId && <span>· Movie</span>}
+                        {isSportsP && <span>· {findLeague(p.sportsLeagueId)?.label || 'Sports'}</span>}
+                        {isMatch && <span style={{ color: T.green, marginLeft: 2, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <Icon name="check" size={10} color={T.green} strokeWidth={2.5} /> matches slot
+                        </span>}
+                        {isSportOOS && <span style={{ color: T.red, marginLeft: 2 }}>· out of season</span>}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div style={{
-                        fontFamily: "'DM Mono',monospace", fontSize: 11,
-                        color: T.text,
+                      <div className="mono" style={{
+                        fontSize: 11, color: T.text,
                       }}>
                         Q {p.estQRange[0]}–{p.estQRange[1]}
                       </div>
-                      <div style={{
-                        fontFamily: "'DM Mono',monospace", fontSize: 11,
-                        color: T.gold, marginTop: 2,
+                      <div className="mono" style={{
+                        fontSize: 11, color: T.gold, marginTop: 2,
                       }}>
                         H {p.estHRange[0]}–{p.estHRange[1]}
                       </div>

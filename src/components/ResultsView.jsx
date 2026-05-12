@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { T } from '../theme.js'
 import { CATEGORIES, MARKETS, SLOT_TYPES } from '../constants.js'
 import { HTag, Bar } from './ui.jsx'
 import { fameLabel, fmtM, findLeague } from '../engine.js'
+import { play as playSound } from '../audio.js'
 
 const SORT_OPTIONS = [
   { id: 'rating',   label: 'Rating' },
@@ -18,6 +19,25 @@ export function ResultsView({ results, station, onContinue, cycleLabel }) {
   const competitorAirings = results.competitorAirings || []
   const totals = results.totals || {}
   const market = MARKETS[station.market]
+
+  // After the results-reveal whoosh (played from App on phase change), follow up
+  // with one hit or flop accent sound — whichever the headline result was.
+  // We pick a single sound rather than spamming one per airing to keep things
+  // tasteful: the biggest hit beats the biggest flop, ratings ≥ 8 = hit,
+  // ratings < 4 = flop, otherwise silence.
+  useEffect(() => {
+    const best  = airings.reduce((m, a) => (a.rating > (m?.rating ?? -1) ? a : m), null)
+    const worst = airings.reduce((m, a) => (a.rating < (m?.rating ?? 99) ? a : m), null)
+    let timer
+    if (best && best.rating >= 8) {
+      timer = setTimeout(() => playSound('hit'), 700)
+    } else if (worst && worst.rating < 4) {
+      timer = setTimeout(() => playSound('flop'), 700)
+    }
+    return () => { if (timer) clearTimeout(timer) }
+    // Run once on mount per results set
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results])
 
   const [slotFilter, setSlotFilter] = useState('all')
   const [sortBy, setSortBy] = useState('rating')
@@ -108,7 +128,7 @@ export function ResultsView({ results, station, onContinue, cycleLabel }) {
           width: '100%', padding: '11px 14px', marginBottom: 14,
           background: 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)',
           color: '#fff', border: 'none', borderRadius: 5,
-          fontFamily: 'Bebas Neue', fontSize: 15, letterSpacing: '.1em',
+          fontFamily: 'Anton, sans-serif', fontSize: 15, letterSpacing: '.1em',
           cursor: 'pointer', fontWeight: 700,
         }}
       >Continue ▶</button>
@@ -196,7 +216,7 @@ function ProgramRow({ airing: a }) {
         <div style={{
           background: ratingColor + '22', border: `1px solid ${ratingColor}55`,
           color: ratingColor, padding: '3px 8px', borderRadius: 4,
-          fontFamily: "'DM Mono',monospace", fontSize: 14, fontWeight: 700,
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700,
           whiteSpace: 'nowrap',
         }}>{a.rating?.toFixed(1)}</div>
       </div>
@@ -233,7 +253,7 @@ function Cell({ label, value, color }) {
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.07em', textTransform: 'uppercase' }}>{label}</div>
       <div style={{
-        fontFamily: "'DM Mono',monospace", fontSize: 12, color: color || T.text, fontWeight: 600,
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: color || T.text, fontWeight: 600,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{value}</div>
     </div>

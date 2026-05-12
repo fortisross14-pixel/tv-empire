@@ -1564,49 +1564,49 @@ export const SPORTS_LEAGUES = [
     id: 'nfl', label: 'NFL Football', icon: '🏈',
     season: [7, 8, 9, 10, 11, 0, 1], // Aug-Feb (wraps)
     peakMonth: 1, peakLabel: 'Super Bowl',
-    cost: 35, baseQ: 8.5, baseH: 9.0, peakBonus: 2.5,
+    cost: 120, baseQ: 8.5, baseH: 9.0, peakBonus: 2.5,
   },
   {
     id: 'nba', label: 'NBA Basketball', icon: '🏀',
     season: [8, 9, 10, 11, 0, 1, 2, 3], // Sep-Apr
     peakMonth: 5, peakLabel: 'Finals',
-    cost: 28, baseQ: 7.5, baseH: 8.0, peakBonus: 2.0,
+    cost: 90, baseQ: 7.5, baseH: 8.0, peakBonus: 2.0,
   },
   {
     id: 'mlb', label: 'MLB Baseball', icon: '⚾',
     season: [2, 3, 4, 5, 6, 7, 8, 9], // Mar-Oct
     peakMonth: 9, peakLabel: 'World Series',
-    cost: 22, baseQ: 7.0, baseH: 6.5, peakBonus: 2.0,
+    cost: 70, baseQ: 7.0, baseH: 6.5, peakBonus: 2.0,
   },
   {
     id: 'wwe', label: 'WWE Wrestling', icon: '🤼',
     season: [0,1,2,3,4,5,6,7,8,9,10,11], // year-round
     peakMonth: 3, peakLabel: 'WrestleMania',
-    cost: 14, baseQ: 5.5, baseH: 8.5, peakBonus: 2.5,
+    cost: 45, baseQ: 5.5, baseH: 8.5, peakBonus: 2.5,
   },
   {
     id: 'tennis', label: 'Tennis Tour', icon: '🎾',
     season: [0,1,2,3,4,5,6,7,8,9,10], // year-round (mostly)
     peakMonth: 6, peakLabel: 'Wimbledon',
-    cost: 12, baseQ: 7.0, baseH: 6.0, peakBonus: 2.0,
+    cost: 38, baseQ: 7.0, baseH: 6.0, peakBonus: 2.0,
   },
   {
     id: 'golf', label: 'PGA Tour', icon: '⛳',
     season: [0,1,2,3,4,5,6,7,8,9,10], // year-round
     peakMonth: 3, peakLabel: 'The Masters',
-    cost: 10, baseQ: 6.8, baseH: 5.5, peakBonus: 1.8,
+    cost: 32, baseQ: 6.8, baseH: 5.5, peakBonus: 1.8,
   },
   {
     id: 'nhl', label: 'NHL Hockey', icon: '🏒',
     season: [9, 10, 11, 0, 1, 2, 3, 4, 5], // Oct-Jun
     peakMonth: 5, peakLabel: 'Stanley Cup',
-    cost: 18, baseQ: 7.0, baseH: 6.5, peakBonus: 1.8,
+    cost: 55, baseQ: 7.0, baseH: 6.5, peakBonus: 1.8,
   },
   {
     id: 'soccer', label: 'Soccer League', icon: '⚽',
     season: [7, 8, 9, 10, 11, 0, 1, 2, 3, 4], // Aug-May
     peakMonth: 4, peakLabel: 'Championship',
-    cost: 15, baseQ: 7.2, baseH: 7.0, peakBonus: 1.8,
+    cost: 48, baseQ: 7.2, baseH: 7.0, peakBonus: 1.8,
   },
 ]
 // Cost multipliers by station market

@@ -51,7 +51,7 @@ export function ResearchScreen({ research, station, cash, onBuy, onBack }) {
               <div key={p.id} style={{ marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
                   <span style={{ color: T.text }}>{r?.icon || '🔬'} {r?.label || p.id}</span>
-                  <span style={{ color: T.muted, fontFamily: 'DM Mono' }}>
+                  <span style={{ color: T.muted, fontFamily: 'JetBrains Mono' }}>
                     {p.monthsLeft} mo left
                   </span>
                 </div>
@@ -109,7 +109,7 @@ function GroupTab({ label, count, active, onClick }) {
       style={{
         background: 'transparent', border: 'none',
         color: active ? T.accent : T.muted,
-        fontFamily: 'Bebas Neue', fontSize: 14, letterSpacing: '.1em',
+        fontFamily: 'Anton, sans-serif', fontSize: 14, letterSpacing: '.1em',
         padding: '10px 14px', cursor: 'pointer',
         borderBottom: `2px solid ${active ? T.accent : 'transparent'}`,
         marginBottom: -1, whiteSpace: 'nowrap',
@@ -193,7 +193,7 @@ function ResearchCard({ item, research, station, cash, unlocks, onBuy }) {
           )}
           {!isReallyOwned && (
             <div style={{
-              fontSize: 10, color: T.muted, marginTop: 5, fontFamily: 'DM Mono',
+              fontSize: 10, color: T.muted, marginTop: 5, fontFamily: 'JetBrains Mono',
               display: 'flex', gap: 10,
             }}>
               <span>⏱ {adj.months} mo</span>

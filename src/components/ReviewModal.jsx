@@ -70,14 +70,14 @@ export function ReviewModal({ reviews, onClose }) {
             border: `1.5px solid ${verdict.color}`,
             color: verdict.color,
             padding: '5px 14px', borderRadius: 4,
-            fontFamily: 'Bebas Neue', fontSize: 15, letterSpacing: '.2em',
+            fontFamily: 'Anton, sans-serif', fontSize: 15, letterSpacing: '.2em',
             fontWeight: 700,
           }}>{verdict.label}</span>
         </div>
 
         {/* Program name */}
         <div style={{
-          fontFamily: 'Bebas Neue', fontSize: 26, color: T.text,
+          fontFamily: 'Anton, sans-serif', fontSize: 26, color: T.text,
           textAlign: 'center', marginBottom: 4, lineHeight: 1.05,
         }}>{p.name}</div>
         <div style={{
@@ -116,7 +116,7 @@ export function ReviewModal({ reviews, onClose }) {
                 flex: 1, padding: '11px 14px',
                 background: T.accent, color: T.bg,
                 border: 'none', borderRadius: 5,
-                fontFamily: 'Bebas Neue', fontSize: 14, letterSpacing: '.1em',
+                fontFamily: 'Anton, sans-serif', fontSize: 14, letterSpacing: '.1em',
                 cursor: 'pointer', fontWeight: 700,
               }}
             >Next Review ▶</button>
@@ -127,7 +127,7 @@ export function ReviewModal({ reviews, onClose }) {
                 flex: 1, padding: '11px 14px',
                 background: 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)',
                 color: '#fff', border: 'none', borderRadius: 5,
-                fontFamily: 'Bebas Neue', fontSize: 14, letterSpacing: '.1em',
+                fontFamily: 'Anton, sans-serif', fontSize: 14, letterSpacing: '.1em',
                 cursor: 'pointer', fontWeight: 700,
               }}
             >Continue ▶</button>
@@ -149,7 +149,7 @@ function Component({ label, value, color }) {
       }}>
         <span>{label}</span>
         <span style={{
-          fontFamily: "'DM Mono',monospace",
+          fontFamily: "'JetBrains Mono', monospace",
           color: T.text, fontWeight: 700,
         }}>{v.toFixed(1)}</span>
       </div>

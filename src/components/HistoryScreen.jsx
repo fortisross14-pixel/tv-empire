@@ -41,7 +41,7 @@ export function HistoryScreen({ stationName, allShows, competitorAllShows, progr
             style={{
               background: 'transparent', border: 'none',
               color: tab === t.id ? T.accent : T.muted,
-              fontFamily: 'Bebas Neue', fontSize: 14, letterSpacing: '.1em',
+              fontFamily: 'Anton, sans-serif', fontSize: 14, letterSpacing: '.1em',
               padding: '8px 14px', cursor: 'pointer',
               borderBottom: `2px solid ${tab === t.id ? T.accent : 'transparent'}`,
               marginBottom: -1, whiteSpace: 'nowrap',
@@ -164,24 +164,24 @@ function ProductionRow({ program: p }) {
       {/* True Q/H or estimate */}
       <div style={{ display: 'flex', gap: 12, fontSize: 11, marginBottom: 8 }}>
         <Field label="Quality">
-          <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 700, color: T.text }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: T.text }}>
             {showTrue ? p.trueQ.toFixed(1) : `${p.estQRange[0]}–${p.estQRange[1]}`}
           </span>
         </Field>
         <Field label="Hype">
-          <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 700, color: T.gold }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: T.gold }}>
             {showTrue ? p.trueH.toFixed(1) : `${p.estHRange[0]}–${p.estHRange[1]}`}
           </span>
         </Field>
         {p.airingsCount > 0 && (
           <>
             <Field label="Aud">
-              <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 700, color: T.teal }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: T.teal }}>
                 {(p.totalAudience || 0).toFixed(1)}M
               </span>
             </Field>
             <Field label="P/L">
-              <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 700, color: profit >= 0 ? T.green : T.red }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: profit >= 0 ? T.green : T.red }}>
                 {fmtM(profit)}
               </span>
             </Field>
@@ -233,7 +233,7 @@ function CompBar({ label, value, color }) {
         textTransform: 'uppercase', marginBottom: 2,
       }}>
         <span>{label}</span>
-        <span style={{ fontFamily: "'DM Mono',monospace", color: T.text, textTransform: 'none' }}>{v.toFixed(1)}</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, textTransform: 'none' }}>{v.toFixed(1)}</span>
       </div>
       <div style={{ height: 4, background: T.border, borderRadius: 2, overflow: 'hidden' }}>
         <div style={{
@@ -329,7 +329,7 @@ function ShowRow({ show, rank, metric }) {
       background: show._isPlayer ? T.gold + '08' : 'transparent',
     }}>
       <div style={{
-        fontFamily: 'DM Mono', fontSize: 12,
+        fontFamily: 'JetBrains Mono', fontSize: 12,
         color: rank <= 3 ? T.gold : T.muted, fontWeight: 700,
         minWidth: 28, textAlign: 'right',
       }}>#{rank}</div>
@@ -345,7 +345,7 @@ function ShowRow({ show, rank, metric }) {
       </div>
       <div style={{ textAlign: 'right' }}>
         <div style={{
-          fontFamily: 'DM Mono', fontSize: 14, fontWeight: 700,
+          fontFamily: 'JetBrains Mono', fontSize: 14, fontWeight: 700,
           color: m.color,
         }}>
           {m.id === 'audience' ? `${(value || 0).toFixed(2)}M` : (value || 0).toFixed(1)}

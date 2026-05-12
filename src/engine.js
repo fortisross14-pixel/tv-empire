@@ -111,10 +111,11 @@ export const isActiveContract = (h) => h && (h.permanent || h.monthsLeft > 0)
 
 /** Advance contracts by one month. Permanent contracts charge per-month. */
 export function tickContracts(station) {
-  let charge = 0
+  let talentCharge = 0
+  let writerCharge = 0
   const tick = (list) => list.map(h => {
     if (h.permanent) {
-      charge += h.perMonthCharge || 0
+      talentCharge += h.perMonthCharge || 0
       return h
     }
     return { ...h, monthsLeft: Math.max(0, h.monthsLeft - 1) }
@@ -122,7 +123,7 @@ export function tickContracts(station) {
 
   // Writers are always permanent. Each one always charges its perMonthCharge.
   const tickWriters = (list) => list.map(h => {
-    charge += h.perMonthCharge || 0
+    writerCharge += h.perMonthCharge || 0
     return h
   })
 
@@ -130,7 +131,9 @@ export function tickContracts(station) {
     hiredDirectors: tick(station.hiredDirectors || []),
     hiredStars:     tick(station.hiredStars     || []),
     hiredWriters:   tickWriters(station.hiredWriters || []),
-    perMonthCharge: r1(charge),
+    talentCharge:   r1(talentCharge),
+    writerCharge:   r1(writerCharge),
+    perMonthCharge: r1(talentCharge + writerCharge),
   }
 }
 
@@ -2273,6 +2276,7 @@ export function initGame(setup) {
 
   const station = {
     name: setup.name || 'My Station',
+    brandId: setup.brandId || 'ember',
     focus: focus.id,
     market: 'local',
     fame: 5,
@@ -2319,6 +2323,7 @@ export function initGame(setup) {
     lastMonthResult: null,
     ownedShows: [],
     pendingHires: [],            // resolved positions waiting for player to pick a candidate
+    ledger: [],                  // [{ year, month, kind, label, amount, programId?, programName? }]
     log: [
       `📡 ${station.name} broadcasting on ${MARKETS.local.label}`,
       `Free starting roster: ${startDirs.length} directors, ${startStars.length} stars (12-month contracts)${startWriter ? `, 1 writer (${startWriter.name}, free)` : ''}`,
@@ -2360,3 +2365,150 @@ export function fameLabel(fame) {
   if (fame < 85) return 'Acclaimed'
   return 'Legendary'
 }
+
+// ─── LEDGER ──────────────────────────────────────────────────────────────────
+// A flat array of cash-flow events. Pushed to game.ledger throughout the month.
+// At month-end, the Financials screen filters/groups these for the prior month.
+//
+// kind values:
+//   'program_revenue'   — money earned from an airing (positive)
+//   'program_airing'    — recurring airing/transmission cost (negative)
+//   'program_build'     — upfront program build cost (negative; only when paid)
+//   'rights_sports'     — sports league rights purchase
+//   'rights_ip'         — IP license purchase
+//   'salary_talent'     — permanent talent monthly salary (negative)
+//   'salary_writer'     — writer monthly salary (negative)
+//   'salary_staff'      — staff monthly salary (negative)
+//   'research'          — research project paid upfront
+//   'marketing'         — network marketing campaign
+//   'hire_signing'      — upfront signing payment for talent/writer/position
+//   'fire_penalty'      — penalty paid when firing
+//   'award_bonus'       — cash awarded at year-end (positive)
+//
+// Sign convention: amount is the cash delta (revenue positive, expense negative).
+export function ledgerEntry({ year, month, kind, label, amount, programId, programName, meta }) {
+  return {
+    year, month, kind, label,
+    amount: r1(amount),
+    programId: programId || null,
+    programName: programName || null,
+    ...(meta ? { meta } : {}),
+  }
+}
+
+/** Filter ledger to a specific (year, month). */
+export function ledgerForMonth(ledger, year, month) {
+  return (ledger || []).filter(e => e.year === year && e.month === month)
+}
+
+/** Group ledger entries by program for "Direct programming margin" view.
+ *  Returns { byProgram: Map<programId, {name, revenue, airingCost, buildCost}>,
+ *            other: {sportsRights, ipRights, salaries: {talent,writer,staff,total}, research, marketing, hires, firePenalties, awards, totalOther},
+ *            totals: {programRevenue, programExpense, otherNet, net} }
+ */
+export function summarizeLedger(entries) {
+  const byProgram = new Map()
+  const ensure = (id, name) => {
+    if (!byProgram.has(id)) byProgram.set(id, {
+      programId: id, name: name || '(unknown)',
+      revenue: 0, airingCost: 0, buildCost: 0,
+    })
+    return byProgram.get(id)
+  }
+
+  const other = {
+    sportsRights: [],   // [{label, amount}]
+    ipRights: [],
+    salaries: { talent: 0, writer: 0, staff: 0, total: 0 },
+    research: [],
+    marketing: [],
+    hires: [],
+    firePenalties: [],
+    awards: [],
+    misc: [],
+  }
+
+  for (const e of entries || []) {
+    switch (e.kind) {
+      case 'program_revenue': {
+        const slot = ensure(e.programId, e.programName)
+        slot.revenue += e.amount
+        break
+      }
+      case 'program_airing': {
+        const slot = ensure(e.programId, e.programName)
+        slot.airingCost += e.amount
+        break
+      }
+      case 'program_build': {
+        const slot = ensure(e.programId, e.programName)
+        slot.buildCost += e.amount
+        break
+      }
+      case 'rights_sports': other.sportsRights.push({ label: e.label, amount: e.amount }); break
+      case 'rights_ip':     other.ipRights.push({ label: e.label, amount: e.amount }); break
+      case 'salary_talent': other.salaries.talent += e.amount; other.salaries.total += e.amount; break
+      case 'salary_writer': other.salaries.writer += e.amount; other.salaries.total += e.amount; break
+      case 'salary_staff':  other.salaries.staff  += e.amount; other.salaries.total += e.amount; break
+      case 'research':      other.research.push({ label: e.label, amount: e.amount }); break
+      case 'marketing':     other.marketing.push({ label: e.label, amount: e.amount }); break
+      case 'hire_signing':  other.hires.push({ label: e.label, amount: e.amount }); break
+      case 'fire_penalty':  other.firePenalties.push({ label: e.label, amount: e.amount }); break
+      case 'award_bonus':   other.awards.push({ label: e.label, amount: e.amount }); break
+      default:              other.misc.push({ label: e.label, amount: e.amount })
+    }
+  }
+
+  // Programs totals
+  let programRevenue = 0
+  let programAiringCost = 0
+  let programBuildCost = 0
+  for (const p of byProgram.values()) {
+    programRevenue += p.revenue
+    programAiringCost += p.airingCost
+    programBuildCost += p.buildCost
+    p.revenue = r1(p.revenue)
+    p.airingCost = r1(p.airingCost)
+    p.buildCost = r1(p.buildCost)
+    p.margin = r1(p.revenue + p.airingCost + p.buildCost) // costs are negative
+  }
+
+  // Round salary buckets
+  other.salaries.talent = r1(other.salaries.talent)
+  other.salaries.writer = r1(other.salaries.writer)
+  other.salaries.staff  = r1(other.salaries.staff)
+  other.salaries.total  = r1(other.salaries.total)
+
+  // Sum "other" net
+  const sum = (arr) => arr.reduce((a, x) => a + (x.amount || 0), 0)
+  const otherNet = r1(
+    sum(other.sportsRights) +
+    sum(other.ipRights) +
+    other.salaries.total +
+    sum(other.research) +
+    sum(other.marketing) +
+    sum(other.hires) +
+    sum(other.firePenalties) +
+    sum(other.awards) +
+    sum(other.misc)
+  )
+
+  const programExpense = r1(programAiringCost + programBuildCost) // already negative
+  const programMargin  = r1(programRevenue + programExpense)
+  const net            = r1(programMargin + otherNet)
+
+  return {
+    byProgram: Array.from(byProgram.values()).sort((a, b) => (b.revenue + b.airingCost + b.buildCost) - (a.revenue + a.airingCost + a.buildCost)),
+    other,
+    totals: {
+      programRevenue: r1(programRevenue),
+      programAiringCost: r1(programAiringCost),
+      programBuildCost: r1(programBuildCost),
+      programExpense,
+      programMargin,
+      otherNet,
+      net,
+    },
+  }
+}
+

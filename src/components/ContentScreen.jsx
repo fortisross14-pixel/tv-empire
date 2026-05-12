@@ -7,6 +7,7 @@ import { HTag, SectionTitle, Card } from './ui.jsx'
 import {
   findWriter, findIP, findLeague, findMovie,
   activeWriters, activeIPLicenses, fmtM, r1,
+  getUnlocks,
 } from '../engine.js'
 import { ProductionView } from './ProductionView.jsx'
 
@@ -39,7 +40,7 @@ export function ContentScreen({
             style={{
               background: 'transparent', border: 'none',
               color: sub === t.id ? T.accent : T.muted,
-              fontFamily: 'Bebas Neue', fontSize: 14, letterSpacing: '.1em',
+              fontFamily: 'Anton, sans-serif', fontSize: 14, letterSpacing: '.1em',
               padding: '8px 14px', cursor: 'pointer',
               borderBottom: `2px solid ${sub === t.id ? T.accent : 'transparent'}`,
               marginBottom: -1, whiteSpace: 'nowrap',
@@ -62,6 +63,7 @@ export function ContentScreen({
         <ScriptsTab
           station={station}
           year={year}
+          research={research}
           onBeginScript={onBeginScript}
           onRefreshScript={onRefreshScript}
           onArchiveScript={onArchiveScript}
@@ -209,7 +211,7 @@ function ProgramCard({ program: p, onCancel }) {
           <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>
             Quality {!showTrue && <span style={{ textTransform: 'none' }}>(est)</span>}
           </div>
-          <div style={{ fontFamily: "'DM Mono',monospace", color: T.text, fontWeight: 600 }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
             {showTrue ? p.trueQ.toFixed(1) : `${p.estQRange[0]}–${p.estQRange[1]}`}
           </div>
         </div>
@@ -217,14 +219,14 @@ function ProgramCard({ program: p, onCancel }) {
           <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>
             Hype {!showTrue && <span style={{ textTransform: 'none' }}>(est)</span>}
           </div>
-          <div style={{ fontFamily: "'DM Mono',monospace", color: T.gold, fontWeight: 600 }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.gold, fontWeight: 600 }}>
             {showTrue ? p.trueH.toFixed(1) : `${p.estHRange[0]}–${p.estHRange[1]}`}
           </div>
         </div>
         {p.airingsCount > 0 && (
           <div style={{ flex: 1, textAlign: 'right' }}>
             <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Total Aud</div>
-            <div style={{ fontFamily: "'DM Mono',monospace", color: T.text, fontWeight: 600 }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
               {p.totalAudience.toFixed(1)}M
             </div>
           </div>
@@ -233,9 +235,9 @@ function ProgramCard({ program: p, onCancel }) {
 
       {/* Cost line */}
       <div style={{ marginTop: 8, fontSize: 11, color: T.muted, lineHeight: 1.4 }}>
-        Sunk: <span style={{ fontFamily: "'DM Mono',monospace", color: T.text }}>{fmtM(p.totalCost)}</span>
+        Sunk: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text }}>{fmtM(p.totalCost)}</span>
         {p.status === 'airing' && (
-          <> · Earned: <span style={{ fontFamily: "'DM Mono',monospace", color: T.green }}>{fmtM(p.totalRevenue)}</span></>
+          <> · Earned: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: T.green }}>{fmtM(p.totalRevenue)}</span></>
         )}
       </div>
 
@@ -286,7 +288,7 @@ function Comp({ label, value }) {
   return (
     <div>
       <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.05em', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: T.text, fontWeight: 600 }}>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: T.text, fontWeight: 600 }}>
         {v.toFixed(1)}
       </div>
     </div>
@@ -349,19 +351,19 @@ function WritersTab({ station, marketWriters, onHireWriter, onFireWriter }) {
                   <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: 11 }}>
                     <div>
                       <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Skill</div>
-                      <div style={{ fontFamily: "'DM Mono',monospace", color: T.text, fontWeight: 600 }}>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
                         {(w.skill * 100).toFixed(0)}
                       </div>
                     </div>
                     <div>
                       <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Salary</div>
-                      <div style={{ fontFamily: "'DM Mono',monospace", color: isFree ? T.green : T.text, fontWeight: 600 }}>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: isFree ? T.green : T.text, fontWeight: 600 }}>
                         {isFree ? 'free' : `${fmtM(h.perMonthCharge || w.cost)}/mo`}
                       </div>
                     </div>
                     <div>
                       <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Status</div>
-                      <div style={{ fontFamily: "'DM Mono',monospace", color: isBusy ? T.accent : T.green, fontWeight: 600 }}>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: isBusy ? T.accent : T.green, fontWeight: 600 }}>
                         {isBusy ? `Drafting` : 'Idle'}
                       </div>
                     </div>
@@ -425,19 +427,19 @@ function WritersTab({ station, marketWriters, onHireWriter, onFireWriter }) {
                   <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11 }}>
                     <div>
                       <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Skill</div>
-                      <div style={{ fontFamily: "'DM Mono',monospace", color: T.text, fontWeight: 600 }}>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
                         {(w.skill * 100).toFixed(0)}
                       </div>
                     </div>
                     <div>
                       <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Salary</div>
-                      <div style={{ fontFamily: "'DM Mono',monospace", color: T.text, fontWeight: 600 }}>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
                         {fmtM(w.cost)}/mo
                       </div>
                     </div>
                     <div>
                       <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Sign</div>
-                      <div style={{ fontFamily: "'DM Mono',monospace", color: T.text, fontWeight: 600 }}>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
                         {fmtM(upfront)}
                       </div>
                     </div>
@@ -493,7 +495,7 @@ function WritersTab({ station, marketWriters, onHireWriter, onFireWriter }) {
 }
 
 // ─── SCRIPTS TAB ──────────────────────────────────────────────────────────────
-function ScriptsTab({ station, year, onBeginScript, onRefreshScript, onArchiveScript, onDeleteScript }) {
+function ScriptsTab({ station, year, research, onBeginScript, onRefreshScript, onArchiveScript, onDeleteScript }) {
   const scripts = station.scripts || []
   const writers = station.hiredWriters || []
   const [filter, setFilter] = useState('all') // all|ready|drafting|archived
@@ -568,6 +570,7 @@ function ScriptsTab({ station, year, onBeginScript, onRefreshScript, onArchiveSc
         <NewScriptModal
           station={station}
           year={year}
+          research={research}
           onCancel={() => setShowNew(false)}
           onConfirm={(opts) => { onBeginScript(opts); setShowNew(false) }}
         />
@@ -631,7 +634,7 @@ function ScriptCard({ script: s, anyFreeWriter, onRefresh, onArchive, onDelete }
           <>
             <div>
               <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Quality</div>
-              <div style={{ fontFamily: "'DM Mono',monospace", color: T.text, fontWeight: 600 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
                 {s.baseQuality.toFixed(1)}
               </div>
             </div>
@@ -649,7 +652,7 @@ function ScriptCard({ script: s, anyFreeWriter, onRefresh, onArchive, onDelete }
                     background: s.hype < 25 ? T.red : s.hype < 50 ? T.gold : T.green,
                   }} />
                 </div>
-                <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: T.text, fontWeight: 600, minWidth: 28, textAlign: 'right' }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: T.text, fontWeight: 600, minWidth: 28, textAlign: 'right' }}>
                   {Math.round(s.hype)}
                 </span>
               </div>
@@ -718,21 +721,34 @@ function ScriptCard({ script: s, anyFreeWriter, onRefresh, onArchive, onDelete }
   )
 }
 
-function NewScriptModal({ station, year, onCancel, onConfirm }) {
+function NewScriptModal({ station, year, research, onCancel, onConfirm }) {
   const writers = station.hiredWriters || []
   const scripts = station.scripts || []
   const busyIds = new Set(scripts.filter(s => s.status === 'drafting').map(s => s.writerId))
+
+  // What's unlocked for this station (focus + research)
+  const unlocks = useMemo(() => getUnlocks(station, research), [station.focus, research?.contentUnlocks])
+  // Movies are licensed, not scripted. Sports use the rights path, not scripts.
+  const unlockedCategoryIds = useMemo(
+    () => Object.keys(CATEGORIES).filter(id => id !== 'movie' && id !== 'sports' && unlocks.hasCat(id)),
+    [unlocks]
+  )
 
   // Default to first non-busy writer
   const initialWriterId = writers.find(h => !busyIds.has(h.talentId))?.talentId || writers[0]?.talentId || ''
   const [writerId, setWriterId] = useState(initialWriterId)
 
   const writer = findWriter(writerId)
-  const defaultCat = writer?.specialty || 'series'
+  // Default category: writer's specialty if unlocked, otherwise first unlocked category
+  const defaultCat =
+    writer?.specialty && unlocks.hasCat(writer.specialty) ? writer.specialty :
+    (unlockedCategoryIds[0] || 'series')
   const [categoryId, setCategoryId] = useState(defaultCat)
 
   const cat = CATEGORIES[categoryId]
-  const [topicId, setTopicId] = useState(cat?.topics?.[0]?.id || '')
+  // Filter topics to unlocked ones
+  const unlockedTopics = (cat?.topics || []).filter(t => unlocks.hasTopic(categoryId, t.id))
+  const [topicId, setTopicId] = useState(unlockedTopics[0]?.id || '')
   const [ipId, setIpId] = useState(null)
   const [name, setName] = useState('')
 
@@ -743,12 +759,31 @@ function NewScriptModal({ station, year, onCancel, onConfirm }) {
   const onCatChange = (newCat) => {
     setCategoryId(newCat)
     const nc = CATEGORIES[newCat]
-    setTopicId(nc?.topics?.[0]?.id || '')
+    const topics = (nc?.topics || []).filter(t => unlocks.hasTopic(newCat, t.id))
+    setTopicId(topics[0]?.id || '')
     setIpId(null)
   }
 
   const writerBusy = busyIds.has(writerId)
   const canSubmit = writerId && categoryId && topicId && name.trim().length >= 2 && !writerBusy
+
+  // If no categories are unlocked at all, show a guidance message
+  if (unlockedCategoryIds.length === 0) {
+    return (
+      <Modal onClose={onCancel}>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Commission Script</div>
+        <div style={{
+          padding: 16, background: T.bg, border: `1px solid ${T.border}`,
+          borderRadius: 5, fontSize: 12, color: T.muted, lineHeight: 1.5,
+        }}>
+          No content categories unlocked yet. Visit the <strong style={{ color: T.text }}>Research</strong> tab to unlock categories and topics.
+        </div>
+        <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onCancel} style={btnSecondary}>Close</button>
+        </div>
+      </Modal>
+    )
+  }
 
   return (
     <Modal onClose={onCancel}>
@@ -779,15 +814,19 @@ function NewScriptModal({ station, year, onCancel, onConfirm }) {
         {writer && (
           <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
             Skill {(writer.skill * 100).toFixed(0)} · best in {CATEGORIES[writer.specialty]?.label}
+            {!unlocks.hasCat(writer.specialty) && (
+              <span style={{ color: T.gold }}> — their specialty isn't unlocked yet</span>
+            )}
           </div>
         )}
       </Field>
 
       <Field label="Category">
         <select value={categoryId} onChange={e => onCatChange(e.target.value)} style={inputStyle}>
-          {Object.entries(CATEGORIES).map(([id, c]) => (
-            <option key={id} value={id}>{c.icon} {c.label}</option>
-          ))}
+          {unlockedCategoryIds.map(id => {
+            const c = CATEGORIES[id]
+            return <option key={id} value={id}>{c.icon} {c.label}</option>
+          })}
         </select>
         {writer && writer.specialty !== categoryId && (
           <div style={{ fontSize: 10, color: T.gold, marginTop: 4 }}>
@@ -798,10 +837,15 @@ function NewScriptModal({ station, year, onCancel, onConfirm }) {
 
       <Field label="Topic">
         <select value={topicId} onChange={e => setTopicId(e.target.value)} style={inputStyle}>
-          {(cat?.topics || []).map(t => (
+          {unlockedTopics.map(t => (
             <option key={t.id} value={t.id}>{t.label}</option>
           ))}
         </select>
+        {unlockedTopics.length < (cat?.topics?.length || 0) && (
+          <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
+            {(cat?.topics?.length || 0) - unlockedTopics.length} more topic{unlockedTopics.length === (cat?.topics?.length || 0) - 1 ? '' : 's'} locked. Visit Research to unlock.
+          </div>
+        )}
       </Field>
 
       <Field label={`IP (optional)${ownedIps.length === 0 ? ' — no compatible IPs licensed' : ''}`}>
