@@ -518,11 +518,13 @@ export function ProductionView({
         {/* ── MARKETING ──────────────────────────────────────────────── */}
         <Field label="Launch Marketing">
           <select value={marketingId} onChange={e => { setMarketingId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
-            {MARKETING_TIERS.map(m => (
-              <option key={m.id} value={m.id}>
-                {m.label} {m.cost > 0 ? `· ${fmtM(m.cost)}` : '· free'}
-              </option>
-            ))}
+            {MARKETING_TIERS
+              .filter(m => !m.localOnly || station.market === 'local')
+              .map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.label} {m.cost > 0 ? `· ${fmtM(m.cost)}` : '· free'}
+                </option>
+              ))}
           </select>
         </Field>
 

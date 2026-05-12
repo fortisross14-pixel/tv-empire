@@ -20,7 +20,7 @@ export function HistoryScreen({ stationName, allShows, competitorAllShows, progr
   const [tab, setTab] = useState('productions')
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 18 }}>
+    <div className="view-wrap" style={{ maxWidth: 900, margin: '0 auto', padding: 18 }}>
       <button onClick={onBack} style={{
         background: 'transparent', border: `1px solid ${T.border}`,
         color: T.muted, padding: '8px 14px', borderRadius: 5,

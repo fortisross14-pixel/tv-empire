@@ -7,16 +7,18 @@ import {
   IP_LICENSE_TERMS, NETWORK_CAMPAIGNS,
   CONTRACT_TYPES, TIERS, MARKET_ORDER,
   MOVIES, MOVIE_PACK_REBUY_HYPE_PENALTY, MOVIE_PACK_COOLDOWN_MONTHS,
+  FIRE_PENALTY_MULT,
 } from '../constants.js'
 import { HTag, Bar, Pill, SectionTitle } from './ui.jsx'
 import { Icon, CategoryIcon } from '../icons.jsx'
 import {
-  findDirector, findStar, findIP, findLeague,
+  findDirector, findStar, findIP, findLeague, findWriter,
   staffSalaryTotal, contractCost, fameLabel, sportsLicenseCost,
   ipLicenseCost, ownsIP, activeIPLicenses, canHireStaffRole,
   SPEC_GENRES, specThresholdFor, fmtM, canPromote,
   specQualityBonus, specHypeBonus,
   findOwnedActivePack, findLastConsumedPack, moviePackPurchaseHype,
+  r1,
 } from '../engine.js'
 
 // ─── SUB-TABS ────────────────────────────────────────────────────────────
@@ -33,7 +35,7 @@ export function OperationsScreen(props) {
   const [sub, setSub] = useState('status')
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 18 }}>
+    <div className="view-wrap" style={{ maxWidth: 1000, margin: '0 auto', padding: 18 }}>
       <button onClick={onBack} style={{
         background: 'transparent', border: `1px solid ${T.border}`,
         color: T.muted, padding: '8px 14px', borderRadius: 5,
@@ -75,7 +77,8 @@ export function OperationsScreen(props) {
 }
 
 // ─── 1. TALENT TAB ───────────────────────────────────────────────────────
-function TalentTab({ station, marketRoster, onHire, onFire }) {
+function TalentTab({ station, marketRoster, onHire, onFire, onHireWriter, onFireWriter }) {
+  const [section, setSection] = useState('directors')
   const [hireModal, setHireModal] = useState(null)  // { role, talent }
   const [fireModal, setFireModal] = useState(null)
 
@@ -84,26 +87,48 @@ function TalentTab({ station, marketRoster, onHire, onFire }) {
 
   return (
     <div>
-      {/* Current roster */}
-      <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-        UNDER CONTRACT
+      {/* Sub-sub-tab bar */}
+      <div style={{
+        display: 'flex', gap: 0, marginBottom: 14,
+        borderBottom: `1px solid ${T.border}`,
+      }}>
+        <SubSubTab id="directors" label="Producers / Directors" active={section} onClick={setSection} />
+        <SubSubTab id="stars"     label="Stars"                  active={section} onClick={setSection} />
+        <SubSubTab id="writers"   label="Writers"                active={section} onClick={setSection} />
       </div>
 
-      <RosterGroup title="Directors / Producers" items={dirs} role="director" onFire={(role, id, t) => setFireModal({ role, id, t })} />
-      <RosterGroup title="Stars" items={stars} role="star" onFire={(role, id, t) => setFireModal({ role, id, t })} />
-      {dirs.length + stars.length === 0 && (
-        <div style={{ padding: 14, fontSize: 12, color: T.muted, fontStyle: 'italic',
-                      background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 5 }}>
-          No talent under contract.
-        </div>
+      {section === 'directors' && (
+        <TalentSubSection
+          rosterTitle="Producers / Directors under contract"
+          marketTitle="Producers / Directors available"
+          items={dirs}
+          pool={marketRoster.directors}
+          role="director"
+          station={station}
+          onHireOpen={(role, t) => setHireModal({ role, t })}
+          onFireOpen={(role, id, t) => setFireModal({ role, id, t })}
+        />
       )}
-
-      {/* Market */}
-      <div style={{ marginTop: 22, fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-        AVAILABLE TO SIGN
-      </div>
-      <MarketGroup title="Directors / Producers" pool={marketRoster.directors} role="director" onHire={(role, t) => setHireModal({ role, t })} />
-      <MarketGroup title="Stars" pool={marketRoster.stars} role="star" onHire={(role, t) => setHireModal({ role, t })} />
+      {section === 'stars' && (
+        <TalentSubSection
+          rosterTitle="Stars under contract"
+          marketTitle="Stars available"
+          items={stars}
+          pool={marketRoster.stars}
+          role="star"
+          station={station}
+          onHireOpen={(role, t) => setHireModal({ role, t })}
+          onFireOpen={(role, id, t) => setFireModal({ role, id, t })}
+        />
+      )}
+      {section === 'writers' && (
+        <WritersTalentSection
+          station={station}
+          marketWriters={marketRoster.writers || []}
+          onHireWriter={onHireWriter}
+          onFireWriter={onFireWriter}
+        />
+      )}
 
       {hireModal && (
         <HireModal {...hireModal} cash={station.cash}
@@ -117,6 +142,210 @@ function TalentTab({ station, marketRoster, onHire, onFire }) {
         />
       )}
     </div>
+  )
+}
+
+function TalentSubSection({ rosterTitle, marketTitle, items, pool, role, station, onHireOpen, onFireOpen }) {
+  return (
+    <>
+      <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
+        {rosterTitle.toUpperCase()}
+      </div>
+      <RosterGroup title="" items={items} role={role} onFire={onFireOpen} />
+      {items.length === 0 && (
+        <div style={{ padding: 14, fontSize: 12, color: T.muted, fontStyle: 'italic',
+                      background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 5,
+                      marginBottom: 16 }}>
+          None under contract.
+        </div>
+      )}
+      <div style={{ marginTop: 22, fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
+        {marketTitle.toUpperCase()}
+      </div>
+      <MarketGroup title="" pool={pool || []} role={role} onHire={onHireOpen} />
+    </>
+  )
+}
+
+function WritersTalentSection({ station, marketWriters, onHireWriter, onFireWriter }) {
+  // Lightweight inline writer roster + hire — keeps the same engine plumbing
+  // as Content used to, just lives in Operations now.
+  const hired = station.hiredWriters || []
+  const scripts = station.scripts || []
+  const [confirmFire, setConfirmFire] = useState(null)
+
+  return (
+    <>
+      <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
+        WRITERS UNDER CONTRACT ({hired.length})
+      </div>
+      {hired.length === 0 ? (
+        <div style={{ padding: 14, fontSize: 12, color: T.muted, fontStyle: 'italic',
+                      background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 5,
+                      marginBottom: 16 }}>
+          No writers employed.
+        </div>
+      ) : (
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8,
+          marginBottom: 16,
+        }}>
+          {hired.map(h => {
+            const w = findWriter(h.talentId)
+            if (!w) return null
+            const draftCount = scripts.filter(s => s.writerId === w.id && s.status === 'drafting').length
+            const isBusy = draftCount > 0
+            const isFree = !!h.freeStarter
+            return (
+              <div key={h.talentId} style={{
+                background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 5,
+                padding: 10,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{w.name}</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                      <HTag tier={w.tier} />
+                      <span style={{
+                        fontSize: 10, color: CATEGORIES[w.specialty]?.color || T.muted,
+                        background: (CATEGORIES[w.specialty]?.color || T.muted) + '22',
+                        padding: '1px 6px', borderRadius: 3, letterSpacing: '.05em',
+                      }}>
+                        {CATEGORIES[w.specialty]?.icon} {CATEGORIES[w.specialty]?.label || w.specialty}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11 }}>
+                  <div>
+                    <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>SKILL</div>
+                    <div className="mono" style={{ color: T.text, fontWeight: 600 }}>{(w.skill * 100).toFixed(0)}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>SALARY</div>
+                    <div className="mono" style={{ color: T.text, fontWeight: 600 }}>
+                      {isFree ? <span style={{ color: T.green }}>FREE</span> : `${(h.perMonthCharge || w.cost || 0).toFixed(1)}M/mo`}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>STATUS</div>
+                    <div className="mono" style={{ color: isBusy ? T.gold : T.green, fontWeight: 600 }}>
+                      {isBusy ? `DRAFTING (${draftCount})` : 'IDLE'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setConfirmFire({ w, h })}
+                  disabled={isBusy}
+                  style={{
+                    marginTop: 9, padding: '6px 10px', width: '100%',
+                    background: isBusy ? T.card : 'transparent',
+                    border: `1px solid ${isBusy ? T.border : T.red}55`,
+                    color: isBusy ? T.muted : T.red,
+                    borderRadius: 4, fontSize: 11, fontWeight: 600,
+                    cursor: isBusy ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {isBusy ? 'BUSY' : 'Release contract'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
+        AVAILABLE TO HIRE
+      </div>
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8,
+      }}>
+        {marketWriters.map(w => {
+          const alreadyHired = hired.some(h => h.talentId === w.id)
+          const canHire = !alreadyHired && station.cash >= (w.cost || 0)
+          return (
+            <div key={w.id} style={{
+              background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5,
+              padding: 10, opacity: alreadyHired ? 0.4 : 1,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{w.name}</div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                <HTag tier={w.tier} />
+                <span style={{
+                  fontSize: 10, color: CATEGORIES[w.specialty]?.color || T.muted,
+                  background: (CATEGORIES[w.specialty]?.color || T.muted) + '22',
+                  padding: '1px 6px', borderRadius: 3, letterSpacing: '.05em',
+                }}>
+                  {CATEGORIES[w.specialty]?.icon} {CATEGORIES[w.specialty]?.label || w.specialty}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11 }}>
+                <div>
+                  <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>SKILL</div>
+                  <div className="mono" style={{ color: T.text, fontWeight: 600 }}>{(w.skill * 100).toFixed(0)}</div>
+                </div>
+                <div>
+                  <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>SALARY</div>
+                  <div className="mono" style={{ color: T.text, fontWeight: 600 }}>${(w.cost || 0).toFixed(1)}M/mo</div>
+                </div>
+              </div>
+              <button
+                onClick={() => canHire && onHireWriter(w)}
+                disabled={!canHire}
+                style={{
+                  marginTop: 9, padding: '6px 10px', width: '100%',
+                  background: canHire ? T.accent : T.card,
+                  color: canHire ? T.bg : T.muted,
+                  border: 'none', borderRadius: 4,
+                  fontSize: 11, fontWeight: 700, cursor: canHire ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {alreadyHired ? 'HIRED' : (canHire ? 'HIRE' : 'TOO EXPENSIVE')}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+
+      {confirmFire && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
+        }}
+        onClick={() => setConfirmFire(null)}
+        >
+          <div style={{
+            background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: 6,
+            padding: 18, maxWidth: 360, width: '90%',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 8 }}>
+              Release {confirmFire.w.name}?
+            </div>
+            <div style={{ fontSize: 12, color: T.muted, marginBottom: 14, lineHeight: 1.5 }}>
+              Severance penalty of {r1((confirmFire.h.perMonthCharge || confirmFire.w.cost || 0) * FIRE_PENALTY_MULT).toFixed(1)}M will be charged.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setConfirmFire(null)}
+                style={{
+                  flex: 1, padding: '8px 12px', background: 'transparent',
+                  border: `1px solid ${T.border}`, color: T.text, borderRadius: 4,
+                  cursor: 'pointer', fontSize: 12,
+                }}
+              >Cancel</button>
+              <button
+                onClick={() => { onFireWriter(confirmFire.w.id); setConfirmFire(null) }}
+                style={{
+                  flex: 1, padding: '8px 12px', background: T.red, color: T.bg,
+                  border: 'none', borderRadius: 4, cursor: 'pointer',
+                  fontSize: 12, fontWeight: 700,
+                }}
+              >Release</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -255,26 +484,123 @@ function FireConfirm({ role, id, t, onConfirm, onCancel }) {
 }
 
 // ─── 2. PURCHASE RIGHTS TAB ──────────────────────────────────────────────
-function RightsTab({ station, year, monthIdx, research, onBuyIP, onBuyMoviePack }) {
+function RightsTab({ station, year, monthIdx, research, onBuyIP, onBuyMoviePack, onBuySportsLicense }) {
+  const [section, setSection] = useState('ip')
   return (
     <div>
-      <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-        IP LICENSES — OWNED & AVAILABLE
+      {/* Sub-sub-tab bar */}
+      <div style={{
+        display: 'flex', gap: 0, marginBottom: 14,
+        borderBottom: `1px solid ${T.border}`,
+      }}>
+        <SubSubTab id="ip"     label="IP Licenses" active={section} onClick={setSection} />
+        <SubSubTab id="sports" label="Sports"      active={section} onClick={setSection} />
+        <SubSubTab id="movies" label="Movie Packs" active={section} onClick={setSection} />
       </div>
-      <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
-        License existing IPs (books, characters, franchises) to pair with scripts for hype + quality bumps. Sports league rights are in the <strong style={{ color: T.text }}>Market</strong> tab.
-      </div>
-      <IPBlock station={station} year={year} research={research} onBuy={onBuyIP} />
 
-      <div style={{ marginTop: 28 }}>
-        <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-          MOVIE PACKS — OWNED & AVAILABLE
-        </div>
-        <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
-          Each pack gives you 3 airings of the same licensed film. When you exhaust a pack, it returns to the catalog — but re-buying within 12 months means reduced hype (overexposure).
-        </div>
-        <MoviePackBlock station={station} year={year} monthIdx={monthIdx} onBuy={onBuyMoviePack} />
-      </div>
+      {section === 'ip' && (
+        <>
+          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
+            License existing IPs (books, characters, franchises) to pair with scripts for hype + quality bumps.
+          </div>
+          <IPBlock station={station} year={year} research={research} onBuy={onBuyIP} />
+        </>
+      )}
+
+      {section === 'sports' && (
+        <>
+          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
+            Buy a full year of league rights, then assign them to a slot in Programming.
+            Each league only airs during its real season, and gets a big bump on its peak month.
+            Major leagues cost more in bigger markets.
+          </div>
+          <SportsBlock station={station} year={year} onBuy={onBuySportsLicense} />
+        </>
+      )}
+
+      {section === 'movies' && (
+        <>
+          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
+            Each pack gives you 3 airings of the same licensed film. When you exhaust a pack, it returns to the catalog — but re-buying within 12 months means reduced hype (overexposure).
+          </div>
+          <MoviePackBlock station={station} year={year} monthIdx={monthIdx} onBuy={onBuyMoviePack} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function SubSubTab({ id, label, active, onClick }) {
+  const isActive = active === id
+  return (
+    <button
+      onClick={() => onClick(id)}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        color: isActive ? T.accent : T.muted,
+        padding: '8px 14px',
+        fontSize: 12,
+        fontWeight: isActive ? 700 : 500,
+        cursor: 'pointer',
+        letterSpacing: '.02em',
+        borderBottom: isActive ? `2px solid ${T.accent}` : '2px solid transparent',
+        marginBottom: -1,
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+function SportsBlock({ station, year, onBuy }) {
+  const owned = (station.sportsLicenses || []).filter(l => l.year === year)
+  const ownedIds = new Set(owned.map(l => l.leagueId))
+  const market = station.market
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+      gap: 8,
+    }}>
+      {SPORTS_LEAGUES.map(lg => {
+        const isOwned = ownedIds.has(lg.id)
+        const cost = sportsLicenseCost(lg.id, market)
+        const affordable = station.cash >= cost
+        return (
+          <div key={lg.id} style={{
+            background: isOwned ? T.green + '15' : T.card,
+            border: `1px solid ${isOwned ? T.green : T.border}`,
+            borderRadius: 5, padding: 10,
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: isOwned ? T.green : T.text }}>
+              {lg.icon} {lg.label} {isOwned && '✓'}
+            </div>
+            <div style={{ fontSize: 10, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
+              Season: {lg.season.length} mo · Peak: {MONTHS[lg.peakMonth]} ({lg.peakLabel})
+            </div>
+            {!isOwned ? (
+              <button
+                onClick={() => onBuy(lg.id)}
+                disabled={!affordable}
+                style={{
+                  width: '100%', marginTop: 7, padding: '6px 8px',
+                  background: affordable ? T.accent : T.border,
+                  color: affordable ? T.bg : T.muted,
+                  border: 'none', borderRadius: 4,
+                  fontSize: 11, fontWeight: 700,
+                  cursor: affordable ? 'pointer' : 'not-allowed',
+                }}
+              >${cost.toFixed(0)}M · BUY</button>
+            ) : (
+              <div style={{ marginTop: 7, fontSize: 10, color: T.green, fontStyle: 'italic' }}>
+                Owned · Use in slot editor
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

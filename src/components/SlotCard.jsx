@@ -35,7 +35,7 @@ export function SlotCard({ plan, run, idx, slotTypeId, cycleIdx, station, resear
   />
 }
 
-// ─── EMPTY SLOT — "the light is off" ──────────────────────────────────
+// ─── EMPTY SLOT — visible but distinct from filled ────────────────────
 function EmptySlotCard({ slotType, cycleIdx, seasonal, onClick }) {
   return (
     <button
@@ -43,37 +43,38 @@ function EmptySlotCard({ slotType, cycleIdx, seasonal, onClick }) {
       style={{
         display: 'block',
         width: '100%',
-        background: T.void,
-        border: 'none',
+        background: T.surface,
+        border: `1px dashed ${T.borderHi}`,
         borderRadius: 6,
-        padding: '18px 16px',
+        padding: '16px 14px',
         textAlign: 'left',
         cursor: 'pointer',
-        color: T.mutedDim,
+        color: T.text,
         position: 'relative',
-        boxShadow: `inset 0 0 0 1px ${T.border}, inset 0 1px 2px rgba(0,0,0,.4)`,
-        transition: 'all .2s ease',
+        transition: 'all .15s ease',
       }}
       onMouseEnter={e => {
-        e.currentTarget.style.background = T.surface
-        e.currentTarget.style.boxShadow = `inset 0 0 0 1px ${T.accent}66, 0 4px 12px rgba(240,163,71,.06)`
-        e.currentTarget.style.color = T.muted
+        e.currentTarget.style.background = T.card
+        e.currentTarget.style.borderColor = T.accent
+        e.currentTarget.style.borderStyle = 'solid'
+        e.currentTarget.style.boxShadow = `0 4px 14px rgba(240,163,71,.08)`
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.background = T.void
-        e.currentTarget.style.boxShadow = `inset 0 0 0 1px ${T.border}, inset 0 1px 2px rgba(0,0,0,.4)`
-        e.currentTarget.style.color = T.mutedDim
+        e.currentTarget.style.background = T.surface
+        e.currentTarget.style.borderColor = T.borderHi
+        e.currentTarget.style.borderStyle = 'dashed'
+        e.currentTarget.style.boxShadow = 'none'
       }}
     >
-      {/* Top row: icon + slot label */}
+      {/* Top row: icon + slot label — full color, properly readable */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        marginBottom: 8,
+        display: 'flex', alignItems: 'center', gap: 9,
+        marginBottom: 6,
       }}>
-        <SlotIcon slotTypeId={slotType.id} size={18} color="currentColor" />
+        <SlotIcon slotTypeId={slotType.id} size={18} color={T.text} />
         <div className="display" style={{
           fontSize: 14,
-          color: 'currentColor',
+          color: T.text,
           letterSpacing: '.06em',
           textTransform: 'uppercase',
         }}>
@@ -82,7 +83,7 @@ function EmptySlotCard({ slotType, cycleIdx, seasonal, onClick }) {
       </div>
 
       <div style={{
-        fontSize: 11.5, color: T.mutedDim, marginBottom: 14, lineHeight: 1.5,
+        fontSize: 11.5, color: T.muted, marginBottom: 12, lineHeight: 1.5,
       }}>
         {slotType.desc}
       </div>
@@ -91,26 +92,34 @@ function EmptySlotCard({ slotType, cycleIdx, seasonal, onClick }) {
         <div style={{
           fontSize: 10.5,
           padding: '6px 9px',
-          background: 'rgba(255, 209, 102, .06)',
-          border: `1px solid rgba(255, 209, 102, .22)`,
+          background: 'rgba(255, 209, 102, .1)',
+          border: `1px solid rgba(255, 209, 102, .35)`,
           borderRadius: 3,
           color: T.gold,
-          marginBottom: 12,
+          marginBottom: 10,
           display: 'flex', alignItems: 'center', gap: 6,
         }}>
           <Icon name="star" size={11} color={T.gold} />
           <span>{MONTHS[cycleIdx]} wants <strong>{seasonal.label}</strong></span>
-          <span style={{ opacity: .7, marginLeft: 'auto' }}>+{seasonal.bonusH?.toFixed(1)}H</span>
+          <span style={{ opacity: .8, marginLeft: 'auto' }}>+{seasonal.bonusH?.toFixed(1)}H</span>
         </div>
       )}
 
+      {/* CTA: proper button shape, accent-colored — clearly tappable */}
       <div style={{
         fontSize: 12,
-        color: T.muted,
-        display: 'flex', alignItems: 'center', gap: 6,
-        fontStyle: 'italic',
+        color: T.accent,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '7px 12px',
+        background: T.accent + '14',
+        border: `1px solid ${T.accent}55`,
+        borderRadius: 4,
+        fontWeight: 600,
+        letterSpacing: '.02em',
       }}>
-        <Icon name="plus" size={13} color={T.muted} />
+        <Icon name="plus" size={12} color={T.accent} />
         <span>Plan a program</span>
       </div>
     </button>

@@ -78,6 +78,10 @@ import {
   findOwnedActivePack,
   findLastConsumedPack,
   moviePackPurchaseHype,
+  // 9 — achievements
+  scanAchievements,
+  applyUnlockedAchievements,
+  recordMarketAchievement,
 } from './engine'
 
 import { SetupScreen } from './components/SetupScreen'
@@ -132,6 +136,7 @@ function loadGame() {
       if (g.station.focus) g.station.specStars[g.station.focus] = 1
     }
     if (!g.station.specXP) g.station.specXP = { news: 0, reality: 0, series: 0, latenight: 0, sports: 0, movie: 0, family: 0, kids: 0 }
+    if (!g.station.achievements) g.station.achievements = { unlocked: {} }
     if (!g.research.inProgress) g.research.inProgress = []
     if (!g.research.scriptTiersUnlocked) g.research.scriptTiersUnlocked = []
     if (!g.pendingHires) g.pendingHires = []
@@ -604,7 +609,7 @@ export default function App() {
         }))
       }
 
-      const station = {
+      const baseStation = {
         ...stationAfterStaff,
         cash: r1(newCash),
         fame: r2(newFame),
@@ -619,6 +624,9 @@ export default function App() {
         specStars: stationWithSpec.specStars,
         specXP:    stationWithSpec.specXP,
       }
+      // Achievements get merged in later (after the scan, which depends on
+      // playerAirings — finalized just above). For now station is provisional.
+      let station = baseStation
 
       // Log + play audio for any star-ups this month
       starUpsThisMonth.forEach(({ categoryId, newStars }) => {
@@ -665,10 +673,43 @@ export default function App() {
       const audRank = sortedByAud.findIndex(n => n.stationId === '__player__') + 1
       const revRank = sortedByRev.findIndex(n => n.stationId === '__player__') + 1
 
+      // ── Slot rank per player airing (so achievements & UI can read it) ──
+      // Bucket all airings (player + competitors) by slot and rank by audience.
+      const slotBuckets = {}
+      ;[...playerAirings, ...competitorAiringsThisMonth].forEach(a => {
+        const sid = a.slotTypeId || 'prime'
+        if (!slotBuckets[sid]) slotBuckets[sid] = []
+        slotBuckets[sid].push(a)
+      })
+      Object.values(slotBuckets).forEach(g => g.sort((a, b) => (b.audience || 0) - (a.audience || 0)))
+      playerAirings.forEach(a => {
+        const sid = a.slotTypeId || 'prime'
+        const group = slotBuckets[sid] || []
+        a.slotRank = group.findIndex(x => x.id === a.id) + 1
+        a.slotTotal = group.length
+      })
+
+      // ── Achievements scan ──
+      const achScan = scanAchievements(
+        stationWithSpec,         // most up-to-date station before this month's final compose
+        playerAirings,
+        competitorAiringsThisMonth,
+        g.station.market,
+        g.year,
+        g.monthIdx,
+      )
+      // Apply firsts: merge unlocked achievements into the final station so
+      // they persist. Recurring events fire each month and aren't stored.
+      station = applyUnlockedAchievements(station, achScan.unlocked, g.year, g.monthIdx)
+
       const lastMonthResult = {
         airings: playerAirings,
         competitorAirings: competitorAiringsThisMonth,
         starUps: starUpsThisMonth,
+        achievements: {
+          unlocked: achScan.unlocked,   // [{id, achievement, context}]
+          recurring: achScan.recurring, // [{id, achievement, context}]
+        },
         totals: {
           cost: r1(playerCost),
           revenue: r1(playerRev),
@@ -800,21 +841,27 @@ export default function App() {
       const prev = g.station.market
       // Apply specialization reset: keep specialty min 0.5, keep ≥4 at 1, lose rest.
       const withSpecReset = specOnMarketPromotion({ ...g.station, market: nextMarketId }, prev, nextMarketId)
+      // Record the market-tier "first" achievement, if applicable
+      const marketAch = recordMarketAchievement({ ...withSpecReset, cash: r1(g.station.cash - cost) }, nextMarketId, g.year, g.monthIdx)
       const entry = cost > 0 ? ledgerEntry({
         year: g.year, month: g.monthIdx,
         kind: 'market_promotion',
         label: `Expansion: ${MARKETS[prev].label} → ${nextMarket.label}`,
         amount: -cost,
       }) : null
+      const newLog = [
+        ...g.log,
+        `🚀 Expanded to ${nextMarket.label} for ${fmtM(cost)}! Specialization reset — only specialty and elite genres retained.`,
+      ]
+      if (marketAch.unlocked) {
+        newLog.push(`🏅 Achievement: ${marketAch.unlocked.achievement.title}`)
+      }
       return {
         ...g,
-        station: { ...withSpecReset, cash: r1(g.station.cash - cost) },
+        station: marketAch.station,
         competitors: initCompetitors(nextMarketId),
         ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
-        log: [
-          ...g.log,
-          `🚀 Expanded to ${nextMarket.label} for ${fmtM(cost)}! Specialization reset — only specialty and elite genres retained.`,
-        ],
+        log: newLog,
       }
     })
   }
@@ -1312,6 +1359,9 @@ export default function App() {
           onFireStaff={onFireStaff}
           onBuyIP={onBuyIP}
           onBuyMoviePack={onBuyMoviePack}
+          onBuySportsLicense={buySportsLicense}
+          onHireWriter={onHireWriter}
+          onFireWriter={onFireWriter}
           onLaunchCampaign={onLaunchCampaign}
           onPromote={promoteMarket}
           onBack={() => setView('plan')}
@@ -1365,7 +1415,6 @@ export default function App() {
           monthIdx={game.monthIdx}
           yearShows={game.yearShows || []}
           competitorAllShows={game.competitorAllShows || []}
-          onBuySportsLicense={buySportsLicense}
           onBack={() => setView('plan')}
         />
       )}
@@ -1444,19 +1493,19 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
   const identLabel = (game.station.name || 'CHANNEL').slice(0, 12).toUpperCase()
 
   return (
-    <div style={{
+    <div className="topbar" style={{
       background: `linear-gradient(180deg, ${T.surface} 0%, ${T.bg} 100%)`,
       borderBottom: `1px solid ${T.border}`,
       position: 'sticky', top: 0, zIndex: 50,
       boxShadow: `0 2px 20px rgba(0,0,0,.4)`,
     }}>
       {/* ROW 1: ident + stats + date + continue */}
-      <div style={{
+      <div className="topbar-row" style={{
         display: 'flex', gap: 10, padding: '10px 12px',
         alignItems: 'center',
       }}>
         {/* IDENT — uses brand colors */}
-        <div style={{
+        <div className="topbar-ident" style={{
           display: 'inline-flex',
           background: brand.bg, color: brand.fg,
           padding: '6px 10px',
@@ -1473,7 +1522,7 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
         </div>
 
         {/* Market subtitle (mobile-collapsed) */}
-        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+        <div className="topbar-market" style={{ flex: '1 1 0', minWidth: 0 }}>
           <div className="mono" style={{
             fontSize: 9.5, color: T.muted, letterSpacing: '.12em',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -1491,7 +1540,7 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
         </div>
 
         {/* Stats */}
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        <div className="topbar-stats" style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
           <MiniStat label="CASH" value={fmtM(game.station.cash)} accent={T.green} />
           <MiniStat label="FAME" value={game.station.fame.toFixed(1)} accent={T.gold} />
         </div>
@@ -1518,8 +1567,8 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
           <Icon name={muted ? 'speaker_off' : 'speaker_on'} size={15} color="currentColor" />
         </button>
 
-        {/* DATE + Continue */}
-        <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0 }}>
+        {/* DATE + Continue — on mobile this gets pulled to its own row via CSS */}
+        <div className="topbar-cta" style={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0 }}>
           <div style={{
             background: T.surface,
             border: `1px solid ${T.border}`,
@@ -1563,7 +1612,7 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
 
       {/* ROW 2: main tabs */}
       {isInPlanFlow && (
-        <div style={{
+        <div className="topbar-tabs" style={{
           display: 'flex', gap: 0, padding: '0 8px',
           borderTop: `1px solid ${T.border}`,
           overflowX: 'auto', scrollbarWidth: 'none',
@@ -1644,7 +1693,7 @@ function PlanView({
   const totalSlots = game.station.slotIds.length
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 18 }}>
+    <div className="view-wrap" style={{ maxWidth: 1100, margin: '0 auto', padding: 18 }}>
       {/* Broadcast schedule header */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',

@@ -358,11 +358,12 @@ export const TOPIC_APPEAL_OVERRIDES = {
 
 // ─── MARKETING TIERS ─────────────────────────────────────────────────────────
 export const MARKETING_TIERS = [
-  { id: 'none',    label: 'No Campaign',     cost: 0,   h: 0,   q: 0   },
-  { id: 'online',  label: 'Online / Social', cost: 1.5, h: 1.0, q: 0   },
-  { id: 'medium',  label: 'Standard Ads',    cost: 4,   h: 1.8, q: 0   },
-  { id: 'big',     label: 'TV+Radio+Print',  cost: 10,  h: 2.6, q: 0.2 },
-  { id: 'massive', label: 'Disney-Scale',    cost: 28,  h: 3.8, q: 0.4 },
+  { id: 'none',    label: 'No Campaign',     cost: 0,    h: 0,   q: 0,   localOnly: false },
+  { id: 'flyers',  label: 'Posters & Fliers',cost: 0.4,  h: 0.5, q: 0,   localOnly: true  },
+  { id: 'online',  label: 'Online / Social', cost: 1.5,  h: 1.0, q: 0,   localOnly: false },
+  { id: 'medium',  label: 'Standard Ads',    cost: 4,    h: 1.8, q: 0,   localOnly: false },
+  { id: 'big',     label: 'TV+Radio+Print',  cost: 10,   h: 2.6, q: 0.2, localOnly: false },
+  { id: 'massive', label: 'Disney-Scale',    cost: 28,   h: 3.8, q: 0.4, localOnly: false },
 ]
 
 // ─── DIRECTORS POOL ──────────────────────────────────────────────────────────

@@ -19,7 +19,7 @@ export function ResearchScreen({ research, station, cash, onBuy, onBack }) {
   const hasInnovationDir = !!station.staff?.innovation
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 18 }}>
+    <div className="view-wrap" style={{ maxWidth: 900, margin: '0 auto', padding: 18 }}>
       <button
         onClick={onBack}
         style={{

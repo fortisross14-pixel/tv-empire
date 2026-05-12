@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { T } from '../theme.js'
 import { CATEGORIES, MARKETS, SLOT_TYPES } from '../constants.js'
 import { HTag, Bar } from './ui.jsx'
-import { fameLabel, fmtM, findLeague } from '../engine.js'
+import { fameLabel, fmtM, findLeague, ratingLabel, ratingLabelColor } from '../engine.js'
 import { play as playSound } from '../audio.js'
 
 const SORT_OPTIONS = [
@@ -89,7 +89,7 @@ export function ResultsView({ results, station, onContinue, cycleLabel }) {
   const revRank = totals.revRank || 1
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '18px 14px 60px' }} className="ani">
+    <div className="view-wrap ani" style={{ maxWidth: 1100, margin: '0 auto', padding: '18px 14px 60px' }}>
       {/* Header */}
       <div style={{ marginBottom: 14 }}>
         <div className="bebas" style={{ fontSize: 26, color: T.text, lineHeight: 1.1 }}>
@@ -121,6 +121,13 @@ export function ResultsView({ results, station, onContinue, cycleLabel }) {
             sub={`${fameDelta >= 0 ? '+' : ''}${fameDelta.toFixed(1)} · ${fameLabel(fameAfter)}`} />
         </div>
       </div>
+
+      {/* Milestones: spec star-ups + achievements unlocked + recurring events */}
+      <MilestonesSection
+        starUps={results.starUps || []}
+        achievementsUnlocked={results.achievements?.unlocked || []}
+        achievementsRecurring={results.achievements?.recurring || []}
+      />
 
       <button
         onClick={onContinue}
@@ -182,7 +189,8 @@ function ProgramRow({ airing: a }) {
   const cat = CATEGORIES[a.categoryId]
   const slot = SLOT_TYPES[a.slotTypeId] || SLOT_TYPES.prime
   const league = a.sportsRunLeagueId ? findLeague(a.sportsRunLeagueId) : null
-  const ratingColor = a.rating >= 8 ? T.gold : a.rating >= 7 ? T.green : a.rating >= 5 ? T.accent : T.red
+  const ratingColor = ratingLabelColor(a.rating, T)
+  const label = ratingLabel(a.rating)
   const profit = (a.revenue || 0) - (a.cost || 0)
   const profitColor = profit >= 0 ? T.green : T.red
   const isMovie = !!a.movieId
@@ -215,10 +223,19 @@ function ProgramRow({ airing: a }) {
         </div>
         <div style={{
           background: ratingColor + '22', border: `1px solid ${ratingColor}55`,
-          color: ratingColor, padding: '3px 8px', borderRadius: 4,
-          fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700,
-          whiteSpace: 'nowrap',
-        }}>{a.rating?.toFixed(1)}</div>
+          color: ratingColor, padding: '4px 10px', borderRadius: 4,
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          minWidth: 78,
+        }}>
+          <div className="mono" style={{
+            fontSize: 16, fontWeight: 700, lineHeight: 1,
+          }}>{a.rating?.toFixed(1)}</div>
+          {label && (
+            <div className="mono" style={{
+              fontSize: 8.5, letterSpacing: '.1em', marginTop: 3, fontWeight: 700,
+            }}>{label}</div>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
@@ -269,5 +286,116 @@ function Chip({ label, active, onClick }) {
       borderRadius: 12, padding: '3px 9px', fontSize: 11,
       cursor: 'pointer', whiteSpace: 'nowrap',
     }}>{label}</button>
+  )
+}
+
+// ─── MILESTONES SECTION ──────────────────────────────────────────────────
+// Surfaces three kinds of "good things that happened this month":
+//   1. Specialization star-ups (per genre, half-star)
+//   2. Newly unlocked one-shot achievements (firsts)
+//   3. Recurring events (most-watched of the month, etc.)
+// Renders nothing if none of these fired.
+function MilestonesSection({ starUps, achievementsUnlocked, achievementsRecurring }) {
+  const hasAny = (starUps?.length || 0) > 0
+                 || (achievementsUnlocked?.length || 0) > 0
+                 || (achievementsRecurring?.length || 0) > 0
+  if (!hasAny) return null
+
+  return (
+    <div style={{
+      background: `linear-gradient(135deg, ${T.gold}10 0%, ${T.surface} 60%)`,
+      border: `1px solid ${T.gold}55`,
+      borderRadius: 6, padding: 14, marginBottom: 14,
+    }}>
+      <div style={{
+        fontSize: 10, color: T.gold, letterSpacing: '.12em',
+        marginBottom: 10, fontWeight: 700,
+      }}>
+        ✨ MILESTONES THIS MONTH
+      </div>
+
+      {/* Star-ups */}
+      {starUps && starUps.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {starUps.map((s, i) => {
+            const cat = CATEGORIES[s.categoryId]
+            const catColor = cat?.color || T.accent
+            return (
+              <MilestoneRow
+                key={`star-${i}`}
+                icon="⭐"
+                tone={T.gold}
+                title={`Specialty up: ${cat?.label || s.categoryId}`}
+                subtitle={`Now ${s.newStars.toFixed(1)}★ — your productions in this genre get bigger bonuses.`}
+                accentColor={catColor}
+              />
+            )
+          })}
+        </div>
+      )}
+
+      {/* Unlocked achievements */}
+      {achievementsUnlocked && achievementsUnlocked.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {achievementsUnlocked.map((u, i) => (
+            <MilestoneRow
+              key={`ach-${i}`}
+              icon={u.achievement.icon}
+              tone={u.achievement.tone === 'gold' ? T.gold : u.achievement.tone === 'silver' ? T.textDim : T.accent}
+              title={`Achievement unlocked: ${u.achievement.title}`}
+              subtitle={u.achievement.desc}
+              context={u.context?.programName}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Recurring events (e.g. month top) */}
+      {achievementsRecurring && achievementsRecurring.length > 0 && (
+        <div>
+          {achievementsRecurring.map((r, i) => (
+            <MilestoneRow
+              key={`rec-${i}`}
+              icon={r.achievement.icon}
+              tone={T.gold}
+              title={r.achievement.title}
+              subtitle={
+                r.context?.programName
+                  ? `"${r.context.programName}" reached ${r.context.audience?.toFixed(1) || '?'}M viewers — leading the market.`
+                  : r.achievement.desc
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MilestoneRow({ icon, tone, title, subtitle, context, accentColor }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 10,
+      padding: '7px 9px',
+      background: 'rgba(0,0,0,.2)',
+      borderLeft: `3px solid ${accentColor || tone || T.accent}`,
+      borderRadius: 3,
+      marginBottom: 5,
+    }}>
+      <div style={{ fontSize: 16, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icon}</div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: tone || T.text, lineHeight: 1.3 }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4, marginTop: 2 }}>
+          {subtitle}
+          {context && (
+            <span style={{ color: T.textDim, fontStyle: 'italic', marginLeft: 4 }}>
+              — "{context}"
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

@@ -290,3 +290,70 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   box-shadow: 0 0 6px var(--red);
   animation: air-pulse 1.6s ease-in-out infinite;
 }
+
+/* ─── RESPONSIVE / MOBILE ─────────────────────────────────────────────────
+   The app is laptop-first. On narrow viewports we:
+   1. Reflow the top bar so the CTA gets its own row (it was clipping)
+   2. Tighten outer padding so cards aren't squeezed
+   3. Lift small font sizes that read uncomfortably on phones
+   4. Ensure tab strip scrolls horizontally cleanly
+   5. Hide the "LIVE" subtitle in the topbar to save space
+*/
+@media (max-width: 640px) {
+  /* TOP BAR — let it wrap, CTA on its own row */
+  .topbar-row {
+    flex-wrap: wrap !important;
+    row-gap: 8px !important;
+  }
+  /* Hide the market subtitle on phones — already shown in Status tab */
+  .topbar-market {
+    display: none !important;
+  }
+  /* Push date+CTA to a new row at full width by occupying the entire flex line */
+  .topbar-cta {
+    order: 99;
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+  .topbar-cta > button {
+    flex: 1 1 auto;
+    min-width: 0 !important;
+    max-width: 280px;
+  }
+  /* Stats: keep them compact */
+  .topbar-stats {
+    margin-left: auto;
+  }
+  /* Tab strip: avoid clipping, scroll smoothly */
+  .topbar-tabs {
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+  }
+  .topbar-tabs > * {
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+  /* Bigger tap targets across the board */
+  button {
+    min-height: 36px;
+  }
+}
+
+/* Very narrow phones — extra tightening */
+@media (max-width: 380px) {
+  .topbar-stats {
+    flex-wrap: wrap;
+    gap: 4px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Tighten page padding so cards aren't squeezed on narrow viewports */
+  .view-wrap {
+    padding: 12px 10px !important;
+  }
+  /* Big page hero titles — drop from 32px to 24px so they don't overflow */
+  .view-wrap h1.display {
+    font-size: 24px !important;
+  }
+}

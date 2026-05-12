@@ -18,18 +18,17 @@ const TIER_COLOR = {
 const SUB_TABS = [
   { id: 'networks',     label: 'Networks' },
   { id: 'thisyear',     label: 'This Year' },
-  { id: 'sports',       label: 'Sports Rights' },
 ]
 
 export function MarketScreen({
   station, competitors, year, monthIdx,
-  yearShows, competitorAllShows, onBuySportsLicense,
+  yearShows, competitorAllShows,
   onBack,
 }) {
   const [sub, setSub] = useState('networks')
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 14 }}>
+    <div className="view-wrap" style={{ maxWidth: 900, margin: '0 auto', padding: 14 }}>
       <div style={{
         display: 'flex', gap: 4, marginBottom: 14,
         borderBottom: `1px solid ${T.border}`, overflowX: 'auto',
@@ -61,9 +60,6 @@ export function MarketScreen({
           year={year}
           monthIdx={monthIdx}
         />
-      )}
-      {sub === 'sports' && (
-        <SportsRightsTab station={station} year={year} onBuy={onBuySportsLicense} />
       )}
     </div>
   )
@@ -421,68 +417,6 @@ function AiringRow({ airing: a, rank, total }) {
         </div>
       </div>
     </div>
-  )
-}
-
-// ─── SPORTS RIGHTS TAB ───────────────────────────────────────────────────
-function SportsRightsTab({ station, year, onBuy }) {
-  const owned = (station.sportsLicenses || []).filter(l => l.year === year)
-  const ownedIds = new Set(owned.map(l => l.leagueId))
-  const market = station.market
-
-  return (
-    <>
-      <SectionTitle>Sports Rights — Year {year}</SectionTitle>
-      <div style={{ fontSize: 12, color: T.muted, marginBottom: 14, lineHeight: 1.5 }}>
-        Buy a full year of rights, then assign them to a slot in Programming.
-        Each league runs only during its real season — and gets a big bump on its peak month.
-        Major leagues cost real money: scaled to your market size.
-      </div>
-
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-        gap: 8,
-      }}>
-        {SPORTS_LEAGUES.map(lg => {
-          const isOwned = ownedIds.has(lg.id)
-          const cost = sportsLicenseCost(lg.id, market)
-          const affordable = station.cash >= cost
-          return (
-            <div key={lg.id} style={{
-              background: isOwned ? T.green + '15' : T.card,
-              border: `1px solid ${isOwned ? T.green : T.border}`,
-              borderRadius: 5, padding: 10,
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: isOwned ? T.green : T.text }}>
-                {lg.icon} {lg.label} {isOwned && '✓'}
-              </div>
-              <div style={{ fontSize: 10, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
-                Season: {lg.season.length} mo · Peak: {MONTHS[lg.peakMonth]} ({lg.peakLabel})
-              </div>
-              {!isOwned ? (
-                <button
-                  onClick={() => onBuy(lg.id)}
-                  disabled={!affordable}
-                  style={{
-                    width: '100%', marginTop: 7, padding: '6px 8px',
-                    background: affordable ? T.accent : T.border,
-                    color: affordable ? T.bg : T.muted,
-                    border: 'none', borderRadius: 4,
-                    fontSize: 11, fontWeight: 700,
-                    cursor: affordable ? 'pointer' : 'not-allowed',
-                  }}
-                >${cost.toFixed(0)}M · BUY</button>
-              ) : (
-                <div style={{ marginTop: 7, fontSize: 10, color: T.green, fontStyle: 'italic' }}>
-                  Owned · Use in slot editor
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </>
   )
 }
 

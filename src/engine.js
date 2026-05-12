@@ -802,15 +802,33 @@ function techBonus(audioId, subsId, videoId) {
 
 /** Estimation range for a planned program — used by build UI live preview.
  *  Does NOT consume a script or modify station state. */
+// Per-airing noise band — matches the noise rollProgramComponents will inject
+// at airing time. Picking the same options twice should yield the same range.
+const ESTIMATE_VARIANCE_Q = 0.5
+const ESTIMATE_VARIANCE_H = 0.4
+
 export function estimateProgramQH(opts, station, research) {
-  const c = rollProgramComponents(opts, station, research)
-  const dq = c.q * ESTIMATION_RANGE
-  const dh = c.h * ESTIMATION_RANGE
+  // Use projectShow's deterministic core (no rnd) for stable predictions.
+  // We synthesize the equivalent components from the same inputs without
+  // calling rollProgramComponents (which injects rnd noise).
+  const proj = projectShow(opts, station, research, 0)
+  const q = proj.quality
+  const h = proj.hype
+
+  // For component breakdown, derive plausible numbers around q (the UI uses
+  // these for the radar; they're informational, not the source of truth).
+  const components = {
+    narrative:  r1(q),
+    art:        r1(q),
+    innovation: r1(q),
+    technical:  r1(q),
+  }
+
   return {
-    q: c.q, h: c.h,
-    components: { narrative: c.narrative, art: c.art, innovation: c.innovation, technical: c.technical },
-    qRange: [r1(clamp(c.q - dq, 0, 10)), r1(clamp(c.q + dq, 0, 10))],
-    hRange: [r1(clamp(c.h - dh, 0, 10)), r1(clamp(c.h + dh, 0, 10))],
+    q, h,
+    components,
+    qRange: [r1(clamp(q - ESTIMATE_VARIANCE_Q, 0, 10)), r1(clamp(q + ESTIMATE_VARIANCE_Q, 0, 10))],
+    hRange: [r1(clamp(h - ESTIMATE_VARIANCE_H, 0, 10)), r1(clamp(h + ESTIMATE_VARIANCE_H, 0, 10))],
   }
 }
 
@@ -2626,6 +2644,7 @@ export function initGame(setup) {
       return acc
     }, {}),
     specXP: SPEC_GENRES.reduce((acc, g) => { acc[g] = 0; return acc }, {}),
+    achievements: { unlocked: {} },
   }
 
   return {
@@ -2687,6 +2706,34 @@ export function fameLabel(fame) {
   if (fame < 60) return 'Renowned'
   if (fame < 85) return 'Acclaimed'
   return 'Legendary'
+}
+
+// ─── RATING QUALITY LABEL ────────────────────────────────────────────────────
+// The numeric rating (0..10) is what audiences and revenue keys off, but humans
+// think in terms like "hit" / "flop". This pair of helpers maps the number to a
+// short qualitative label + a semantic color.
+export function ratingLabel(rating) {
+  if (rating == null) return null
+  if (rating >= 9.0) return 'MASTERPIECE'
+  if (rating >= 8.0) return 'BLOCKBUSTER'
+  if (rating >= 7.0) return 'HIT'
+  if (rating >= 6.0) return 'SOLID'
+  if (rating >= 5.0) return 'DECENT'
+  if (rating >= 3.5) return 'SOFT'
+  return 'FLOP'
+}
+
+export function ratingLabelColor(rating, T) {
+  // T is the theme palette. We accept it as a param so the engine stays
+  // theme-agnostic — caller passes its imported theme object.
+  if (rating == null) return T.muted
+  if (rating >= 9.0) return T.gold
+  if (rating >= 8.0) return T.purple || T.accent
+  if (rating >= 7.0) return T.green
+  if (rating >= 6.0) return T.teal
+  if (rating >= 5.0) return T.text
+  if (rating >= 3.5) return T.muted
+  return T.red
 }
 
 // ─── SPECIALIZATION ──────────────────────────────────────────────────────────
@@ -2837,6 +2884,184 @@ export function applySpecBonuses(q, h, station, categoryId) {
     qBonus,
     hBonus,
   }
+}
+
+// ─── ACHIEVEMENTS ────────────────────────────────────────────────────────────
+// A small catalog of one-shot accomplishments + recurring "bests". Each
+// achievement has an id, a category (label group), a title, a description,
+// and a tone (gold / silver / bronze) for visual treatment.
+//
+// FIRSTS unlock once per game. BESTS fire whenever your performance leads.
+//
+// Stored on station as:
+//   station.achievements = {
+//     unlocked: { [id]: { year, month, context } },  // firsts
+//   }
+//
+// "Best in market this month" is computed at runtime per month — not stored
+// (it's an "event" rather than a permanent unlock, so it fires each time).
+
+const ACHIEVEMENT_CATALOG = [
+  // Genre firsts — one-shot
+  { id: 'first_news',      group: 'firsts', tone: 'silver', icon: '📰', title: 'First News Bulletin',          desc: 'Aired your first News program.' },
+  { id: 'first_reality',   group: 'firsts', tone: 'silver', icon: '👁',  title: 'First Reality Show',           desc: 'Aired your first Reality program.' },
+  { id: 'first_series',    group: 'firsts', tone: 'silver', icon: '🎬', title: 'First Scripted Series',        desc: 'Aired your first scripted Series.' },
+  { id: 'first_latenight', group: 'firsts', tone: 'silver', icon: '🌙', title: 'First Late-Night',             desc: 'Aired your first Late-Night program.' },
+  { id: 'first_sports',    group: 'firsts', tone: 'silver', icon: '🏆', title: 'First Sports Broadcast',       desc: 'Aired your first Sports rights coverage.' },
+  { id: 'first_family',    group: 'firsts', tone: 'silver', icon: '🏡', title: 'First Family Program',         desc: 'Aired your first Family program.' },
+  { id: 'first_kids',      group: 'firsts', tone: 'silver', icon: '🧒', title: 'First Kids Show',              desc: 'Aired your first Kids program.' },
+  { id: 'first_movie',     group: 'firsts', tone: 'silver', icon: '🎞', title: 'First Movie',                  desc: 'Aired your first licensed Movie.' },
+
+  // Quality firsts — one-shot, ratings-based
+  { id: 'first_hit',         group: 'quality', tone: 'silver', icon: '⭐', title: 'First Hit',         desc: 'A program of yours hit a 7.0+ rating.' },
+  { id: 'first_blockbuster', group: 'quality', tone: 'gold',   icon: '💥', title: 'First Blockbuster', desc: 'A program of yours hit an 8.0+ rating.' },
+  { id: 'first_masterpiece', group: 'quality', tone: 'gold',   icon: '👑', title: 'First Masterpiece', desc: 'A program of yours hit a 9.0+ rating.' },
+
+  // Slot leadership firsts — one-shot per slot type
+  { id: 'slot_lead_weekday_morning', group: 'slot',   tone: 'bronze', icon: '🌅', title: 'Morning Champion',         desc: 'First time #1 in Weekday Morning.' },
+  { id: 'slot_lead_weekday_evening', group: 'slot',   tone: 'bronze', icon: '🌆', title: 'Evening Champion',         desc: 'First time #1 in Weekday Evening.' },
+  { id: 'slot_lead_prime',           group: 'slot',   tone: 'gold',   icon: '🌟', title: 'Prime-Time Champion',      desc: 'First time #1 in Prime Time.' },
+  { id: 'slot_lead_lateprime',       group: 'slot',   tone: 'bronze', icon: '🌃', title: 'Late-Prime Champion',      desc: 'First time #1 in Late Prime.' },
+  { id: 'slot_lead_weekend_morning', group: 'slot',   tone: 'bronze', icon: '🧒', title: 'Weekend Morning Champion', desc: 'First time #1 in Weekend Morning.' },
+  { id: 'slot_lead_weekend_prime',   group: 'slot',   tone: 'gold',   icon: '🎯', title: 'Weekend Prime Champion',   desc: 'First time #1 in Weekend Prime.' },
+
+  // Market firsts — captured when you actually promote
+  { id: 'market_metro',     group: 'market', tone: 'gold', icon: '🏙', title: 'Welcome to the Metro',  desc: 'Expanded to Tri-State Metro market.' },
+  { id: 'market_national',  group: 'market', tone: 'gold', icon: '🇺🇸', title: 'Going National',        desc: 'Expanded to National Network market.' },
+
+  // Recurring "best" — fires each time it's earned
+  { id: 'month_top',  group: 'recurring', tone: 'gold',   icon: '🏆', title: 'Most-Watched This Month', desc: 'Had the #1 program across all networks.' },
+]
+
+const SLOT_TO_ACHIEVEMENT_ID = {
+  weekday_morning: 'slot_lead_weekday_morning',
+  weekday_evening: 'slot_lead_weekday_evening',
+  prime:           'slot_lead_prime',
+  lateprime:       'slot_lead_lateprime',
+  weekend_morning: 'slot_lead_weekend_morning',
+  weekend_prime:   'slot_lead_weekend_prime',
+}
+
+const CATEGORY_TO_ACHIEVEMENT_ID = {
+  news:      'first_news',
+  reality:   'first_reality',
+  series:    'first_series',
+  latenight: 'first_latenight',
+  sports:    'first_sports',
+  family:    'first_family',
+  kids:      'first_kids',
+  movie:     'first_movie',
+}
+
+export function findAchievement(id) {
+  return ACHIEVEMENT_CATALOG.find(a => a.id === id) || null
+}
+
+export function getAchievementCatalog() {
+  return ACHIEVEMENT_CATALOG
+}
+
+/** Scan a month's worth of player airings + competitor airings, find newly
+ *  unlocked achievements + any recurring events. Returns:
+ *   {
+ *     unlocked: [{id, achievement, context}],  // one-shot, will be saved
+ *     recurring: [{id, achievement, context}], // fires this month, NOT saved
+ *   }
+ *  Pure: doesn't mutate station. Caller merges unlocked into station.achievements. */
+export function scanAchievements(station, airings, competitorAirings, market, year, month) {
+  const already = (station?.achievements?.unlocked) || {}
+  const newlyUnlocked = []
+  const recurring = []
+
+  // Helper to register a first
+  const tryFirst = (id, context = {}) => {
+    if (already[id]) return
+    if (newlyUnlocked.some(u => u.id === id)) return  // don't double-fire within same month
+    const a = findAchievement(id)
+    if (!a) return
+    newlyUnlocked.push({ id, achievement: a, context })
+  }
+
+  // ── Genre firsts ──
+  for (const a of (airings || [])) {
+    if (a.movieId) {
+      tryFirst('first_movie', { programName: a.name })
+    } else if (a.sportsRunLeagueId) {
+      tryFirst('first_sports', { programName: a.name })
+    } else {
+      const catFirstId = CATEGORY_TO_ACHIEVEMENT_ID[a.categoryId]
+      if (catFirstId) tryFirst(catFirstId, { programName: a.name })
+    }
+  }
+
+  // ── Quality firsts (ordered cheapest → highest) ──
+  let bestRating = 0
+  let bestRatingProgram = null
+  for (const a of (airings || [])) {
+    if ((a.rating || 0) > bestRating) {
+      bestRating = a.rating
+      bestRatingProgram = a
+    }
+  }
+  if (bestRating >= 7.0) tryFirst('first_hit',         { rating: bestRating, programName: bestRatingProgram?.name })
+  if (bestRating >= 8.0) tryFirst('first_blockbuster', { rating: bestRating, programName: bestRatingProgram?.name })
+  if (bestRating >= 9.0) tryFirst('first_masterpiece', { rating: bestRating, programName: bestRatingProgram?.name })
+
+  // ── Slot leadership firsts ──
+  //   "Lead" = slotRank === 1 with at least one competitor in the same slot.
+  for (const a of (airings || [])) {
+    if (a.slotRank === 1 && (a.slotTotal || 1) > 1) {
+      const slotAchId = SLOT_TO_ACHIEVEMENT_ID[a.slotTypeId]
+      if (slotAchId) tryFirst(slotAchId, { programName: a.name, slot: a.slotTypeId })
+    }
+  }
+
+  // ── Recurring: most-watched of the month ──
+  // We compare the player's best-audience airing vs. the best competitor airing.
+  // Ties are resolved in the player's favor.
+  let playerTop = null
+  let competitorTop = null
+  for (const a of (airings || [])) {
+    if (!playerTop || (a.audience || 0) > (playerTop.audience || 0)) playerTop = a
+  }
+  for (const a of (competitorAirings || [])) {
+    if (!competitorTop || (a.audience || 0) > (competitorTop.audience || 0)) competitorTop = a
+  }
+  if (playerTop && (!competitorTop || (playerTop.audience || 0) >= (competitorTop.audience || 0))) {
+    const a = findAchievement('month_top')
+    if (a) recurring.push({
+      id: 'month_top',
+      achievement: a,
+      context: { programName: playerTop.name, audience: playerTop.audience, market },
+    })
+  }
+
+  return { unlocked: newlyUnlocked, recurring }
+}
+
+/** Apply newly unlocked achievements to a station (records year/month). Pure. */
+export function applyUnlockedAchievements(station, unlocked, year, month) {
+  if (!unlocked || unlocked.length === 0) return station
+  const next = { ...(station.achievements || { unlocked: {} }) }
+  next.unlocked = { ...(next.unlocked || {}) }
+  for (const u of unlocked) {
+    next.unlocked[u.id] = { year, month, context: u.context }
+  }
+  return { ...station, achievements: next }
+}
+
+/** Record a market-tier first when the player promotes. Called from promote flow. */
+export function recordMarketAchievement(station, newMarketId, year, month) {
+  const id = newMarketId === 'metro' ? 'market_metro'
+           : newMarketId === 'national' ? 'market_national'
+           : null
+  if (!id) return { station, unlocked: null }
+  const already = station?.achievements?.unlocked?.[id]
+  if (already) return { station, unlocked: null }
+  const a = findAchievement(id)
+  if (!a) return { station, unlocked: null }
+  const next = applyUnlockedAchievements(station, [{ id, context: { market: newMarketId } }], year, month)
+  return { station: next, unlocked: { id, achievement: a, context: { market: newMarketId } } }
 }
 
 // ─── LEDGER ──────────────────────────────────────────────────────────────────

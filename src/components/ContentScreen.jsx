@@ -15,7 +15,6 @@ import { ProductionView } from './ProductionView.jsx'
 const SUB_TABS = [
   { id: 'production', label: 'Production' },
   { id: 'scripts', label: 'Scripts' },
-  { id: 'writers', label: 'Writers' },
 ]
 
 export function ContentScreen({
@@ -28,7 +27,7 @@ export function ContentScreen({
   const [sub, setSub] = useState('production')
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 14 }}>
+    <div className="view-wrap" style={{ maxWidth: 1000, margin: '0 auto', padding: 14 }}>
       {/* Sub-tabs */}
       <div style={{
         display: 'flex', gap: 4, marginBottom: 14,
@@ -69,14 +68,6 @@ export function ContentScreen({
           onRefreshScript={onRefreshScript}
           onArchiveScript={onArchiveScript}
           onDeleteScript={onDeleteScript}
-        />
-      )}
-      {sub === 'writers' && (
-        <WritersTab
-          station={station}
-          marketWriters={marketRoster?.writers || []}
-          onHireWriter={onHireWriter}
-          onFireWriter={onFireWriter}
         />
       )}
     </div>
