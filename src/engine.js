@@ -664,7 +664,12 @@ function affinityComponents(prodDesignId, sfxId, categoryId, station = null) {
  *  Movies/sports take a shortcut path because their identity is mostly
  *  predetermined; we still produce components so the UI can display them,
  *  but movies will skip the review modal anyway. */
-function rollProgramComponents(opts, station, research) {
+function rollProgramComponents(opts, station, research, deterministic = false) {
+  // When `deterministic` is true, all `rnd()` noise becomes 0. Used by
+  // projectShow / estimateProgramQH to produce stable predictions that match
+  // the airing path's *central tendency*. The estimate UI applies ±variance
+  // around this stable value to show the player a plausible range.
+  const noise = deterministic ? (() => 0) : rnd
   // ── MOVIE PATH ──────────────────────────────────────────────────────────
   // Movies arrive finished. Only marketing + tech tiers can nudge the score;
   // our prod-design/SFX/music tier choices don't apply. Hype is read from the
@@ -682,10 +687,10 @@ function rollProgramComponents(opts, station, research) {
     const h = bumped.h
     // Synthesize components clustered around q so UI is consistent
     return {
-      narrative: r1(clamp(q + rnd(-0.5, 0.5), 0, 10)),
-      art: r1(clamp(q + rnd(-0.3, 0.5), 0, 10)),
-      innovation: r1(clamp(q + rnd(-0.7, 0.3), 0, 10)),
-      technical: r1(clamp(q + tech.q * 0.5 + rnd(-0.4, 0.4), 0, 10)),
+      narrative: r1(clamp(q + noise(-0.5, 0.5), 0, 10)),
+      art: r1(clamp(q + noise(-0.3, 0.5), 0, 10)),
+      innovation: r1(clamp(q + noise(-0.7, 0.3), 0, 10)),
+      technical: r1(clamp(q + tech.q * 0.5 + noise(-0.4, 0.4), 0, 10)),
       q: r1(q), h: r1(h),
     }
   }
@@ -706,27 +711,27 @@ function rollProgramComponents(opts, station, research) {
       (lg?.baseQ || 5) * 0.3
       + (star ? star.q * (star.specialty === 'sports' ? 1 : 0.5) * 0.6 : 0)
       + (dir ? dir.q * (dir.specialty === 'sports' ? 1 : 0.5) * 0.4 : 0)
-      + rnd(-0.5, 0.5)
+      + noise(-0.5, 0.5)
     , 0, 10)
     // Art — graphics, themes, music; secondary
     const art = clamp(
       (lg?.baseQ || 5) * 0.3
       + aff.artDelta
       + (music?.artBonus || 0)
-      + rnd(-0.4, 0.4)
+      + noise(-0.4, 0.4)
     , 0, 10)
     // Innovation — director's vision + freshness of format
     const innovation = clamp(
       (lg?.baseQ || 5) * 0.4
       + (dir ? dir.q * (dir.specialty === 'sports' ? 1 : 0.5) * 0.5 : 0)
-      + rnd(-0.5, 0.5)
+      + noise(-0.5, 0.5)
     , 0, 10)
     // Technical — the actual broadcast
     const technical = clamp(
       (lg?.baseQ || 5) * 0.6
       + aff.technicalDelta
       + tech.q * 1.5
-      + rnd(-0.3, 0.3)
+      + noise(-0.3, 0.3)
     , 0, 10)
     // Per-market hype multiplier — college and regional leagues run hot in
     // local/metro markets but cool at national scale, where they compete with
@@ -776,7 +781,7 @@ function rollProgramComponents(opts, station, research) {
   const ipNarr = ip ? (ip.q || 0) * 0.7 : 0
   const musicNarr = music?.narrativeBonus || 0
   const narrative = clamp(
-    baseQ * 0.45 + writerNarr + scriptNarr + starNarr + ipNarr + musicNarr + rnd(-0.4, 0.4)
+    baseQ * 0.45 + writerNarr + scriptNarr + starNarr + ipNarr + musicNarr + noise(-0.4, 0.4)
   , 0, 10)
 
   // ── ART ─────────────────────────────────────────────────────────────────
@@ -786,7 +791,7 @@ function rollProgramComponents(opts, station, research) {
   const ipArt = ip ? (ip.q || 0) * 0.3 : 0
   const musicArt = music?.artBonus || 0
   const art = clamp(
-    baseQ * 0.35 + aff.artDelta + dirArt + starArt + ipArt + musicArt + rnd(-0.4, 0.4)
+    baseQ * 0.35 + aff.artDelta + dirArt + starArt + ipArt + musicArt + noise(-0.4, 0.4)
   , 0, 10)
 
   // ── INNOVATION ─────────────────────────────────────────────────────────
@@ -795,13 +800,13 @@ function rollProgramComponents(opts, station, research) {
   const writerInnov = writer ? writer.skill * 2.5 * (writer.specialty === opts.categoryId ? 1 : 0.6) : 0
   const ipInnov = ip ? (ip.q || 0) * 0.4 : 0
   const innovation = clamp(
-    baseQ * 0.35 + dirInnov + writerInnov + ipInnov + rnd(-0.5, 0.5)
+    baseQ * 0.35 + dirInnov + writerInnov + ipInnov + noise(-0.5, 0.5)
   , 0, 10)
 
   // ── TECHNICAL ──────────────────────────────────────────────────────────
   // Audio/subs/video tiers drive this, plus SFX rigor.
   const technical = clamp(
-    baseQ * 0.4 + aff.technicalDelta + tech.q * 1.6 + rnd(-0.3, 0.3)
+    baseQ * 0.4 + aff.technicalDelta + tech.q * 1.6 + noise(-0.3, 0.3)
   , 0, 10)
 
   // Weighted overall Q
@@ -813,7 +818,7 @@ function rollProgramComponents(opts, station, research) {
   const dirH = dir ? dir.h * dirMatch : 0
   const starH = starHContrib
   const ipH = ip ? (ip.h || 0) : 0
-  const rawH = clamp(baseH + scriptH + dirH + starH + ipH + (mkt?.h || 0) + tech.h + rnd(-0.4, 0.4), 0, 10)
+  const rawH = clamp(baseH + scriptH + dirH + starH + ipH + (mkt?.h || 0) + tech.h + noise(-0.4, 0.4), 0, 10)
 
   // ── SPECIALIZATION BONUS ───────────────────────────────────────────────
   // Apply the station's per-genre star bonus. Stars 0.5+ give Q; stars 3+
@@ -859,28 +864,35 @@ function techBonus(audioId, subsId, videoId, station = null) {
 
 /** Estimation range for a planned program — used by build UI live preview.
  *  Does NOT consume a script or modify station state. */
-// Per-airing noise band — matches the noise rollProgramComponents will inject
-// at airing time. Picking the same options twice should yield the same range.
-const ESTIMATE_VARIANCE_Q = 0.5
-const ESTIMATE_VARIANCE_H = 0.4
+// Variance band shown around the central estimate. This must reflect what the
+// player will *actually see at airing time*, not just the production roll.
+// Live airing adds ±1.0 noise to qLive (airShow), so the Q axis is genuinely
+// uncertain by about that much. Hype is rolled at production then has slot/
+// seasonal bonuses applied at scheduling, so the H range is slightly tighter.
+const ESTIMATE_VARIANCE_Q = 1.0
+const ESTIMATE_VARIANCE_H = 0.8
 
 export function estimateProgramQH(opts, station, research) {
-  // Use projectShow's deterministic core (no rnd) for stable predictions.
-  // We synthesize the equivalent components from the same inputs without
-  // calling rollProgramComponents (which injects rnd noise).
-  const proj = projectShow(opts, station, research, 0)
-  const q = proj.quality
-  const h = proj.hype
-
-  // For component breakdown, derive plausible numbers around q (the UI uses
-  // these for the radar; they're informational, not the source of truth).
+  // The estimate the player sees in production must match what
+  // `rollProgramComponents` will actually produce at program-creation time —
+  // that becomes `program.trueQ`/`trueH`, which the airing then samples from
+  // with ±1 live noise. Calling rollProgramComponents with `deterministic=true`
+  // gives us the central tendency (no per-component rnd noise), and we surface
+  // ±ESTIMATE_VARIANCE around that as the range.
+  //
+  // Note: projectShow is intentionally NOT used here. It contains its own
+  // simplified scripted-path formula that misses things like the script's
+  // baseQuality contribution. Going through rollProgramComponents guarantees
+  // estimate ↔ actual parity.
+  const rolled = rollProgramComponents(opts, station, research, true)
+  const q = rolled.q
+  const h = rolled.h
   const components = {
-    narrative:  r1(q),
-    art:        r1(q),
-    innovation: r1(q),
-    technical:  r1(q),
+    narrative:  rolled.narrative,
+    art:        rolled.art,
+    innovation: rolled.innovation,
+    technical:  rolled.technical,
   }
-
   return {
     q, h,
     components,
@@ -3448,6 +3460,15 @@ export function initGame(setup) {
     ownedShows: [],
     pendingHires: [],            // resolved positions waiting for player to pick a candidate
     ledger: [],                  // [{ year, month, kind, label, amount, programId?, programName? }]
+    // Tutorial state — initialized here so the App can read it from day 1.
+    // `enabled` is set by the setup screen's radio choice.
+    tutorial: {
+      enabled: !!setup.tutorialEnabled,
+      skipped: false,
+      currentStepIdx: 0,
+      visited: {},
+      initialTalentCount: startDirs.length + startStars.length,
+    },
     log: [
       `📡 ${station.name} broadcasting on ${MARKETS.local.label}`,
       `Free starting roster: ${startDirs.length} directors, ${startStars.length} stars (12-month contracts)${startWriter ? `, 1 writer (${startWriter.name}, free)` : ''}`,

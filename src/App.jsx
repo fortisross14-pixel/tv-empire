@@ -109,6 +109,9 @@ import { ContentScreen } from './components/ContentScreen'
 import { ReviewModal } from './components/ReviewModal'
 import { FinancialsScreen } from './components/FinancialsScreen'
 import { SectionTitle } from './components/ui'
+import { TutorialPanel } from './components/TutorialPanel'
+import { TutorialPointer } from './components/TutorialPointer'
+import { currentTutorialStep, isNavAllowed, isContinueLocked, TUTORIAL_STEPS } from './tutorial.js'
 import { play as playSound, initOnGesture, isMuted, toggleMuted } from './audio'
 import { Icon } from './icons.jsx'
 
@@ -332,6 +335,80 @@ export default function App() {
     root.style.setProperty('--brand-fg',     brand.fg)
     root.style.setProperty('--brand-accent', brand.accent)
   }, [game?.station?.brandId])
+
+  // ─── TUTORIAL DETECTION ─────────────────────────────────────────────
+  // Watch game state. When the current step's predicate is true, advance.
+  // Handles "already done" auto-advance silently (no animation flash for now;
+  // Round 3 polish can add one).
+  useEffect(() => {
+    if (game?.phase !== 'plan') return
+    const t = game?.tutorial
+    if (!t || !t.enabled || t.skipped) return
+    const step = currentTutorialStep(game)
+    if (!step || step.isFinal) return
+    try {
+      if (step.isDone(game)) {
+        // Advance one step.
+        setGame(g => ({
+          ...g,
+          tutorial: {
+            ...g.tutorial,
+            currentStepIdx: (g.tutorial?.currentStepIdx || 0) + 1,
+          },
+        }))
+      }
+    } catch (e) {
+      // Predicate threw — log and skip (don't crash the game over a bad step).
+      console.warn('Tutorial predicate error on step', step.id, e)
+    }
+  }, [game])
+
+  // Track view-visits for tutorial step turn2_peek_data. The step requires
+  // the player to peek at both Financials and Achievements.
+  useEffect(() => {
+    if (!game?.tutorial?.enabled || game?.tutorial?.skipped) return
+    if (view === 'financials' && !game.tutorial.visited?.financials) {
+      setGame(g => ({
+        ...g,
+        tutorial: {
+          ...g.tutorial,
+          visited: { ...(g.tutorial.visited || {}), financials: true },
+        },
+      }))
+    }
+  }, [view, game?.tutorial?.enabled, game?.tutorial?.skipped])
+
+  // When the achievements modal opens, mark it as visited.
+  useEffect(() => {
+    if (!game?.tutorial?.enabled || game?.tutorial?.skipped) return
+    if (achievementsOpen && !game.tutorial.visited?.achievements) {
+      setGame(g => ({
+        ...g,
+        tutorial: {
+          ...g.tutorial,
+          visited: { ...(g.tutorial.visited || {}), achievements: true },
+        },
+      }))
+    }
+  }, [achievementsOpen, game?.tutorial?.enabled, game?.tutorial?.skipped])
+
+  // Tutorial actions.
+  const onTutorialSkip = () => {
+    setGame(g => ({
+      ...g,
+      tutorial: { ...(g.tutorial || {}), skipped: true },
+    }))
+  }
+  const onTutorialDismissFinal = () => {
+    // Final step is dismissed by setting currentStepIdx past the end.
+    setGame(g => ({
+      ...g,
+      tutorial: {
+        ...(g.tutorial || {}),
+        currentStepIdx: TUTORIAL_STEPS.length,
+      },
+    }))
+  }
 
   // ─── SETUP ───────────────────────────────────────────────────────────
   const startGame = (setup) => {
@@ -1787,6 +1864,20 @@ export default function App() {
           onDismiss={() => setAchievementPopupQueue(q => q.slice(1))}
         />
       )}
+
+      {/* Tutorial coach panel + nav pointer — only render in 'plan' phase
+          so they don't appear over results/awards screens. Each is internally
+          a no-op when tutorial is off, skipped, or finished. */}
+      {game.phase === 'plan' && (
+        <>
+          <TutorialPanel
+            game={game}
+            onSkip={onTutorialSkip}
+            onDismissFinal={onTutorialDismissFinal}
+          />
+          <TutorialPointer game={game} />
+        </>
+      )}
     </div>
     </ErrorBoundary>
   )
@@ -1799,10 +1890,14 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
   const brand = findBrand(game.station.brandId)
 
   // Continue button: in plan flow advances month from any tab; in results dismisses; in awards goes to new year
+  // Tutorial gating: some steps lock the "Air Month" button until the
+  // required action is taken (e.g. "Hire a writer first"). Doesn't affect
+  // Continue on the results or awards screens.
+  const tutorialLocksContinue = (game.phase === 'plan') && isContinueLocked(game)
   const continueAction =
     game.phase === 'results' ? onContinueResults :
     game.phase === 'awards' ? onContinueAwards :
-    (isInPlanFlow && !cashBlocker) ? onAdvanceMonth :
+    (isInPlanFlow && !cashBlocker && !tutorialLocksContinue) ? onAdvanceMonth :
     null
   const continueLabel =
     game.phase === 'results' ? 'Continue' :
@@ -1911,6 +2006,7 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
             </div>
           </div>
           <button
+            id="topbar-continue"
             onClick={continueEnabled ? continueAction : undefined}
             disabled={!continueEnabled}
             style={{
@@ -1942,36 +2038,43 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
           borderTop: `1px solid ${T.border}`,
           overflowX: 'auto', scrollbarWidth: 'none',
         }}>
-          <NavTab label="Programming" active={view === 'plan'} onClick={() => setView('plan')} brand={brand} />
-          <NavTab label="Content" active={view === 'content'} onClick={() => setView('content')} brand={brand} />
-          <NavTab label="Operations" active={view === 'operations'} onClick={() => setView('operations')} brand={brand} />
-          <NavTab label="Research" active={view === 'research'} onClick={() => setView('research')} brand={brand} />
-          <NavTab label="History" active={view === 'history'} onClick={() => setView('history')} brand={brand} />
-          <NavTab label="Audiences" active={view === 'market'} onClick={() => setView('market')} brand={brand} />
-          <NavTab label="Financials" active={view === 'financials'} onClick={() => setView('financials')} brand={brand} />
+          <NavTab id="nav-plan" navId="plan" label="Programming" active={view === 'plan'} game={game} onClick={() => setView('plan')} brand={brand} />
+          <NavTab id="nav-content" navId="content" label="Content" active={view === 'content'} game={game} onClick={() => setView('content')} brand={brand} />
+          <NavTab id="nav-operations" navId="operations" label="Operations" active={view === 'operations'} game={game} onClick={() => setView('operations')} brand={brand} />
+          <NavTab id="nav-research" navId="research" label="Research" active={view === 'research'} game={game} onClick={() => setView('research')} brand={brand} />
+          <NavTab id="nav-history" navId="history" label="History" active={view === 'history'} game={game} onClick={() => setView('history')} brand={brand} />
+          <NavTab id="nav-market" navId="market" label="Audiences" active={view === 'market'} game={game} onClick={() => setView('market')} brand={brand} />
+          <NavTab id="nav-financials" navId="financials" label="Financials" active={view === 'financials'} game={game} onClick={() => setView('financials')} brand={brand} />
         </div>
       )}
     </div>
   )
 }
 
-function NavTab({ label, active, onClick, brand }) {
+function NavTab({ id, navId, label, active, onClick, brand, game }) {
   const activeColor = brand?.accent || T.accent
+  // Tutorial gating: dim and disable nav tabs not in the current step's
+  // allowedNavs. The current tab itself stays clickable so the player isn't
+  // stranded if they're already on a now-disallowed page.
+  const allowed = !game || isNavAllowed(game, navId) || active
   const handleClick = () => {
+    if (!allowed) return
     if (!active) playSound('tap')
     onClick()
   }
   return (
-    <button onClick={handleClick} style={{
+    <button id={id} onClick={handleClick} disabled={!allowed} style={{
       background: 'transparent', border: 'none',
-      color: active ? activeColor : T.muted,
+      color: active ? activeColor : (allowed ? T.muted : T.border),
       fontFamily: "'Inter Tight', sans-serif",
       fontSize: 12, fontWeight: active ? 600 : 500,
       letterSpacing: '.02em',
-      padding: '11px 13px', cursor: 'pointer',
+      padding: '11px 13px',
+      cursor: allowed ? 'pointer' : 'not-allowed',
+      opacity: allowed ? 1 : 0.45,
       borderBottom: `2px solid ${active ? activeColor : 'transparent'}`,
       marginBottom: -1, whiteSpace: 'nowrap',
-      transition: 'color .15s',
+      transition: 'color .15s, opacity .15s',
     }}
     onMouseEnter={e => { if (!active) e.currentTarget.style.color = T.text }}
     onMouseLeave={e => { if (!active) e.currentTarget.style.color = T.muted }}

@@ -8,6 +8,9 @@ export function SetupScreen({ onStart }) {
   const [name, setName] = useState('')
   const [focusId, setFocusId] = useState('general')
   const [brandId, setBrandId] = useState('ember')
+  // Tutorial choice — default ON since most new players benefit from it.
+  // Player explicitly chooses Free Play to opt out.
+  const [tutorialEnabled, setTutorialEnabled] = useState(true)
 
   const brand = findBrand(brandId)
   const ready = name.trim().length >= 2
@@ -216,7 +219,7 @@ export function SetupScreen({ onStart }) {
             border: `1px solid ${T.border}`,
             borderRadius: 5,
             padding: 14,
-            marginBottom: 22,
+            marginBottom: 14,
           }}>
             <Label style={{ marginBottom: 6 }}>Starting Market</Label>
             <div className="display" style={{ fontSize: 18, color: T.teal, marginBottom: 4, letterSpacing: '.04em' }}>
@@ -227,13 +230,40 @@ export function SetupScreen({ onStart }) {
             </div>
           </div>
 
+          {/* Tutorial choice */}
+          <div style={{
+            background: T.card,
+            border: `1px solid ${T.border}`,
+            borderRadius: 5,
+            padding: 14,
+            marginBottom: 22,
+          }}>
+            <Label style={{ marginBottom: 10 }}>Game Mode</Label>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <ModeRadio
+                checked={tutorialEnabled}
+                onChange={() => setTutorialEnabled(true)}
+                brand={brand}
+                title="Guided tutorial"
+                subtitle="Recommended for new players — walks you through the first 3 months."
+              />
+              <ModeRadio
+                checked={!tutorialEnabled}
+                onChange={() => setTutorialEnabled(false)}
+                brand={brand}
+                title="Free play"
+                subtitle="Skip the tutorial. Start with the same resources and explore on your own."
+              />
+            </div>
+          </div>
+
           {/* CTA */}
           <button
             disabled={!ready}
             onClick={() => {
               initOnGesture()
               playSound('confirm')
-              onStart({ name: name.trim(), focusId, brandId })
+              onStart({ name: name.trim(), focusId, brandId, tutorialEnabled })
             }}
             style={{
               width: '100%',
@@ -272,5 +302,46 @@ function Label({ children, style }) {
     }}>
       {children}
     </div>
+  )
+}
+
+function ModeRadio({ checked, onChange, brand, title, subtitle }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10,
+        padding: '10px 12px',
+        background: checked ? brand.accent + '15' : T.surface,
+        border: `1.5px solid ${checked ? brand.accent : T.border}`,
+        borderRadius: 5,
+        cursor: 'pointer',
+        textAlign: 'left',
+        transition: 'background .15s, border-color .15s',
+      }}
+    >
+      <div style={{
+        width: 16, height: 16, borderRadius: '50%',
+        border: `2px solid ${checked ? brand.accent : T.border}`,
+        flexShrink: 0, marginTop: 2,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {checked && (
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%', background: brand.accent,
+          }} />
+        )}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontSize: 13, fontWeight: 600,
+          color: checked ? T.text : T.textDim,
+        }}>{title}</div>
+        <div style={{
+          fontSize: 11, color: T.muted, marginTop: 2, lineHeight: 1.4,
+        }}>{subtitle}</div>
+      </div>
+    </button>
   )
 }
