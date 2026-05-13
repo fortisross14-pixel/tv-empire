@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { T } from '../theme.js'
 import { CATEGORIES, SLOT_TYPES, MONTHS } from '../constants.js'
 import { HTag, Bar } from './ui.jsx'
@@ -6,22 +7,24 @@ import { play as playSound } from '../audio.js'
 import {
   projectShow, findDirector, findStar, findIP, findMovie, findLeague,
   getSeasonalPref, cancelRunCost,
+  slotAutoAt, idleSchedulingDirectors,
 } from '../engine.js'
 
 /**
- * SlotCard — two visual states:
- *   1. EMPTY  → a flat "off" tile: deep void color, no border, faint inset.
- *               Hover lifts it. Click to plan.
- *   2. ACTIVE → a fully "lit" broadcast tile with:
- *                 · category-color edge bar (animated pulse while airing)
- *                 · raised contrast
- *                 · prominent title set in editorial serif
- *                 · projected quality/hype bars
- *                 · ON-AIR red dot while currently running
+ * SlotCard — three visual states:
+ *   1. EMPTY  → flat "off" tile; click to plan.
+ *   2. ACTIVE → broadcast tile with title, ratings, cancel button.
+ *   3. AUTO   → "Director-managed" tile showing category focus + cancel button.
+ *               Manual scheduling is BLOCKED while auto is on this slot.
  */
-export function SlotCard({ plan, run, idx, slotTypeId, cycleIdx, station, research, onClick, onCancel }) {
+export function SlotCard({
+  plan, run, idx, slotTypeId, cycleIdx, station, research,
+  onClick, onCancel,
+  onAssignSchedDirector, onCancelSchedDirector,
+}) {
   const slotType = SLOT_TYPES[slotTypeId] || SLOT_TYPES.prime
   const seasonal = getSeasonalPref(slotTypeId, cycleIdx)
+  const auto = slotAutoAt(station, idx)
 
   if (run) {
     return <ActiveRunCard
@@ -30,42 +33,45 @@ export function SlotCard({ plan, run, idx, slotTypeId, cycleIdx, station, resear
     />
   }
 
+  if (auto) {
+    return <AutoManagedSlotCard
+      slotType={slotType} auto={auto} slotIdx={idx}
+      onCancelSchedDirector={onCancelSchedDirector}
+    />
+  }
+
   return <EmptySlotCard
-    slotType={slotType} cycleIdx={cycleIdx} seasonal={seasonal} onClick={onClick}
+    slotType={slotType} cycleIdx={cycleIdx} seasonal={seasonal}
+    onClick={onClick}
+    canAssignAuto={idleSchedulingDirectors(station) > 0}
+    slotIdx={idx}
+    onAssignSchedDirector={onAssignSchedDirector}
   />
 }
 
 // ─── EMPTY SLOT — visible but distinct from filled ────────────────────
-function EmptySlotCard({ slotType, cycleIdx, seasonal, onClick }) {
+function EmptySlotCard({
+  slotType, cycleIdx, seasonal, onClick,
+  canAssignAuto, slotIdx, onAssignSchedDirector,
+}) {
+  const [picking, setPicking] = useState(false)
   return (
-    <button
-      onClick={() => { playSound('tick'); onClick() }}
-      style={{
-        display: 'block',
-        width: '100%',
-        background: T.surface,
-        border: `1px dashed ${T.borderHi}`,
-        borderRadius: 6,
-        padding: '16px 14px',
-        textAlign: 'left',
-        cursor: 'pointer',
-        color: T.text,
-        position: 'relative',
-        transition: 'all .15s ease',
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.background = T.card
-        e.currentTarget.style.borderColor = T.accent
-        e.currentTarget.style.borderStyle = 'solid'
-        e.currentTarget.style.boxShadow = `0 4px 14px rgba(240,163,71,.08)`
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.background = T.surface
-        e.currentTarget.style.borderColor = T.borderHi
-        e.currentTarget.style.borderStyle = 'dashed'
-        e.currentTarget.style.boxShadow = 'none'
-      }}
-    >
+    <div style={{
+      position: 'relative',
+      background: T.surface,
+      border: `1px dashed ${T.borderHi}`,
+      borderRadius: 6,
+      transition: 'all .15s ease',
+    }}>
+      <button
+        onClick={() => { playSound('tick'); onClick() }}
+        style={{
+          display: 'block', width: '100%',
+          background: 'transparent', border: 'none',
+          borderRadius: 6, padding: '16px 14px',
+          textAlign: 'left', cursor: 'pointer', color: T.text,
+        }}
+      >
       {/* Top row: icon + slot label — full color, properly readable */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 9,
@@ -122,7 +128,122 @@ function EmptySlotCard({ slotType, cycleIdx, seasonal, onClick }) {
         <Icon name="plus" size={12} color={T.accent} />
         <span>Plan a program</span>
       </div>
-    </button>
+      </button>
+
+      {/* Auto-assign affordance — only shown if there's an idle scheduling director */}
+      {canAssignAuto && !picking && (
+        <div style={{
+          padding: '0 14px 12px',
+          display: 'flex', justifyContent: 'flex-end',
+        }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setPicking(true) }}
+            style={{
+              fontSize: 10, color: T.muted,
+              background: 'transparent', border: `1px dashed ${T.border}`,
+              borderRadius: 3, padding: '4px 8px',
+              cursor: 'pointer', letterSpacing: '.05em',
+            }}
+          >
+            🗓 Auto-assign director
+          </button>
+        </div>
+      )}
+      {canAssignAuto && picking && (
+        <CategoryPicker
+          onPick={(catId) => {
+            setPicking(false)
+            onAssignSchedDirector?.(slotIdx, catId)
+          }}
+          onCancel={() => setPicking(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── AUTO-MANAGED SLOT — director owns it, manual scheduling blocked ──
+function AutoManagedSlotCard({ slotType, auto, slotIdx, onCancelSchedDirector }) {
+  const cat = CATEGORIES.find(c => c.id === auto.categoryId)
+  return (
+    <div style={{
+      background: T.surface,
+      border: `1px solid ${T.gold}55`,
+      borderRadius: 6,
+      padding: '14px 14px 12px',
+      position: 'relative',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6,
+      }}>
+        <SlotIcon slotTypeId={slotType.id} size={16} color={T.gold} />
+        <div className="display" style={{
+          fontSize: 13, color: T.gold, letterSpacing: '.06em', textTransform: 'uppercase',
+        }}>
+          {slotType.label}
+        </div>
+        <div style={{
+          marginLeft: 'auto', fontSize: 9, color: T.gold, letterSpacing: '.1em',
+          padding: '2px 6px', background: T.gold + '22', borderRadius: 3, fontWeight: 700,
+        }}>
+          AUTO
+        </div>
+      </div>
+
+      <div style={{
+        fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5,
+      }}>
+        Director of Scheduling is producing <strong style={{ color: T.text }}>{cat?.label || auto.categoryId}</strong> programs here every month.
+        Quality 0.9× · Hype 0.85× vs hand-crafted.
+      </div>
+
+      <button
+        onClick={() => onCancelSchedDirector?.(slotIdx)}
+        style={{
+          fontSize: 11, color: T.muted,
+          background: 'transparent', border: `1px solid ${T.border}`,
+          borderRadius: 3, padding: '5px 10px',
+          cursor: 'pointer',
+        }}
+      >
+        Cancel auto-scheduling
+      </button>
+    </div>
+  )
+}
+
+// ─── CATEGORY PICKER (used by EmptySlot to assign auto director) ──────
+function CategoryPicker({ onPick, onCancel }) {
+  return (
+    <div style={{
+      padding: 10, margin: '0 10px 10px',
+      background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4,
+    }}>
+      <div style={{
+        fontSize: 10, color: T.muted, letterSpacing: '.1em', marginBottom: 6,
+      }}>FOCUS CATEGORY</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4 }}>
+        {CATEGORIES.map(c => (
+          <button key={c.id}
+            onClick={() => onPick(c.id)}
+            style={{
+              background: 'transparent', border: `1px solid ${T.border}`,
+              color: T.text, fontSize: 11, padding: '6px 8px',
+              borderRadius: 3, cursor: 'pointer', textAlign: 'left',
+            }}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ textAlign: 'right', marginTop: 6 }}>
+        <button onClick={onCancel} style={{
+          fontSize: 10, color: T.muted,
+          background: 'transparent', border: 'none',
+          cursor: 'pointer',
+        }}>Cancel</button>
+      </div>
+    </div>
   )
 }
 

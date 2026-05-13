@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { T } from '../theme.js'
 import { CATEGORIES, CATEGORY_IDS, MONTHS } from '../constants.js'
 import { SectionTitle } from './ui.jsx'
-import { fmtM, findLeague, findMovie } from '../engine.js'
+import { fmtM, findLeague, findMovie, r1 } from '../engine.js'
 
 const METRICS = [
   { id: 'quality',  label: 'Quality',   key: 'quality',  color: '#45c47a', max: 10 },
@@ -51,7 +51,7 @@ export function HistoryScreen({ stationName, allShows, competitorAllShows, progr
       </div>
 
       {tab === 'productions' ? (
-        <ProductionsList programs={programs || []} />
+        <ProductionsList programs={programs || []} allShows={allShows || []} />
       ) : (
         <LeaderboardView
           stationName={stationName}
@@ -64,28 +64,92 @@ export function HistoryScreen({ stationName, allShows, competitorAllShows, progr
 }
 
 // ─── MY PRODUCTIONS TAB ──────────────────────────────────────────────────────
-function ProductionsList({ programs }) {
+function ProductionsList({ programs, allShows }) {
   const [filter, setFilter] = useState('all')
 
+  // Aggregate auto-scheduled airings into pseudo-program rows so the
+  // Director-managed programming appears alongside the player's own
+  // productions. Auto-airings share the synthetic programId
+  // `auto:<slotIdx>:<categoryId>` and we group by that key.
+  const autoPrograms = useMemo(() => {
+    const groups = new Map()
+    for (const a of allShows || []) {
+      if (!a._isAuto || !a.programId) continue
+      const key = a.programId
+      if (!groups.has(key)) {
+        groups.set(key, {
+          id: key,
+          name: a.name, // e.g. "Director-managed: reality"
+          categoryId: a.categoryId,
+          status: 'auto',
+          isAuto: true,
+          airings: [],
+          firstYear: a.year,
+          firstMonth: a.month,
+        })
+      }
+      groups.get(key).airings.push(a)
+    }
+    // Convert each group into a program-like record with totals
+    const result = []
+    for (const g of groups.values()) {
+      const n = g.airings.length
+      const sumQ = g.airings.reduce((s, a) => s + (a.quality || 0), 0)
+      const sumH = g.airings.reduce((s, a) => s + (a.hype || 0), 0)
+      const sumR = g.airings.reduce((s, a) => s + (a.rating || 0), 0)
+      const sumAud = g.airings.reduce((s, a) => s + (a.audience || 0), 0)
+      const sumRev = g.airings.reduce((s, a) => s + (a.revenue || 0), 0)
+      const sumCost = g.airings.reduce((s, a) => s + (a.cost || 0), 0)
+      // Sort airings newest first for the timeline
+      const aiHistory = g.airings.slice().sort((a, b) =>
+        (b.year - a.year) || (b.month - a.month)
+      ).map(a => ({
+        year: a.year, month: a.month,
+        rating: a.rating, audience: a.audience, net: (a.revenue || 0) - (a.cost || 0),
+      }))
+      result.push({
+        id: g.id,
+        name: g.name,
+        categoryId: g.categoryId,
+        status: g.status,
+        isAuto: true,
+        revealed: true,
+        bornYear: g.firstYear,
+        airingsCount: n,
+        avgQuality: r1(sumQ / n),
+        avgHype: r1(sumH / n),
+        avgRating: r1(sumR / n),
+        totalAudience: r1(sumAud),
+        totalRevenue: r1(sumRev),
+        totalCost: r1(sumCost),
+        aiHistory,
+      })
+    }
+    return result
+  }, [allShows])
+
+  const combined = useMemo(() => [...programs, ...autoPrograms], [programs, autoPrograms])
+
   const filtered = useMemo(() => {
-    let pool = programs
-    if (filter !== 'all') pool = programs.filter(p => p.status === filter)
+    let pool = combined
+    if (filter !== 'all') pool = combined.filter(p => p.status === filter)
     // Newest first (revealed first, then by airingsCount desc)
     return [...pool].sort((a, b) => {
       if (a.revealed !== b.revealed) return a.revealed ? -1 : 1
       return (b.airingsCount || 0) - (a.airingsCount || 0)
     })
-  }, [programs, filter])
+  }, [combined, filter])
 
   const counts = {
-    all: programs.length,
-    airing: programs.filter(p => p.status === 'airing').length,
-    shelf: programs.filter(p => p.status === 'shelf').length,
-    producing: programs.filter(p => p.status === 'producing').length,
-    finished: programs.filter(p => p.status === 'finished').length,
+    all: combined.length,
+    airing: combined.filter(p => p.status === 'airing').length,
+    shelf: combined.filter(p => p.status === 'shelf').length,
+    producing: combined.filter(p => p.status === 'producing').length,
+    finished: combined.filter(p => p.status === 'finished').length,
+    auto: combined.filter(p => p.status === 'auto').length,
   }
 
-  if (programs.length === 0) {
+  if (combined.length === 0) {
     return (
       <div style={{
         background: T.surface, border: `1px dashed ${T.border}`,
@@ -107,6 +171,9 @@ function ProductionsList({ programs }) {
         <Chip label={`Shelf (${counts.shelf})`} active={filter === 'shelf'} onClick={() => setFilter('shelf')} />
         <Chip label={`Producing (${counts.producing})`} active={filter === 'producing'} onClick={() => setFilter('producing')} />
         <Chip label={`Done (${counts.finished})`} active={filter === 'finished'} onClick={() => setFilter('finished')} />
+        {counts.auto > 0 && (
+          <Chip label={`Auto (${counts.auto})`} active={filter === 'auto'} onClick={() => setFilter('auto')} />
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -125,6 +192,10 @@ function ProductionsList({ programs }) {
 }
 
 function ProductionRow({ program: p }) {
+  // Auto-scheduled rows have a different shape: avgQ/avgH/avgRating instead
+  // of trueQ/components, status='auto', and a 🗓 badge.
+  if (p.isAuto) return <AutoProductionRow program={p} />
+
   const cat = CATEGORIES[p.categoryId]
   const league = p.sportsLeagueId ? findLeague(p.sportsLeagueId) : null
   const movie = p.movieId ? findMovie(p.movieId) : null
@@ -210,6 +281,75 @@ function ProductionRow({ program: p }) {
           fontSize: 11, color: T.muted, fontStyle: 'italic', lineHeight: 1.4,
         }}>📰 “{p.review.quote}”</div>
       )}
+    </div>
+  )
+}
+
+function AutoProductionRow({ program: p }) {
+  const cat = CATEGORIES[p.categoryId]
+  const profit = (p.totalRevenue || 0) - (p.totalCost || 0)
+
+  return (
+    <div style={{
+      background: T.card,
+      border: `1px solid ${T.gold}55`,
+      borderLeft: `3px solid ${T.gold}`,
+      borderRadius: 6,
+      padding: 12,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 6 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>
+            {p.name}
+          </div>
+          <div style={{ fontSize: 10, color: T.muted, marginTop: 3 }}>
+            {cat?.icon} {cat?.label}
+            {p.bornYear && <> · since Y{p.bornYear}</>}
+            <> · {p.airingsCount} airing{p.airingsCount > 1 ? 's' : ''}</>
+          </div>
+        </div>
+        <div style={{
+          fontSize: 9, color: T.gold, fontWeight: 700,
+          background: T.gold + '22', padding: '2px 6px', borderRadius: 3,
+          whiteSpace: 'nowrap', letterSpacing: '.08em',
+        }}>🗓 AUTO</div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, fontSize: 11, marginBottom: 8 }}>
+        <Field label="Avg Quality">
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: T.text }}>
+            {p.avgQuality.toFixed(1)}
+          </span>
+        </Field>
+        <Field label="Avg Hype">
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: T.gold }}>
+            {p.avgHype.toFixed(1)}
+          </span>
+        </Field>
+        <Field label="Avg Rating">
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: T.accent }}>
+            {p.avgRating.toFixed(1)}
+          </span>
+        </Field>
+        <Field label="Aud">
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: T.teal }}>
+            {(p.totalAudience || 0).toFixed(1)}M
+          </span>
+        </Field>
+        <Field label="P/L">
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: profit >= 0 ? T.green : T.red }}>
+            {fmtM(profit)}
+          </span>
+        </Field>
+      </div>
+
+      <div style={{
+        fontSize: 10.5, color: T.muted, lineHeight: 1.5,
+        paddingTop: 8, borderTop: `1px dashed ${T.border}`,
+      }}>
+        Director-managed programming — each month's quality and hype roll fresh
+        from the auto-scheduling band.
+      </div>
     </div>
   )
 }

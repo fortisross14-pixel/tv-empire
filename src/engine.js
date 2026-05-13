@@ -17,6 +17,11 @@ import {
   AUDIO_TIERS, SUBTITLE_TIERS, VIDEO_TIERS,
   STAFF_ROLES, STAFF_EFFECTS, STAFF_FIRST_NAMES, STAFF_LAST_NAMES,
   SEARCH_TIERS, STAFF_MONTHLY_SALARY,
+  DIRECTOR_ROLES, DIRECTOR_EFFECTS, DIRECTOR_SALARY, DIRECTOR_HIRE_COST, DIRECTOR_FIRE_PENALTY,
+  MERCH_PREPARE_COST, MERCH_BASE_REVENUE, MERCH_HYPE_EXPONENT,
+  AUTO_SCHED_Q_MULT, AUTO_SCHED_H_MULT,
+  AUTO_SCHED_BASE_Q_MIN, AUTO_SCHED_BASE_Q_MAX,
+  AUTO_SCHED_BASE_H_MIN, AUTO_SCHED_BASE_H_MAX,
   IP_LICENSE_TERMS, NETWORK_CAMPAIGNS,
   MOVIE_PACK_REBUY_HYPE_PENALTY, MOVIE_PACK_COOLDOWN_MONTHS,
   SCRIPT_TIERS, findScriptTier, SCRIPT_TIER_RANK, STAR_TIER_MAX_FOR_SCRIPT,
@@ -146,6 +151,13 @@ export function hireTalent(station, role, talent, contractTypeId) {
   if (list.find(h => h.talentId === talent.id)) {
     return { station, charged: 0, error: 'Already hired' }
   }
+  // Talent room cap — refuse hires that would put us over.
+  if (talentCount(station) >= talentCapacity(station)) {
+    return {
+      station, charged: 0,
+      error: `Talent room is full (${talentCapacity(station)}). Fire someone or upgrade.`,
+    }
+  }
   const upfront = r1(talent.cost * ct.costMult)
   if (station.cash < upfront) return { station, charged: 0, error: 'Not enough cash' }
 
@@ -204,6 +216,13 @@ export function hireWriter(station, writer) {
   }
   if (list.find(h => h.talentId === writer.id)) {
     return { station, charged: 0, error: 'Already hired' }
+  }
+  // Talent room cap shared across writers + creative directors + stars.
+  if (talentCount(station) >= talentCapacity(station)) {
+    return {
+      station, charged: 0,
+      error: `Talent room is full (${talentCapacity(station)}). Fire someone or upgrade.`,
+    }
   }
   const upfront = r1(writer.cost) // 1 month signing
   if (station.cash < upfront) return { station, charged: 0, error: 'Not enough cash' }
@@ -436,6 +455,13 @@ export function tickScripts(station) {
       // to the tier's caps. A normal script will never exceed Q 7 / H 70.
       baseQuality = r1(Math.min(tierDef.qCap, rollScriptQuality(writer, s.ipId)))
       originalHype = r1(Math.min(tierDef.hCap, rollScriptHype(writer, s.ipId)))
+      // Creative Director multiplier — only on first-time completion, not
+      // refresh. Keep clamped to the tier cap so super-scripts can't escape
+      // their natural ceiling.
+      const cdMult = creativeDirectorScriptMult(station)
+      if (cdMult !== 1.0) {
+        baseQuality = r1(Math.min(tierDef.qCap, baseQuality * cdMult))
+      }
     }
     const finished = {
       ...s,
@@ -569,10 +595,24 @@ export function programBuildCost(opts, station, research, year) {
   const pd = findProdDesign(opts.prodDesignId)
   const sfx = findSfx(opts.sfxId)
   const music = MUSIC_TIERS.find(m => m.id === opts.musicId)
-  const tierCost = (pd?.cost || 0) + (sfx?.cost || 0) + (music?.cost || 0)
+  // Director of Production: −15% on top-tier choices (pd_adhoc, sfx_heavy, etc.).
+  const pdMod  = productionDirectorMods(station, opts.prodDesignId)
+  const sfxMod = productionDirectorMods(station, opts.sfxId)
+  const tierCost = (pd?.cost || 0) * pdMod.costMult
+                 + (sfx?.cost || 0) * sfxMod.costMult
+                 + (music?.cost || 0)
   // Apply affinity cost multiplier (bad fits raise cost)
   const aff = affinityMods(opts.prodDesignId, opts.sfxId, opts.categoryId)
-  const total = (baseCost + tierCost) * aff.costMult
+  // Merchandising upfront prep cost — only for large/super scripts when
+  // prepareMerch is on. Resolve script tier from the chosen script.
+  let merchCost = 0
+  if (opts.prepareMerch && opts.scriptId) {
+    const s = (station.scripts || []).find(x => x.id === opts.scriptId)
+    if (s?.tier === 'large' || s?.tier === 'super') {
+      merchCost = merchPrepareCost(s.tier)
+    }
+  }
+  const total = (baseCost + tierCost) * aff.costMult + merchCost
   return r1(total)
 }
 
@@ -581,22 +621,26 @@ export const findMusic = id => MUSIC_TIERS.find(m => m.id === id) || null
 
 /** Split the affinityMods qDelta into art (prod-design contribution) and
  *  technical (sfx contribution). Both also pump up by tier intrinsic qBonus.
+ *  Director of Production adds +15% to the q contribution of top-tier prod
+ *  design and SFX choices.
  *  Returns { artDelta, technicalDelta, costMult }. */
-function affinityComponents(prodDesignId, sfxId, categoryId) {
+function affinityComponents(prodDesignId, sfxId, categoryId, station = null) {
   const pd = findProdDesign(prodDesignId)
   const sfx = findSfx(sfxId)
+  const pdMod  = productionDirectorMods(station, prodDesignId)
+  const sfxMod = productionDirectorMods(station, sfxId)
   let artDelta = 0
   let technicalDelta = 0
   let costMult = 1
   if (pd) {
-    artDelta += pd.qBonus || 0
+    artDelta += (pd.qBonus || 0) * pdMod.qMult
     const outcome = affinityOutcome(pd, categoryId)
     if (outcome === 'good') artDelta += AFFINITY_GOOD_Q
     else if (outcome === 'bad') { artDelta += AFFINITY_BAD_Q; costMult *= AFFINITY_BAD_COST_MULT }
   }
   if (sfx) {
     // SFX splits 60/40 between technical and art
-    const sfxBoost = (sfx.qBonus || 0)
+    const sfxBoost = (sfx.qBonus || 0) * sfxMod.qMult
     technicalDelta += sfxBoost * 0.6
     artDelta += sfxBoost * 0.4
     const outcome = affinityOutcome(sfx, categoryId)
@@ -628,7 +672,7 @@ function rollProgramComponents(opts, station, research) {
   if (opts.movieId) {
     const m = findMovie(opts.movieId)
     const mkt = findMarketing(opts.marketingId)
-    const tech = techBonus(opts.audioId, opts.subsId, opts.videoId)
+    const tech = techBonus(opts.audioId, opts.subsId, opts.videoId, station)
     const baseH = moviePackAiringHype(station, opts.movieId)
     const rawQ = clamp((m?.q || 5) + (mkt?.q || 0) + tech.q, 0, 10)
     const rawH = clamp(baseH + (mkt?.h || 0) + tech.h, 0, 10)
@@ -650,8 +694,8 @@ function rollProgramComponents(opts, station, research) {
   if (opts.sportsLeagueId) {
     const lg = findLeague(opts.sportsLeagueId)
     const mkt = findMarketing(opts.marketingId)
-    const tech = techBonus(opts.audioId, opts.subsId, opts.videoId)
-    const aff = affinityComponents(opts.prodDesignId, opts.sfxId, opts.categoryId)
+    const tech = techBonus(opts.audioId, opts.subsId, opts.videoId, station)
+    const aff = affinityComponents(opts.prodDesignId, opts.sfxId, opts.categoryId, station)
     const music = findMusic(opts.musicId)
     const dir = findDirector(opts.directorId)
     const star = findStar(opts.starId)
@@ -705,8 +749,8 @@ function rollProgramComponents(opts, station, research) {
   const star2 = opts.starId2 ? findStar(opts.starId2) : null
   const ip = opts.ipId ? findIP(opts.ipId) : null
   const mkt = findMarketing(opts.marketingId)
-  const tech = techBonus(opts.audioId, opts.subsId, opts.videoId)
-  const aff = affinityComponents(opts.prodDesignId, opts.sfxId, opts.categoryId)
+  const tech = techBonus(opts.audioId, opts.subsId, opts.videoId, station)
+  const aff = affinityComponents(opts.prodDesignId, opts.sfxId, opts.categoryId, station)
   const music = findMusic(opts.musicId)
   const writer = script ? findWriter(script.writerId) : null
 
@@ -796,8 +840,17 @@ function rollProgramQH(opts, station, research) {
 
 // helpers used above
 function findMarketing(id) { return MARKETING_TIERS.find(m => m.id === id) || null }
-function techBonus(audioId, subsId, videoId) {
-  return techBonuses({ audioId, subsId, videoId })
+function techBonus(audioId, subsId, videoId, station = null) {
+  const base = techBonuses({ audioId, subsId, videoId })
+  // Director of Production: +15% q on top tech tiers (audio_surround, video_uhd, subs_multi)
+  if (!station || !hasDirector(station, 'production')) return base
+  const top = DIRECTOR_EFFECTS.production.topTierIds
+  const qMult = DIRECTOR_EFFECTS.production.topTierQMult
+  let bonusQ = 0
+  if (top.includes(audioId)) bonusQ += (AUDIO_TIERS.find(o => o.id === audioId)?.q || 0) * (qMult - 1)
+  if (top.includes(subsId))  bonusQ += (SUBTITLE_TIERS.find(o => o.id === subsId)?.q  || 0) * (qMult - 1)
+  if (top.includes(videoId)) bonusQ += (VIDEO_TIERS.find(o => o.id === videoId)?.q   || 0) * (qMult - 1)
+  return { ...base, q: base.q + bonusQ }
 }
 
 /** Estimation range for a planned program — used by build UI live preview.
@@ -887,10 +940,16 @@ export function beginProgram(station, research, year, opts) {
     for (const [chosenId, tierList, label] of checks) {
       if (!chosenId) continue
       const opt = (tierList || []).find(o => o.id === chosenId)
-      if (!opt?.minScriptTier) continue
-      const need = SCRIPT_TIER_RANK[opt.minScriptTier] ?? 0
-      if (tierRank < need) {
-        return { station, error: `${label} "${opt.label}" requires a ${opt.minScriptTier} script` }
+      if (!opt) continue
+      if (opt.minScriptTier) {
+        const need = SCRIPT_TIER_RANK[opt.minScriptTier] ?? 0
+        if (tierRank < need) {
+          return { station, error: `${label} "${opt.label}" requires a ${opt.minScriptTier} script` }
+        }
+      }
+      // Research-gated options (e.g. Heavy SFX -> tech_sfx_heavy).
+      if (opt.requires && !(research?.unlocked || []).includes(opt.requires)) {
+        return { station, error: `${label} "${opt.label}" needs a research unlock first` }
       }
     }
   } else {
@@ -972,6 +1031,10 @@ export function beginProgram(station, research, year, opts) {
     marketingId: opts.marketingId,
     slotTypeId: opts.slotTypeId || null,
     plannedRunMonths,
+    // Merchandising prepared at production time. The upfront cost was already
+    // baked into programBuildCost. Persisted so each airing can produce
+    // merch revenue scaled by quality + hype.
+    prepareMerch: !!opts.prepareMerch && (scriptTier === 'large' || scriptTier === 'super'),
     status: prodMonths > 0 ? 'producing' : 'shelf',
     prodMonthsRemaining: prodMonths,
     prodMonthsTotal: prodMonths,
@@ -1056,9 +1119,18 @@ export function scheduleProgram(station, programId, slotTypeId, runMonths) {
   if (!p) return { station, error: 'Program not found' }
   if (p.status !== 'shelf') return { station, error: `Program not on shelf (status: ${p.status})` }
 
-  // For movies, run length is forced to 1
-  // For sports, run length is forced to the remainder of the calendar year (handled by season skip)
-  const forced = p.movieId ? 1 : (p.sportsLeagueId ? 12 : runMonths)
+  // Run length is LOCKED at production time via plannedRunMonths. The runMonths
+  // argument is only respected as a fallback for legacy programs that pre-date
+  // the planning step. Movies are always 1, sports always 12.
+  //   - movie               → 1 (one-off airing)
+  //   - sports              → 12 (calendar year; skips out-of-season months)
+  //   - has plannedRunMonths → use it (committed at production time)
+  //   - legacy fallback     → trust the caller's runMonths, else 1
+  const forced = p.movieId
+    ? 1
+    : (p.sportsLeagueId
+      ? 12
+      : (p.plannedRunMonths || runMonths || 1))
 
   const run = {
     id: uid(),
@@ -1085,6 +1157,10 @@ export function scheduleProgram(station, programId, slotTypeId, runMonths) {
     monthsAired: 0,
     monthlyCost: p.airingCost,
     aiHistory: [],
+    // Merchandising carry-through: if production prepared merch, every airing
+    // earns side revenue proportional to hype + quality.
+    prepareMerch: !!p.prepareMerch,
+    scriptTier: p.tier || 'normal',
   }
 
   // Update program status to airing
@@ -1235,7 +1311,7 @@ export function activeRoster(station) {
   return { directors: dirs, stars }
 }
 
-// ─── STAFF (DIRECTORS OF…) ──────────────────────────────────────────────────
+// ─── STAFF (VPs) ────────────────────────────────────────────────────────────
 // Station has up to 5 staff: personnel, innovation, operations, marketing, content.
 // Each is null or { name, tier, hiredMonth, hiredYear }.
 // Personnel is the gate — until you hire one, you can't hire others.
@@ -1250,14 +1326,15 @@ export function staffEffect(station, role) {
   return STAFF_EFFECTS[role]?.[s.tier] || {}
 }
 
-/** Per-month salary cost across all hired staff. */
+/** Per-month salary cost across all hired staff (VPs + directors). */
 export function staffSalaryTotal(station) {
-  if (!station?.staff) return 0
+  if (!station?.staff && !station?.directors) return 0
   let total = 0
-  for (const role of Object.keys(station.staff)) {
+  for (const role of Object.keys(station.staff || {})) {
     const s = station.staff[role]
     if (s) total += STAFF_MONTHLY_SALARY[s.tier] || 0
   }
+  total += directorSalaryTotal(station)
   return r1(total)
 }
 
@@ -1295,7 +1372,7 @@ function generateStaffCandidate(role, searchTier) {
 export function openStaffPosition(station, role, searchTierId) {
   const tier = SEARCH_TIERS.find(t => t.id === searchTierId)
   if (!tier) return { station, error: 'Bad search tier' }
-  if (!canHireStaffRole(station, role)) return { station, error: 'Hire a Personnel Director first' }
+  if (!canHireStaffRole(station, role)) return { station, error: 'Hire a VP of Personnel first' }
   if (station.openPositions?.some(p => p.role === role)) return { station, error: 'Already searching for this role' }
   if (station.cash < tier.cost) return { station, error: 'Not enough cash' }
 
@@ -1387,7 +1464,272 @@ export function tickStaffSearches(station) {
   }
 }
 
-// ─── IP LICENSING ────────────────────────────────────────────────────────────
+// ─── DIRECTORS (National sub-tier under VPs) ────────────────────────────────
+// Stored at station.directors as a flat map:
+//   { [roleId]: { tier: 'Common', hiredYear, hiredMonth, count? } }
+// `count` exists only for the special 'scheduling' role (up to maxCount).
+
+/** Find a director role definition. */
+export function findDirectorRole(roleId) {
+  return DIRECTOR_ROLES.find(d => d.id === roleId) || null
+}
+
+/** Is the given director role hired (any count >= 1)? */
+export function hasDirector(station, roleId) {
+  const rec = station?.directors?.[roleId]
+  if (!rec) return false
+  return (rec.count || 1) >= 1
+}
+
+/** How many directors are currently hired for this role (counts the 'scheduling'
+ *  special role; everyone else is 0 or 1). */
+export function directorCount(station, roleId) {
+  const rec = station?.directors?.[roleId]
+  if (!rec) return 0
+  return rec.count || 1
+}
+
+/** Total monthly salary across all hired directors. */
+export function directorSalaryTotal(station) {
+  if (!station?.directors) return 0
+  let total = 0
+  for (const roleId of Object.keys(station.directors)) {
+    total += DIRECTOR_SALARY * directorCount(station, roleId)
+  }
+  return r1(total)
+}
+
+/** Can the player hire a director of this role right now?
+ *  Returns { ok: bool, reason?: string }. Reasons are short and end-user friendly. */
+export function canHireDirector(station, roleId) {
+  const role = findDirectorRole(roleId)
+  if (!role) return { ok: false, reason: 'Unknown role' }
+  if (station.market !== 'national') return { ok: false, reason: 'National office required' }
+  if (!station.staff?.[role.parentVP]) {
+    const vp = STAFF_ROLES.find(r => r.id === role.parentVP)
+    return { ok: false, reason: `${vp?.label || role.parentVP} must be hired first` }
+  }
+  // Director of Staff itself is gated only by VP of Personnel (which we already checked).
+  // Every OTHER director requires Director of Staff.
+  if (roleId !== 'staff' && !hasDirector(station, 'staff')) {
+    return { ok: false, reason: 'Hire a Director of Staff first' }
+  }
+  // Scheduling supports up to maxCount; others are single-slot.
+  if (roleId === 'scheduling') {
+    const cur = directorCount(station, 'scheduling')
+    const max = role.maxCount || 1
+    if (cur >= max) return { ok: false, reason: `Already at ${max} scheduling directors` }
+  } else {
+    if (hasDirector(station, roleId)) return { ok: false, reason: 'Already hired' }
+  }
+  return { ok: true }
+}
+
+/** Hire a director. No search lottery — Common tier, flat hire cost. */
+export function hireDirector(station, roleId, year, month) {
+  const check = canHireDirector(station, roleId)
+  if (!check.ok) return { station, error: check.reason }
+  if (station.cash < DIRECTOR_HIRE_COST) {
+    return { station, error: `Need $${DIRECTOR_HIRE_COST}M to hire (you have $${(station.cash || 0).toFixed(1)}M)` }
+  }
+  const directors = { ...(station.directors || {}) }
+  if (roleId === 'scheduling') {
+    const rec = directors.scheduling
+    if (rec) {
+      directors.scheduling = { ...rec, count: (rec.count || 1) + 1 }
+    } else {
+      directors.scheduling = { tier: 'Common', count: 1, hiredYear: year, hiredMonth: month }
+    }
+  } else {
+    directors[roleId] = { tier: 'Common', hiredYear: year, hiredMonth: month }
+  }
+  return {
+    station: { ...station, cash: r1(station.cash - DIRECTOR_HIRE_COST), directors },
+    error: null,
+  }
+}
+
+/** Fire a director. Pays severance = DIRECTOR_FIRE_PENALTY per head (so firing one
+ *  scheduling director out of 3 only pays for that one).
+ *  Special case: when firing a scheduling director would leave more assignments
+ *  than directors, free the most-recent slot to avoid orphan auto-assignments. */
+export function fireDirector(station, roleId) {
+  const directors = { ...(station.directors || {}) }
+  const rec = directors[roleId]
+  if (!rec) return { station, error: 'Not hired' }
+  const penalty = DIRECTOR_FIRE_PENALTY
+  let slotAuto = station.slotAuto || []
+  if (roleId === 'scheduling') {
+    if ((rec.count || 1) > 1) {
+      directors.scheduling = { ...rec, count: rec.count - 1 }
+    } else {
+      delete directors.scheduling
+    }
+    // Reconcile: if assigned > remaining count, free the trailing assignments
+    const newCount = (directors.scheduling?.count) || 0
+    const assigned = slotAuto.filter(x => x).length
+    if (assigned > newCount) {
+      let freed = 0
+      const target = assigned - newCount
+      slotAuto = [...slotAuto]
+      for (let i = slotAuto.length - 1; i >= 0 && freed < target; i--) {
+        if (slotAuto[i]) { slotAuto[i] = null; freed++ }
+      }
+    }
+  } else {
+    delete directors[roleId]
+  }
+  return {
+    station: { ...station, cash: r1(station.cash - penalty), directors, slotAuto },
+    penalty,
+  }
+}
+
+/** Talent capacity (max writers + stars + directors-of-craft allowed) at the
+ *  current market. National rises from 15 → 25 when Director of Talent is hired. */
+export function talentCapacity(station) {
+  if (station.market === 'local') return 10
+  if (station.market === 'metro') return 15
+  // national
+  return hasDirector(station, 'talent')
+    ? DIRECTOR_EFFECTS.talent.talentCapNational
+    : 15
+}
+
+/** Current count of all talent hires (creative directors + stars + writers). */
+export function talentCount(station) {
+  const d = (station.hiredDirectors || []).length
+  const s = (station.hiredStars     || []).length
+  const w = (station.hiredWriters   || []).length
+  return d + s + w
+}
+
+/** Is the talent room full? */
+export function talentRoomFull(station) {
+  return talentCount(station) >= talentCapacity(station)
+}
+
+/** Is a marketing tier currently unlocked for the player? */
+export function isMarketingTierUnlocked(station, tierId) {
+  // 'none' is always available; 'flyers' depends on market; 'online' always.
+  if (tierId === 'none' || tierId === 'online') return true
+  if (tierId === 'flyers') return true  // localOnly already handled in UI
+  // Standard Ads and TV+Radio+Print require Director of Marketing.
+  if (tierId === 'medium' || tierId === 'big') {
+    return hasDirector(station, 'marketing')
+  }
+  // Disney-Scale stays available — money is its own gate.
+  if (tierId === 'massive') return true
+  return true
+}
+
+/** Production-side: is Heavy SFX available?
+ *  Locked behind Director of Technology Innovation. */
+export function isHeavySfxUnlocked(station) {
+  return hasDirector(station, 'techinnov')
+}
+
+/** Production-side: is a given research-gated technology open for STARTING research?
+ *  (The research itself still requires VP Innovation + prior research as before.)
+ *  Surround, 4K UHD, and a new Heavy SFX research are all behind Director of Tech Innovation. */
+export function isResearchGatedByTechInnov(researchId) {
+  return DIRECTOR_EFFECTS.techinnov.gatedResearch.includes(researchId)
+}
+
+/** Director-of-Production tweaks for a given production tier choice.
+ *  Returns { costMult, qMult } — both 1.0 if no effect. */
+export function productionDirectorMods(station, optionId) {
+  if (!hasDirector(station, 'production')) return { costMult: 1.0, qMult: 1.0 }
+  if (DIRECTOR_EFFECTS.production.topTierIds.includes(optionId)) {
+    return {
+      costMult: DIRECTOR_EFFECTS.production.topTierCostMult,
+      qMult:    DIRECTOR_EFFECTS.production.topTierQMult,
+    }
+  }
+  return { costMult: 1.0, qMult: 1.0 }
+}
+
+/** Creative Director: writer-script quality multiplier. */
+export function creativeDirectorScriptMult(station) {
+  return hasDirector(station, 'creative')
+    ? DIRECTOR_EFFECTS.creative.scriptQMult
+    : 1.0
+}
+
+// ─── MERCHANDISING ──────────────────────────────────────────────────────────
+/** Is merchandising available for this production?
+ *  Requires: Director of Merchandising hired AND script tier large/super. */
+export function canPrepareMerch(station, scriptTier) {
+  if (!hasDirector(station, 'merchandising')) return false
+  return scriptTier === 'large' || scriptTier === 'super'
+}
+
+/** Upfront merchandising cost for a Large/Super production. */
+export function merchPrepareCost(scriptTier) {
+  return MERCH_PREPARE_COST[scriptTier] || 0
+}
+
+/** Per-airing merchandising revenue.
+ *  Returns 0 if the program didn't prepare merch or isn't a large/super script.
+ *  Curve: hype^1.8 × quality × baseScalar.
+ *  Tuned so mid-range hype+quality slightly loses, high → real profit. */
+export function merchRevenuePerAiring(scriptTier, quality, hype, prepared) {
+  if (!prepared) return 0
+  const base = MERCH_BASE_REVENUE[scriptTier]
+  if (!base) return 0
+  const hypeT = clamp((hype || 0) / 10, 0, 1)
+  const qT    = clamp((quality || 0) / 10, 0, 1)
+  return r1(base * Math.pow(hypeT, MERCH_HYPE_EXPONENT) * qT)
+}
+
+// ─── AUTO-SCHEDULING (Director of Scheduling) ───────────────────────────────
+// Each slot in station.slotIds can be auto-managed by one scheduling director.
+// State lives in station.slotAuto, a parallel array of the same length where
+// each entry is either null (manual) or { categoryId } (auto-managed).
+
+/** Read the auto-director assignment for a slot index. */
+export function slotAutoAt(station, slotIdx) {
+  return (station.slotAuto || [])[slotIdx] || null
+}
+
+/** How many scheduling directors are currently assigned to slots (not idle). */
+export function assignedSchedulingDirectors(station) {
+  return (station.slotAuto || []).filter(x => x).length
+}
+
+/** Idle scheduling directors = total hired − currently assigned. */
+export function idleSchedulingDirectors(station) {
+  return directorCount(station, 'scheduling') - assignedSchedulingDirectors(station)
+}
+
+/** Assign a scheduling director to a slot index with a category focus.
+ *  Returns { station, error? }. */
+export function assignSchedulingDirector(station, slotIdx, categoryId) {
+  if (idleSchedulingDirectors(station) <= 0) {
+    return { station, error: 'No idle scheduling directors. Hire one first.' }
+  }
+  const slotIds = station.slotIds || []
+  if (slotIdx < 0 || slotIdx >= slotIds.length) {
+    return { station, error: 'Slot index out of range' }
+  }
+  const cat = CATEGORIES.find(c => c.id === categoryId)
+  if (!cat) return { station, error: 'Bad category' }
+  const slotAuto = [...(station.slotAuto || [])]
+  while (slotAuto.length < slotIds.length) slotAuto.push(null)
+  if (slotAuto[slotIdx]) return { station, error: 'Slot already auto-managed' }
+  slotAuto[slotIdx] = { categoryId }
+  return { station: { ...station, slotAuto }, error: null }
+}
+
+/** Cancel the auto-scheduling on a slot index. Director becomes idle. */
+export function cancelSchedulingDirector(station, slotIdx) {
+  const slotAuto = [...(station.slotAuto || [])]
+  if (!slotAuto[slotIdx]) return { station, error: 'No director on this slot' }
+  slotAuto[slotIdx] = null
+  return { station: { ...station, slotAuto }, error: null }
+}
+
+
 /** Cost to license an IP for a given term, with discounts applied. */
 export function ipLicenseCost(ipId, termId, research) {
   const ip = findIP(ipId)
@@ -1558,7 +1900,7 @@ export function moviePackAiringHype(station, packId) {
 
 // ─── RESEARCH IN PROGRESS ────────────────────────────────────────────────────
 /** Compute adjusted cost + months for a research item given station state.
- *  Innovation Director discounts both. Domain affinity (already unlocked content
+ *  VP of Innovation discounts both. Domain affinity (already unlocked content
  *  in the same domain) gives an additional 25% off both. */
 export function researchAdjusted(researchId, station, research) {
   const r = RESEARCH.find(x => x.id === researchId)
@@ -1592,11 +1934,16 @@ export function researchAdjusted(researchId, station, research) {
 export function beginResearch(researchId, station, research, year, month) {
   const r = RESEARCH.find(x => x.id === researchId)
   if (!r) return { error: 'No such research' }
-  // v7: require an Innovation Director on staff to start any research project.
-  // The director also discounts cost/time (via researchAdjusted), but without
+  // v7: require a VP of Innovation on staff to start any research project.
+  // The VP also discounts cost/time (via researchAdjusted), but without
   // one, the R&D function doesn't exist as a department at all.
   if (!station.staff?.innovation) {
-    return { error: 'Hire an Innovation Director first (Operations → Staff)' }
+    return { error: 'Hire a VP of Innovation first (Operations → Staff)' }
+  }
+  // Cutting-edge research (Surround, 4K UHD, Heavy SFX) requires a
+  // Director of Technology Innovation under VP Innovation.
+  if (isResearchGatedByTechInnov(researchId) && !hasDirector(station, 'techinnov')) {
+    return { error: 'This requires a Director of Technology Innovation under VP Innovation.' }
   }
   if (!canResearch(researchId, research, station)) return { error: 'Cannot research now' }
   if ((research.inProgress || []).some(p => p.id === researchId)) {
@@ -2136,7 +2483,10 @@ export function assignAudiences(airings, market, stationFameById, monthIdx) {
   // Cap audience to market.audCap and compute revenue
   for (const a of airings) {
     a.audience = r2(Math.min(a.audience, market.audCap))
-    a.revenue = r2(a.audience * market.revPerViewer)
+    const adRev = r2(a.audience * market.revPerViewer)
+    const merchRev = a.merchRevenue || 0
+    a.revenue = r2(adRev + merchRev)
+    a.adRevenue = adRev  // keep split available for financials display
   }
 }
 
@@ -2376,6 +2726,13 @@ export function runMonth(station, research, runs, monthIdx, year) {
     aired.stationId = '__player__'
     aired.stationName = station.name
     aired._stationFame = station.fame
+    // Merchandising revenue is independent of audience — it scales with how
+    // much the show has cultural traction (hype) and how well it's made
+    // (quality). Computed here so it's already on the airing before
+    // assignAudiences runs.
+    aired.merchRevenue = run.prepareMerch
+      ? merchRevenuePerAiring(run.scriptTier, aired.quality, aired.hype, true)
+      : 0
     airings.push(aired)
 
     totalCost += cost
@@ -2391,6 +2748,80 @@ export function runMonth(station, research, runs, monthIdx, year) {
     if (run.monthsAired >= run.runMonths) {
       expiredRunIds.push(run.id)
     }
+  }
+
+  // ── Auto-scheduling: spawn one airing per assigned slot ──────────────────
+  // For each slot index with an autoDirector and no active run, the director
+  // produces a 1-month show in their chosen category. Quality and hype roll
+  // each month from a narrow random band, then are penalized by
+  // AUTO_SCHED_Q_MULT / AUTO_SCHED_H_MULT vs hand-crafted shows.
+  const slotIds = station.slotIds || []
+  const slotAuto = station.slotAuto || []
+  for (let slotIdx = 0; slotIdx < slotIds.length; slotIdx++) {
+    const auto = slotAuto[slotIdx]
+    if (!auto) continue
+    const slotTypeId = slotIds[slotIdx]
+
+    // If a manual run is already there this month, skip (shouldn't normally
+    // happen because UI blocks manual scheduling on auto slots, but be safe).
+    const occupied = runs.some(r => {
+      if (r._isAuto) return false
+      if (r.monthsAired >= r.runMonths) return false
+      // Multiple slots can share a typeId — match by index inside slotIds, using
+      // the first occurrence of this typeId. If runs were properly indexed this
+      // would be exact; this is the best we can do with the existing model.
+      return r.slotTypeId === slotTypeId && slotIds.indexOf(r.slotTypeId) === slotIdx
+    })
+    if (occupied) continue
+
+    const categoryId = auto.categoryId
+    const cat = CATEGORIES.find(c => c.id === categoryId)
+    if (!cat) continue
+
+    // Roll a base quality + hype from the narrow band, then apply the auto mults.
+    const baseQ = rnd(AUTO_SCHED_BASE_Q_MIN, AUTO_SCHED_BASE_Q_MAX)
+    const baseH = rnd(AUTO_SCHED_BASE_H_MIN, AUTO_SCHED_BASE_H_MAX)
+    const q = clamp(baseQ * AUTO_SCHED_Q_MULT, 0, 10)
+    const h = clamp(baseH * AUTO_SCHED_H_MULT, 0, 10)
+    const rating = r2((q * 0.6 + h * 0.4))
+
+    // Production cost: base for the category at this market, per spec.
+    const cost = r1(baseProductionCost(categoryId, station.market, station))
+    totalCost += cost
+
+    const autoAiring = {
+      id: `auto_${slotIdx}_${year}_${monthIdx}`,
+      runId: `auto_${slotIdx}`,
+      // Synthetic programId so all of this director's airings group together
+      // as one financial line. Tied to slot index so reassigning to a new
+      // category gives a fresh line.
+      programId: `auto:${slotIdx}:${categoryId}`,
+      slotTypeId,
+      categoryId,
+      topicId: null,
+      name: `Director-managed: ${cat.label.toLowerCase()}`,
+      quality: r2(q),
+      hype: r2(h),
+      rating,
+      audience: 0,
+      revenue: 0,
+      adRevenue: 0,
+      merchRevenue: 0,
+      cost,
+      month: monthIdx,
+      year,
+      stationId: '__player__',
+      stationName: station.name,
+      _stationFame: station.fame,
+      _isAuto: true,
+      autoCategory: cat.label,
+    }
+    airings.push(autoAiring)
+
+    // Fame nudge — same scale as regular airings but de-rated since q is bounded.
+    if (rating >= 7.0) fameDelta += market.famePerWin * 0.25
+    else if (rating >= 5.0) fameDelta += market.famePerWin * 0.08
+    else if (rating < 4.0) fameDelta -= 0.1
   }
 
   return {
@@ -2424,61 +2855,287 @@ export function cancelRunCost(run) {
 }
 
 // ─── AWARDS ──────────────────────────────────────────────────────────────────
-// New formula: best-in-category combines quality (75%), hype (20%), randomness (5%).
-// Awards: most-watched (top audience), best-overall (top by formula), and per-category winners.
-function awardScore(show) {
-  return show.quality * 0.75 + show.hype * 0.20 + rnd(0, 0.5)
+// New ceremony model: one award per category (News, Reality, Series, …) plus
+// a Fan Favorite (most-watched program of the year regardless of category).
+// Nominees are the top 3 programs in each category by award score; winner is
+// the top nominee, audience as tiebreaker.
+//
+// Score formula: average across the program's airings of (Q * 0.8 + H * 0.2).
+// Deterministic — no random component, so re-rendering doesn't change winners.
+
+/** Compute a single airing's award contribution: 80% quality + 20% hype. */
+function airingAwardScore(airing) {
+  return (airing.quality || 0) * 0.8 + (airing.hype || 0) * 0.2
 }
 
-export function buildAwards(yearShows, station) {
+/** Group a list of airings by their underlying program. Returns an array of
+ *  program-level aggregates with the metrics needed for nomination. */
+function aggregateByProgram(airings) {
+  const map = new Map()
+  for (const a of airings) {
+    // Programs are identified by (stationId, runId|programId|name). Sports
+    // and movies don't have programId, so fall back to runId or name.
+    const key = `${a.stationId || ''}::${a.runId || a.programId || a.name}`
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        stationId: a.stationId,
+        stationName: a.stationName,
+        name: a.name,
+        // For category we take the first airing's value — they're all the same.
+        categoryId: a.sportsRunLeagueId ? 'sports'
+                  : (a.movieId ? 'movie' : a.categoryId),
+        airings: [],
+        totalAudience: 0,
+        totalScore: 0,
+        totalRating: 0,
+        airingCount: 0,
+      })
+    }
+    const e = map.get(key)
+    e.airings.push(a)
+    e.totalAudience += a.audience || 0
+    e.totalScore    += airingAwardScore(a)
+    e.totalRating   += a.rating || 0
+    e.airingCount   += 1
+  }
+  // Compute averages
+  for (const e of map.values()) {
+    e.avgScore  = e.airingCount > 0 ? e.totalScore  / e.airingCount : 0
+    e.avgRating = e.airingCount > 0 ? e.totalRating / e.airingCount : 0
+  }
+  return Array.from(map.values())
+}
+
+/** Pick a "host" star — someone from a popular show this year on any network.
+ *  Falls back to a generic name if no qualifying star exists. */
+function pickAwardsHost(allAirings, getStarNameById) {
+  const popularStars = new Set()
+  for (const a of allAirings) {
+    if ((a.rating || 0) >= 7.0 && a.starId) popularStars.add(a.starId)
+  }
+  const arr = Array.from(popularStars)
+  if (arr.length === 0) {
+    return { name: 'Damon Bridges', vibe: 'tonight\'s host' }
+  }
+  // Deterministic-ish pick based on the year (so the host is stable across
+  // re-renders within the ceremony, but changes year to year).
+  const pickIdx = Math.abs(arr.length * 7 + arr.length) % arr.length
+  const starId = arr[pickIdx]
+  const name = getStarNameById ? getStarNameById(starId) : null
+  return {
+    name: name || 'A celebrated star',
+    vibe: 'fresh off a hit season',
+  }
+}
+
+/** Build the awards ceremony for a year.
+ *
+ *  @param playerYearShows  Array of player airings this year (must have stationId='__player__')
+ *  @param competitorYearShows  Array of competitor airings this year
+ *  @param station  The player's station (for market + fame floor)
+ *  @param year  Current year
+ *  @param resolveStarName  (id) => string  Optional, resolves star id to name for host
+ *  @returns {
+ *    year, marketLabel, host: {name, vibe},
+ *    categories: [
+ *      { id, label, icon, color, nominees: [{program, isPlayer}], winnerKey, fameBonus, cashBonus }
+ *    ],
+ *    fanFavorite: { nominees, winnerKey, fameBonus, cashBonus } | null,
+ *    networkSummary: [{ stationId, stationName, isPlayer, awardCount }],
+ *    playerAwardsWon: [{categoryId, programName, fameBonus, cashBonus}],
+ *    playerNominations: [{categoryId, programName, won}],
+ *    totalFameGain: number,
+ *    totalCashGain: number,
+ *    // Legacy compat for old code paths:
+ *    wins: [...], bestOverall: null, mostWatched: null, fameBar,
+ *  } */
+export function buildAwards(playerYearShows, competitorYearShows, station, year, resolveStarName) {
   const market = MARKETS[station.market]
   const fameBar = 7.0 + clamp((station.fame - market.fameThreshold) / 50, 0, 1.5)
 
-  // Score each show
-  const scored = yearShows.map(s => ({ ...s, _awardScore: awardScore(s) }))
+  // Merge all airings into one pool, then aggregate per-program
+  const allAirings = [...(playerYearShows || []), ...(competitorYearShows || [])]
+  const allPrograms = aggregateByProgram(allAirings)
 
-  // Best per category — using awardScore
-  const byCat = {}
-  scored.forEach(s => {
-    const cat = s.sportsRunLeagueId ? 'sports' : (s.movieId ? 'movie' : s.categoryId)
-    if (!cat) return
-    if (!byCat[cat] || byCat[cat]._awardScore < s._awardScore) byCat[cat] = s
-  })
+  // Pick host
+  const host = pickAwardsHost(allAirings, resolveStarName)
 
-  const wins = []
-  Object.entries(byCat).forEach(([cat, show]) => {
-    if (show._awardScore >= fameBar) {
-      wins.push({
-        category: cat,
-        showName: show.name,
-        showId: show.id,
-        rating: show.rating,
-        quality: show.quality,
-        hype: show.hype,
-        awardScore: r2(show._awardScore),
-        fameBonus: 4,
-        cashBonus: 6,
+  // Categories that actually had airings this year
+  const allCatIds = new Set(allPrograms.map(p => p.categoryId).filter(Boolean))
+
+  // Build per-category nominees + winner
+  const CATEGORY_DEFS = [
+    { id: 'news',      label: 'Best News Program',         icon: '📰' },
+    { id: 'reality',   label: 'Best Reality Show',         icon: '👁' },
+    { id: 'series',    label: 'Best Scripted Series',      icon: '📺' },
+    { id: 'latenight', label: 'Best Late-Night Program',   icon: '🎤' },
+    { id: 'sports',    label: 'Best Sports Broadcast',     icon: '🏆' },
+    { id: 'family',    label: 'Best Family Program',       icon: '🏡' },
+    { id: 'kids',      label: 'Best Kids Show',            icon: '🧒' },
+    { id: 'movie',     label: 'Best Motion Picture',       icon: '🎞' },
+  ]
+
+  const categories = []
+  for (const catDef of CATEGORY_DEFS) {
+    if (!allCatIds.has(catDef.id)) continue
+    const inCat = allPrograms.filter(p => p.categoryId === catDef.id)
+    // Sort: avgScore desc, tiebreak by totalAudience desc
+    inCat.sort((a, b) =>
+      (b.avgScore - a.avgScore) || (b.totalAudience - a.totalAudience)
+    )
+    const nominees = inCat.slice(0, 3).map(p => ({
+      key: p.key,
+      programName: p.name,
+      stationName: p.stationName,
+      isPlayer: p.stationId === '__player__',
+      avgScore: r2(p.avgScore),
+      totalAudience: r2(p.totalAudience),
+      airingCount: p.airingCount,
+    }))
+    if (nominees.length === 0) continue
+    const winner = nominees[0]
+    categories.push({
+      id: catDef.id,
+      label: catDef.label,
+      icon: catDef.icon,
+      color: (CATEGORIES[catDef.id] || {}).color || '#f0a347',
+      nominees,
+      winnerKey: winner.key,
+      fameBonus: 1.5,
+      cashBonus: 4,
+    })
+  }
+
+  // Fan Favorite — top by total audience, any category
+  let fanFavorite = null
+  if (allPrograms.length > 0) {
+    const sortedByAud = [...allPrograms].sort((a, b) => b.totalAudience - a.totalAudience)
+    const top3 = sortedByAud.slice(0, 3)
+    const nominees = top3.map(p => ({
+      key: p.key,
+      programName: p.name,
+      stationName: p.stationName,
+      isPlayer: p.stationId === '__player__',
+      totalAudience: r2(p.totalAudience),
+      airingCount: p.airingCount,
+    }))
+    fanFavorite = {
+      id: 'fan_favorite',
+      label: 'Fan Favorite of the Year',
+      icon: '⭐',
+      color: '#ffd166',
+      nominees,
+      winnerKey: nominees[0].key,
+      fameBonus: 3,
+      cashBonus: 8,
+    }
+  }
+
+  // Network summary — count awards won per network
+  const networkAwards = new Map()
+  const tallyWin = (programKey) => {
+    const prog = allPrograms.find(p => p.key === programKey)
+    if (!prog) return
+    const key = prog.stationId
+    if (!networkAwards.has(key)) {
+      networkAwards.set(key, {
+        stationId: prog.stationId,
+        stationName: prog.stationName,
+        isPlayer: prog.stationId === '__player__',
+        awardCount: 0,
+        awardsWon: [],
       })
     }
-  })
+    const entry = networkAwards.get(key)
+    entry.awardCount += 1
+    entry.awardsWon.push(programKey)
+  }
+  categories.forEach(c => tallyWin(c.winnerKey))
+  if (fanFavorite) tallyWin(fanFavorite.winnerKey)
 
-  // Best overall — top awardScore
-  const topScore = [...scored].sort((a, b) => b._awardScore - a._awardScore)[0]
-  const bestOverall = topScore && topScore._awardScore >= fameBar + 0.5
-    ? {
-        showName: topScore.name, showId: topScore.id,
-        rating: topScore.rating, awardScore: r2(topScore._awardScore),
-        fameBonus: 8, cashBonus: 12,
+  // Ensure every known network shows up (even if 0 awards)
+  const allStationIds = new Set(allPrograms.map(p => p.stationId))
+  for (const sid of allStationIds) {
+    if (!networkAwards.has(sid)) {
+      const sample = allPrograms.find(p => p.stationId === sid)
+      networkAwards.set(sid, {
+        stationId: sid,
+        stationName: sample.stationName,
+        isPlayer: sid === '__player__',
+        awardCount: 0,
+        awardsWon: [],
+      })
+    }
+  }
+  const networkSummary = Array.from(networkAwards.values()).sort((a, b) =>
+    b.awardCount - a.awardCount
+  )
+
+  // Player view: which awards did the player win? Which were they nominated for?
+  const playerAwardsWon = []
+  const playerNominations = []
+  const allCeremonyAwards = [...categories, ...(fanFavorite ? [fanFavorite] : [])]
+  for (const award of allCeremonyAwards) {
+    for (const nom of award.nominees) {
+      if (nom.isPlayer) {
+        const won = award.winnerKey === nom.key
+        playerNominations.push({
+          categoryId: award.id,
+          categoryLabel: award.label,
+          programName: nom.programName,
+          won,
+        })
+        if (won) {
+          playerAwardsWon.push({
+            categoryId: award.id,
+            categoryLabel: award.label,
+            programName: nom.programName,
+            fameBonus: award.fameBonus,
+            cashBonus: award.cashBonus,
+          })
+        }
       }
-    : null
+    }
+  }
+  const totalFameGain = playerAwardsWon.reduce((a, w) => a + w.fameBonus, 0)
+  const totalCashGain = playerAwardsWon.reduce((a, w) => a + w.cashBonus, 0)
 
-  // Most-watched — top audience (single best month)
-  const topAud = [...yearShows].sort((a, b) => b.audience - a.audience)[0]
-  const mostWatched = topAud
-    ? { showName: topAud.name, showId: topAud.id, audience: topAud.audience, fameBonus: 5, cashBonus: 8 }
-    : null
+  // ── Legacy-shape fields for older code paths ─────────────────────────
+  // The old `wins`/`bestOverall`/`mostWatched` shape was used in advanceMonth
+  // to apply cash + fame. We translate the new structure back into the same
+  // shape so existing engine flow keeps working without refactor.
+  const wins = playerAwardsWon.map(w => ({
+    category: w.categoryId,
+    label: w.categoryLabel,
+    showName: w.programName,
+    fameBonus: w.fameBonus,
+    cashBonus: w.cashBonus,
+  }))
+  const fanFavWonByPlayer = fanFavorite && fanFavorite.nominees.find(n => n.key === fanFavorite.winnerKey)?.isPlayer
+  const mostWatched = fanFavWonByPlayer ? {
+    showName: fanFavorite.nominees.find(n => n.key === fanFavorite.winnerKey).programName,
+    fameBonus: fanFavorite.fameBonus,
+    cashBonus: fanFavorite.cashBonus,
+  } : null
 
-  return { wins, bestOverall, mostWatched, fameBar: r2(fameBar) }
+  return {
+    year,
+    marketLabel: market.label,
+    host,
+    categories,
+    fanFavorite,
+    networkSummary,
+    playerAwardsWon,
+    playerNominations,
+    totalFameGain,
+    totalCashGain,
+    fameBar: r2(fameBar),
+    // Legacy:
+    wins,
+    bestOverall: null, // retired — not used in the new ceremony
+    mostWatched,
+  }
 }
 
 // ─── RESEARCH STATE ──────────────────────────────────────────────────────────
@@ -2631,11 +3288,13 @@ export function initGame(setup) {
     scripts: [],
     programs: [],
     slotIds: [...DEFAULT_SLOT_IDS],
+    slotAuto: [],               // parallel array — each entry null or { categoryId }
     sportsLicenses: [],         // {leagueId, year}
     ipLicenses: [],             // {ipId, expiresYear}
     staff: {                    // { roleId: {name,tier,...} | null }
       personnel: null, innovation: null, operations: null, marketing: null, content: null,
     },
+    directors: {},              // { roleId: { tier:'Common', count? } } — National-only
     openPositions: [],          // [{role, tierId, monthsLeft, monthsTotal, cost}]
     activeCampaign: null,       // {tierId, hypeBoost}
     moviePacks: [],             // [{packId, airingsLeft, purchasedY/M, purchaseHype, ...}]
@@ -2901,37 +3560,273 @@ export function applySpecBonuses(q, h, station, categoryId) {
 // "Best in market this month" is computed at runtime per month — not stored
 // (it's an "event" rather than a permanent unlock, so it fires each time).
 
+// ─── ACHIEVEMENT CATALOG ────────────────────────────────────────────────────
+// A curated list of milestones. Each entry has:
+//   id       — stable identifier saved on station.achievements.unlocked
+//   group    — bucket for screen organization
+//   tone     — visual tier (bronze | silver | gold)
+//   icon     — short emoji shown in lists/popups
+//   title    — display name
+//   desc     — one-line description (always visible — players can see what to aim for)
+//   reward   — cash bonus in $M (granted on unlock; 0 for purely recurring)
+//   recurring — true means it fires every time the condition holds, doesn't add to X/Y total
+//   evalKind — 'airing'  → unlocked from the month's airing list (existing behavior)
+//            — 'state'   → unlocked by check(station, game) returning true
+//   check    — function (only used when evalKind === 'state')
+//
+// Cash buckets:
+//   $2M  = easy / early
+//   $5M  = mid (first VP, first IP, first hit, first research)
+//   $15M = hard / late (national, super, critical darling, all techs)
+//   $40M = capstone (boardroom full, empire, completionist)
 const ACHIEVEMENT_CATALOG = [
-  // Genre firsts — one-shot
-  { id: 'first_news',      group: 'firsts', tone: 'silver', icon: '📰', title: 'First News Bulletin',          desc: 'Aired your first News program.' },
-  { id: 'first_reality',   group: 'firsts', tone: 'silver', icon: '👁',  title: 'First Reality Show',           desc: 'Aired your first Reality program.' },
-  { id: 'first_series',    group: 'firsts', tone: 'silver', icon: '🎬', title: 'First Scripted Series',        desc: 'Aired your first scripted Series.' },
-  { id: 'first_latenight', group: 'firsts', tone: 'silver', icon: '🌙', title: 'First Late-Night',             desc: 'Aired your first Late-Night program.' },
-  { id: 'first_sports',    group: 'firsts', tone: 'silver', icon: '🏆', title: 'First Sports Broadcast',       desc: 'Aired your first Sports rights coverage.' },
-  { id: 'first_family',    group: 'firsts', tone: 'silver', icon: '🏡', title: 'First Family Program',         desc: 'Aired your first Family program.' },
-  { id: 'first_kids',      group: 'firsts', tone: 'silver', icon: '🧒', title: 'First Kids Show',              desc: 'Aired your first Kids program.' },
-  { id: 'first_movie',     group: 'firsts', tone: 'silver', icon: '🎞', title: 'First Movie',                  desc: 'Aired your first licensed Movie.' },
+  // ── GENRE FIRSTS ──
+  { id: 'first_news',      group: 'firsts', tone: 'silver', icon: '📰', title: 'First News Bulletin',     desc: 'Aired your first News program.',     reward: 2, evalKind: 'airing' },
+  { id: 'first_reality',   group: 'firsts', tone: 'silver', icon: '👁',  title: 'First Reality Show',      desc: 'Aired your first Reality program.',  reward: 2, evalKind: 'airing' },
+  { id: 'first_series',    group: 'firsts', tone: 'silver', icon: '🎬', title: 'First Scripted Series',   desc: 'Aired your first scripted Series.',  reward: 2, evalKind: 'airing' },
+  { id: 'first_latenight', group: 'firsts', tone: 'silver', icon: '🌙', title: 'First Late-Night',        desc: 'Aired your first Late-Night program.', reward: 2, evalKind: 'airing' },
+  { id: 'first_sports',    group: 'firsts', tone: 'silver', icon: '🏆', title: 'First Sports Broadcast',  desc: 'Aired your first Sports rights coverage.', reward: 2, evalKind: 'airing' },
+  { id: 'first_family',    group: 'firsts', tone: 'silver', icon: '🏡', title: 'First Family Program',    desc: 'Aired your first Family program.',   reward: 2, evalKind: 'airing' },
+  { id: 'first_kids',      group: 'firsts', tone: 'silver', icon: '🧒', title: 'First Kids Show',         desc: 'Aired your first Kids program.',     reward: 2, evalKind: 'airing' },
+  { id: 'first_movie',     group: 'firsts', tone: 'silver', icon: '🎞', title: 'First Movie',             desc: 'Aired your first licensed Movie.',   reward: 2, evalKind: 'airing' },
 
-  // Quality firsts — one-shot, ratings-based
-  { id: 'first_hit',         group: 'quality', tone: 'silver', icon: '⭐', title: 'First Hit',         desc: 'A program of yours hit a 7.0+ rating.' },
-  { id: 'first_blockbuster', group: 'quality', tone: 'gold',   icon: '💥', title: 'First Blockbuster', desc: 'A program of yours hit an 8.0+ rating.' },
-  { id: 'first_masterpiece', group: 'quality', tone: 'gold',   icon: '👑', title: 'First Masterpiece', desc: 'A program of yours hit a 9.0+ rating.' },
+  // ── PROGRAM QUALITY FIRSTS ──
+  { id: 'lights_on',         group: 'programs', tone: 'bronze', icon: '💡', title: 'Lights On',         desc: 'Air your first program.',
+    reward: 2, evalKind: 'state', check: ({ game }) => (game.runs || []).some(r => (r.aiHistory || []).length >= 1) || hasAnyAiredProgram(game) },
+  { id: 'first_hit',         group: 'programs', tone: 'silver', icon: '⭐', title: 'First Hit',         desc: 'Air a program with rating 7.0+.', reward: 5, evalKind: 'airing' },
+  { id: 'first_blockbuster', group: 'programs', tone: 'gold',   icon: '💥', title: 'First Blockbuster', desc: 'Air a program with rating 8.0+.', reward: 15, evalKind: 'airing' },
+  { id: 'first_masterpiece', group: 'programs', tone: 'gold',   icon: '👑', title: 'First Masterpiece', desc: 'Air a program with rating 9.0+.', reward: 15, evalKind: 'airing' },
+  { id: 'hits_factory',      group: 'programs', tone: 'gold',   icon: '🏭', title: 'Hits Factory',      desc: 'Score 5 different programs at 8.0+.',
+    reward: 15, evalKind: 'state', check: ({ game }) => countDistinctHitPrograms(game, 8.0) >= 5 },
+  { id: 'big_production',    group: 'programs', tone: 'silver', icon: '🎥', title: 'Big Production',    desc: 'Air a Large-tier production.',
+    reward: 5, evalKind: 'state', check: ({ station, game }) => airedProgramsByTier(station, game, 'large') >= 1 },
+  { id: 'super_sized',       group: 'programs', tone: 'gold',   icon: '🦣', title: 'Super-Sized',       desc: 'Air a Super-tier production.',
+    reward: 15, evalKind: 'state', check: ({ station, game }) => airedProgramsByTier(station, game, 'super') >= 1 },
+  { id: 'franchise',         group: 'programs', tone: 'gold',   icon: '🔁', title: 'Franchise',         desc: 'Take a program through 3 sequel seasons.',
+    reward: 15, evalKind: 'state', check: ({ game, station }) => maxSeqSeasonSeen(game, station) >= 3 },
+  { id: 'year_of_hits',      group: 'programs', tone: 'gold',   icon: '📈', title: 'Year of Hits',      desc: '6 programs at 8.0+ in a single year.',
+    reward: 15, evalKind: 'state', check: ({ game }) => bestYearOfHits(game, 8.0) >= 6 },
 
-  // Slot leadership firsts — one-shot per slot type
-  { id: 'slot_lead_weekday_morning', group: 'slot',   tone: 'bronze', icon: '🌅', title: 'Morning Champion',         desc: 'First time #1 in Weekday Morning.' },
-  { id: 'slot_lead_weekday_evening', group: 'slot',   tone: 'bronze', icon: '🌆', title: 'Evening Champion',         desc: 'First time #1 in Weekday Evening.' },
-  { id: 'slot_lead_prime',           group: 'slot',   tone: 'gold',   icon: '🌟', title: 'Prime-Time Champion',      desc: 'First time #1 in Prime Time.' },
-  { id: 'slot_lead_lateprime',       group: 'slot',   tone: 'bronze', icon: '🌃', title: 'Late-Prime Champion',      desc: 'First time #1 in Late Prime.' },
-  { id: 'slot_lead_weekend_morning', group: 'slot',   tone: 'bronze', icon: '🧒', title: 'Weekend Morning Champion', desc: 'First time #1 in Weekend Morning.' },
-  { id: 'slot_lead_weekend_prime',   group: 'slot',   tone: 'gold',   icon: '🎯', title: 'Weekend Prime Champion',   desc: 'First time #1 in Weekend Prime.' },
+  // ── SLOT LEADERSHIP ──
+  { id: 'slot_lead_weekday_morning', group: 'slot', tone: 'bronze', icon: '🌅', title: 'Morning Champion',         desc: 'First time #1 in Weekday Morning.', reward: 5, evalKind: 'airing' },
+  { id: 'slot_lead_weekday_evening', group: 'slot', tone: 'bronze', icon: '🌆', title: 'Evening Champion',         desc: 'First time #1 in Weekday Evening.', reward: 5, evalKind: 'airing' },
+  { id: 'slot_lead_prime',           group: 'slot', tone: 'gold',   icon: '🌟', title: 'Prime-Time Champion',      desc: 'First time #1 in Prime Time.',      reward: 15, evalKind: 'airing' },
+  { id: 'slot_lead_lateprime',       group: 'slot', tone: 'bronze', icon: '🌃', title: 'Late-Prime Champion',      desc: 'First time #1 in Late Prime.',      reward: 5, evalKind: 'airing' },
+  { id: 'slot_lead_weekend_morning', group: 'slot', tone: 'bronze', icon: '🧒', title: 'Weekend Morning Champion', desc: 'First time #1 in Weekend Morning.', reward: 5, evalKind: 'airing' },
+  { id: 'slot_lead_weekend_prime',   group: 'slot', tone: 'gold',   icon: '🎯', title: 'Weekend Prime Champion',   desc: 'First time #1 in Weekend Prime.',   reward: 15, evalKind: 'airing' },
 
-  // Market firsts — captured when you actually promote
-  { id: 'market_metro',     group: 'market', tone: 'gold', icon: '🏙', title: 'Welcome to the Metro',  desc: 'Expanded to Tri-State Metro market.' },
-  { id: 'market_national',  group: 'market', tone: 'gold', icon: '🇺🇸', title: 'Going National',        desc: 'Expanded to National Network market.' },
+  // ── MARKET / OFFICE ──
+  { id: 'open_for_business', group: 'office', tone: 'bronze', icon: '📡', title: 'Open for Business', desc: 'Survive your first month.',
+    reward: 2, evalKind: 'state', check: ({ game }) => (game.year || 1) > 1 || (game.monthIdx || 0) >= 1 },
+  { id: 'market_metro',      group: 'office', tone: 'gold',   icon: '🏙', title: 'Welcome to the Metro',  desc: 'Promote your station to Metro.',
+    reward: 5,  evalKind: 'state', check: ({ station }) => station.market === 'metro' || station.market === 'national' },
+  { id: 'market_national',   group: 'office', tone: 'gold',   icon: '🇺🇸', title: 'Going National',        desc: 'Promote your station to National.',
+    reward: 15, evalKind: 'state', check: ({ station }) => station.market === 'national' },
+  { id: 'empire',            group: 'office', tone: 'gold',   icon: '💰', title: 'Empire',                desc: 'Hold $500M cash on hand.',
+    reward: 40, evalKind: 'state', check: ({ station }) => (station.cash || 0) >= 500 },
 
-  // Recurring "best" — fires each time it's earned
-  { id: 'month_top',  group: 'recurring', tone: 'gold',   icon: '🏆', title: 'Most-Watched This Month', desc: 'Had the #1 program across all networks.' },
+  // ── STAFFING ──
+  { id: 'first_vp',         group: 'staff', tone: 'silver', icon: '👔', title: 'First Lieutenant',  desc: 'Hire your first VP.',
+    reward: 5,  evalKind: 'state', check: ({ station }) => Object.values(station.staff || {}).filter(Boolean).length >= 1 },
+  { id: 'full_cabinet',     group: 'staff', tone: 'gold',   icon: '🏛', title: 'Full Cabinet',      desc: 'Hire all 5 VPs at once.',
+    reward: 15, evalKind: 'state', check: ({ station }) => Object.values(station.staff || {}).filter(Boolean).length >= 5 },
+  { id: 'first_director',   group: 'staff', tone: 'silver', icon: '🪪', title: 'Inner Circle',      desc: 'Hire your first Director.',
+    reward: 5,  evalKind: 'state', check: ({ station }) => Object.keys(station.directors || {}).length >= 1 },
+  { id: 'directors_cut',    group: 'staff', tone: 'gold',   icon: '✂', title: "Director's Cut",    desc: 'Hire 4 Directors at once.',
+    reward: 15, evalKind: 'state', check: ({ station }) => totalDirectorHeadcount(station) >= 4 },
+  { id: 'boardroom_full',   group: 'staff', tone: 'gold',   icon: '🏢', title: 'Boardroom Full',    desc: 'Hire all 8 Director role types.',
+    reward: 40, evalKind: 'state', check: ({ station }) => Object.keys(station.directors || {}).length >= 8 },
+  { id: 'auto_pilot',       group: 'staff', tone: 'silver', icon: '🗓', title: 'Auto-Pilot',        desc: 'Assign a Director of Scheduling.',
+    reward: 5,  evalKind: 'state', check: ({ station }) => (station.slotAuto || []).some(Boolean) },
+  { id: 'mission_control',  group: 'staff', tone: 'gold',   icon: '🛰', title: 'Mission Control',   desc: '4 Directors of Scheduling assigned.',
+    reward: 15, evalKind: 'state', check: ({ station }) => (station.slotAuto || []).filter(Boolean).length >= 4 },
+  { id: 'the_bench',        group: 'staff', tone: 'gold',   icon: '🪑', title: 'The Bench',         desc: 'Fill National talent to 25/25.',
+    reward: 15, evalKind: 'state', check: ({ station }) => {
+      if (station.market !== 'national') return false
+      const cap = (station.directors || {}).talent ? 25 : 15
+      const cnt = (station.hiredDirectors || []).length + (station.hiredStars || []).length + (station.hiredWriters || []).length
+      return cap === 25 && cnt >= 25
+    }},
+
+  // ── TALENT ──
+  { id: 'first_hire',  group: 'talent', tone: 'bronze', icon: '✍', title: 'First Hire',  desc: 'Sign your first creative talent.',
+    reward: 2, evalKind: 'state', check: ({ station }) => ((station.hiredDirectors || []).length + (station.hiredStars || []).length + (station.hiredWriters || []).length) >= 1 },
+  { id: 'star_power',  group: 'talent', tone: 'gold',   icon: '🌟', title: 'Star Power',  desc: 'Sign a Legendary star.',
+    reward: 5, evalKind: 'state', check: ({ station }) => hasLegendaryHire(station, 'hiredStars') },
+  { id: 'auteur',      group: 'talent', tone: 'gold',   icon: '🎬', title: 'Auteur',      desc: 'Sign a Legendary creative director.',
+    reward: 5, evalKind: 'state', check: ({ station }) => hasLegendaryHire(station, 'hiredDirectors') },
+  { id: 'pen_mightier',group: 'talent', tone: 'silver', icon: '✒', title: 'Pen Mightier', desc: 'Have 3 writers on contract.',
+    reward: 5, evalKind: 'state', check: ({ station }) => (station.hiredWriters || []).length >= 3 },
+  { id: 'hot_streak',  group: 'talent', tone: 'silver', icon: '🔥', title: 'Hot Streak',   desc: 'Same star on contract 24 months.',
+    reward: 5, evalKind: 'state', check: ({ station }) => (station.hiredStars || []).some(s => (s.monthsOn || s.monthsLogged || 0) >= 24) },
+
+  // ── RESEARCH / TECH ──
+  { id: 'bookworm',     group: 'research', tone: 'bronze', icon: '📚', title: 'Bookworm',    desc: 'Complete your first research project.',
+    reward: 2, evalKind: 'state', check: ({ game }) => (game.research?.unlocked || []).length >= 1 },
+  { id: 'beyond_hd',    group: 'research', tone: 'gold',   icon: '📺', title: 'Beyond HD',   desc: 'Complete 4K UHD research.',
+    reward: 15, evalKind: 'state', check: ({ game }) => (game.research?.unlocked || []).includes('tech_video_uhd') },
+  { id: 'full_spectrum',group: 'research', tone: 'gold',   icon: '🎧', title: 'Full Spectrum', desc: 'Complete Surround Sound research.',
+    reward: 15, evalKind: 'state', check: ({ game }) => (game.research?.unlocked || []).includes('tech_audio_surround') },
+  { id: 'tech_stack',   group: 'research', tone: 'gold',   icon: '🧪', title: 'Tech Stack',  desc: 'Complete Heavy SFX, Surround, 4K UHD.',
+    reward: 40, evalKind: 'state', check: ({ game }) => {
+      const u = game.research?.unlocked || []
+      return u.includes('tech_video_uhd') && u.includes('tech_audio_surround') && u.includes('tech_sfx_heavy')
+    }},
+
+  // ── RIGHTS / IP ──
+  { id: 'pop_culture',    group: 'rights', tone: 'silver', icon: '🎭', title: 'Pop Culture',    desc: 'License your first IP.',
+    reward: 5,  evalKind: 'state', check: ({ station }) => (station.ipLicenses || []).length >= 1 },
+  { id: 'big_league',     group: 'rights', tone: 'silver', icon: '⚾', title: 'Big League',     desc: 'Sign your first sports rights.',
+    reward: 5,  evalKind: 'state', check: ({ station }) => (station.sportsLicenses || []).length >= 1 },
+  { id: 'studio_catalog', group: 'rights', tone: 'gold',   icon: '📚', title: 'Studio Catalog', desc: 'Hold 3 active IP licenses.',
+    reward: 15, evalKind: 'state', check: ({ station, game }) => (station.ipLicenses || []).filter(l => (l.expiresYear || 0) >= (game.year || 1)).length >= 3 },
+
+  // ── FINANCE ──
+  { id: 'in_the_black',     group: 'finance', tone: 'bronze', icon: '✅', title: 'In the Black',    desc: 'Finish a month with positive profit.',
+    reward: 2,  evalKind: 'state', check: ({ game }) => maxMonthlyProfit(game) > 0 },
+  { id: 'cash_machine',     group: 'finance', tone: 'silver', icon: '🪙', title: 'Cash Machine',    desc: 'Earn $50M revenue in one month.',
+    reward: 5,  evalKind: 'state', check: ({ game }) => maxMonthlyRevenue(game) >= 50 },
+  { id: 'whale',            group: 'finance', tone: 'gold',   icon: '🐋', title: 'Whale',           desc: 'Earn $100M revenue in one month.',
+    reward: 15, evalKind: 'state', check: ({ game }) => maxMonthlyRevenue(game) >= 100 },
+  { id: 'self_sustaining',  group: 'finance', tone: 'gold',   icon: '♻', title: 'Self-Sustaining', desc: 'Profitable 12 months in a row.',
+    reward: 15, evalKind: 'state', check: ({ game }) => longestProfitableStreak(game) >= 12 },
+
+  // ── MERCHANDISING ──
+  { id: 'brand_builder', group: 'merch', tone: 'silver', icon: '🧸', title: 'Brand Builder', desc: 'Prepare merchandising on a program.',
+    reward: 5,  evalKind: 'state', check: ({ station }) => (station.programs || []).some(p => p.prepareMerch) },
+  { id: 'cha_ching',     group: 'merch', tone: 'gold',   icon: '💸', title: 'Cha-Ching',     desc: '$100M total merchandising revenue.',
+    reward: 15, evalKind: 'state', check: ({ station }) => totalMerchRevenue(station) >= 100 },
+
+  // ── AWARDS ──
+  { id: 'recognition', group: 'awards', tone: 'gold', icon: '🏅', title: 'Recognition', desc: 'Win your first award.',
+    reward: 5,  evalKind: 'state', check: ({ game }) => anyAwardWon(game) },
+  { id: 'sweep',       group: 'awards', tone: 'gold', icon: '🎖', title: 'Sweep',       desc: 'Win 3+ awards in one ceremony.',
+    reward: 15, evalKind: 'state', check: ({ game }) => maxAwardsOneCeremony(game) >= 3 },
+
+  // ── CAPSTONE ──
+  { id: 'completionist', group: 'meta', tone: 'gold', icon: '🏁', title: 'Completionist', desc: 'Unlock every other achievement.',
+    reward: 40, evalKind: 'state', check: ({ station }) => {
+      const unlocked = Object.keys(station.achievements?.unlocked || {})
+      const total = ACHIEVEMENT_CATALOG.filter(a => a.id !== 'completionist' && !a.recurring).length
+      return unlocked.filter(id => id !== 'completionist').length >= total
+    }},
+
+  // ── RECURRING (does NOT count toward X/Y) ──
+  { id: 'month_top', group: 'recurring', tone: 'gold', icon: '🏆', title: 'Most-Watched This Month',
+    desc: 'Had the #1 program across all networks.', reward: 0, recurring: true, evalKind: 'airing' },
 ]
+
+// ─── ACHIEVEMENT CHECK HELPERS ──────────────────────────────────────────────
+// These walk over game/station state to support the catalog's check() lambdas.
+
+function hasAnyAiredProgram(game) {
+  // Check current runs OR any program that's already been on air at some point.
+  if ((game.runs || []).some(r => (r.aiHistory || []).length >= 1)) return true
+  return (game.station?.programs || []).some(p => p.aiHistory && p.aiHistory.length >= 1)
+}
+
+function countDistinctHitPrograms(game, threshold) {
+  // Walk currently-tracked programs + active runs. A program counts if any
+  // of its airings hit the threshold. We dedupe by programId.
+  const seen = new Set()
+  for (const p of (game.station?.programs || [])) {
+    const hits = (p.aiHistory || []).some(a => (a.rating || 0) >= threshold)
+    if (hits) seen.add(p.id)
+  }
+  for (const r of (game.runs || [])) {
+    const hits = (r.aiHistory || []).some(a => (a.rating || 0) >= threshold)
+    if (hits && r.programId) seen.add(r.programId)
+  }
+  return seen.size
+}
+
+function airedProgramsByTier(station, game, tier) {
+  // A program at this tier with at least one airing.
+  for (const p of (station.programs || [])) {
+    if (p.tier === tier && (p.aiHistory || []).length >= 1) return true
+  }
+  for (const r of (game.runs || [])) {
+    if (r.tier === tier && (r.aiHistory || []).length >= 1) return true
+  }
+  return false
+}
+
+function maxSeqSeasonSeen(game, station) {
+  let best = 1
+  for (const r of (game.runs || [])) if ((r.seqSeason || 1) > best) best = r.seqSeason
+  for (const o of (station.ownedShows || [])) if ((o.lastSeqSeason || 1) > best) best = o.lastSeqSeason
+  return best
+}
+
+function bestYearOfHits(game, threshold) {
+  // Count airings ≥ threshold per year, across all known program histories.
+  const byYear = new Map()
+  const addAirings = (airings) => {
+    for (const a of airings || []) {
+      if ((a.rating || 0) >= threshold) {
+        byYear.set(a.year, (byYear.get(a.year) || 0) + 1)
+      }
+    }
+  }
+  for (const p of (game.station?.programs || [])) addAirings(p.aiHistory)
+  for (const r of (game.runs || [])) addAirings(r.aiHistory)
+  let best = 0
+  for (const n of byYear.values()) if (n > best) best = n
+  return best
+}
+
+function totalDirectorHeadcount(station) {
+  let n = 0
+  for (const r of Object.values(station.directors || {})) n += (r.count || 1)
+  return n
+}
+
+function hasLegendaryHire(station, key) {
+  // hiredDirectors / hiredStars records carry talent records with a tier.
+  return (station[key] || []).some(h => {
+    const t = h.talent?.tier || h.tier
+    return t === 'Legendary'
+  })
+}
+
+function maxMonthlyRevenue(game) {
+  return (game.monthlyPnL || []).reduce((best, m) => Math.max(best, m.revenue || 0), 0)
+}
+function maxMonthlyProfit(game) {
+  return (game.monthlyPnL || []).reduce((best, m) => Math.max(best, m.profit || 0), -Infinity)
+}
+function longestProfitableStreak(game) {
+  let best = 0, cur = 0
+  for (const m of (game.monthlyPnL || [])) {
+    if ((m.profit || 0) > 0) { cur++; if (cur > best) best = cur } else cur = 0
+  }
+  return best
+}
+
+function totalMerchRevenue(station) {
+  let total = 0
+  for (const e of (station.ledger || [])) {
+    if (e.kind === 'program_revenue' && e.label === 'Merchandising revenue') total += (e.amount || 0)
+  }
+  return r1(total)
+}
+
+function anyAwardWon(game) {
+  const byYear = game.awardsByYear || {}
+  for (const yr of Object.keys(byYear)) {
+    if ((byYear[yr] || []).some(a => a.winner)) return true
+  }
+  return false
+}
+function maxAwardsOneCeremony(game) {
+  const byYear = game.awardsByYear || {}
+  let best = 0
+  for (const yr of Object.keys(byYear)) {
+    const n = (byYear[yr] || []).filter(a => a.winner).length
+    if (n > best) best = n
+  }
+  return best
+}
 
 const SLOT_TO_ACHIEVEMENT_ID = {
   weekday_morning: 'slot_lead_weekday_morning',
@@ -2961,6 +3856,22 @@ export function getAchievementCatalog() {
   return ACHIEVEMENT_CATALOG
 }
 
+/** Count of one-shot (non-recurring) achievements total. The X in X/Y. */
+export function totalCountableAchievements() {
+  return ACHIEVEMENT_CATALOG.filter(a => !a.recurring).length
+}
+
+/** Count of one-shot achievements the player has unlocked. */
+export function unlockedCountableAchievements(station) {
+  const map = station?.achievements?.unlocked || {}
+  let n = 0
+  for (const id of Object.keys(map)) {
+    const a = findAchievement(id)
+    if (a && !a.recurring) n++
+  }
+  return n
+}
+
 /** Scan a month's worth of player airings + competitor airings, find newly
  *  unlocked achievements + any recurring events. Returns:
  *   {
@@ -2968,7 +3879,7 @@ export function getAchievementCatalog() {
  *     recurring: [{id, achievement, context}], // fires this month, NOT saved
  *   }
  *  Pure: doesn't mutate station. Caller merges unlocked into station.achievements. */
-export function scanAchievements(station, airings, competitorAirings, market, year, month) {
+export function scanAchievements(station, airings, competitorAirings, market, year, month, game) {
   const already = (station?.achievements?.unlocked) || {}
   const newlyUnlocked = []
   const recurring = []
@@ -3016,6 +3927,47 @@ export function scanAchievements(station, airings, competitorAirings, market, ye
     }
   }
 
+  // ── State-based checks (catalog items with evalKind: 'state') ──
+  // These read game/station rather than this month's airings — they catch
+  // milestones like office promotions, total cash, full cabinet, etc.
+  // We defer the completionist check to a second pass so it sees the OTHER
+  // unlocks added this month.
+  const stateCtx = { game: game || {}, station }
+  const stateItems = ACHIEVEMENT_CATALOG.filter(a => a.evalKind === 'state' && a.id !== 'completionist')
+  for (const a of stateItems) {
+    if (already[a.id]) continue
+    if (newlyUnlocked.some(u => u.id === a.id)) continue
+    try {
+      if (a.check && a.check(stateCtx)) {
+        newlyUnlocked.push({ id: a.id, achievement: a, context: {} })
+      }
+    } catch (e) {
+      // Defensive — bad check shouldn't crash the whole tick.
+    }
+  }
+  // Completionist — eval against (already + newly unlocked) so the 41st fires
+  // in the same month that completes the set.
+  const completionist = findAchievement('completionist')
+  if (completionist && !already.completionist) {
+    const simulated = {
+      ...stateCtx,
+      station: {
+        ...station,
+        achievements: {
+          unlocked: {
+            ...already,
+            ...Object.fromEntries(newlyUnlocked.map(u => [u.id, true])),
+          },
+        },
+      },
+    }
+    try {
+      if (completionist.check(simulated)) {
+        newlyUnlocked.push({ id: 'completionist', achievement: completionist, context: {} })
+      }
+    } catch (e) {}
+  }
+
   // ── Recurring: most-watched of the month ──
   // We compare the player's best-audience airing vs. the best competitor airing.
   // Ties are resolved in the player's favor.
@@ -3039,15 +3991,34 @@ export function scanAchievements(station, airings, competitorAirings, market, ye
   return { unlocked: newlyUnlocked, recurring }
 }
 
-/** Apply newly unlocked achievements to a station (records year/month). Pure. */
+/** Apply newly unlocked achievements to a station. Grants the cash reward and
+ *  appends a ledger entry. Records year/month per achievement. Pure. */
 export function applyUnlockedAchievements(station, unlocked, year, month) {
   if (!unlocked || unlocked.length === 0) return station
-  const next = { ...(station.achievements || { unlocked: {} }) }
-  next.unlocked = { ...(next.unlocked || {}) }
+  const achievements = { ...(station.achievements || { unlocked: {} }) }
+  achievements.unlocked = { ...(achievements.unlocked || {}) }
+  let cashBonus = 0
+  const ledgerAdds = []
   for (const u of unlocked) {
-    next.unlocked[u.id] = { year, month, context: u.context }
+    achievements.unlocked[u.id] = { year, month, context: u.context }
+    const a = u.achievement
+    const reward = a?.reward || 0
+    if (reward > 0) {
+      cashBonus += reward
+      ledgerAdds.push({
+        year, month,
+        kind: 'achievement_bonus',
+        label: `Achievement: ${a.title}`,
+        amount: reward,
+      })
+    }
   }
-  return { ...station, achievements: next }
+  return {
+    ...station,
+    cash: r1((station.cash || 0) + cashBonus),
+    achievements,
+    ledger: [...(station.ledger || []), ...ledgerAdds],
+  }
 }
 
 /** Record a market-tier first when the player promotes. Called from promote flow. */
@@ -3155,6 +4126,7 @@ export function summarizeLedger(entries) {
       case 'hire_signing':  other.hires.push({ label: e.label, amount: e.amount }); break
       case 'fire_penalty':  other.firePenalties.push({ label: e.label, amount: e.amount }); break
       case 'award_bonus':   other.awards.push({ label: e.label, amount: e.amount }); break
+      case 'achievement_bonus': other.awards.push({ label: e.label, amount: e.amount }); break
       case 'infrastructure': other.infrastructure.push({ label: e.label, amount: e.amount }); break
       case 'market_promotion': other.promotion.push({ label: e.label, amount: e.amount }); break
       default:              other.misc.push({ label: e.label, amount: e.amount })

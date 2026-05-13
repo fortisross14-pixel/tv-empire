@@ -613,6 +613,7 @@ export const SFX_TIERS = [
     prefers: ['series', 'family', 'kids'],
     dislikes: ['news', 'latenight', 'reality'],
     minScriptTier: 'large',
+    requires: 'tech_sfx_heavy',
   },
 ]
 
@@ -1149,9 +1150,9 @@ export const COMPETITORS = {
 //   sequelBonus: number                → +X quality on renewed shows
 //   refreshRoster: true                → handled by App.jsx (reroll market roster)
 // RESEARCH ITEMS now have `months` field — they take time to complete.
-// Innovation Director discounts both `cost` and `months` (the better the
-// director, the deeper the discount).
-//   no director:   1.00x cost, 1.00x months
+// VP of Innovation discounts both `cost` and `months` (the better the
+// VP, the deeper the discount).
+//   no VP:         1.00x cost, 1.00x months
 //   Common:        0.95x cost, 0.92x months
 //   Uncommon:      0.85x cost, 0.85x months
 //   Rare:          0.75x cost, 0.75x months
@@ -1357,6 +1358,13 @@ export const RESEARCH = [
     requires: ['tech_video_hd'],
     effect: {},
   },
+  {
+    id: 'tech_sfx_heavy', group: 'tech', domain: 'sfx',
+    label: 'Heavy SFX Pipeline', icon: '💥',
+    desc: 'Unlock Heavy SFX option in production. Cinematic spectacle. Requires Director of Technology Innovation.',
+    cost: 22, months: 6,
+    effect: {},
+  },
 
   // ─── OPERATIONS — PASSIVE BOOSTS ──────────────────────────────────────────
   {
@@ -1385,7 +1393,7 @@ export const RESEARCH = [
   {
     id: 'ops_mktg_eff', group: 'ops',
     label: 'Marketing Efficiency', icon: '📢',
-    desc: '−25% on all marketing campaign costs (stacks with Marketing Director).',
+    desc: '−25% on all marketing campaign costs (stacks with VP of Marketing).',
     cost: 10, months: 3,
     effect: { marketingDiscount: 0.75 },
   },
@@ -1726,23 +1734,23 @@ export const SPORTS_MARKET_COST_MULT = { local: 1.0, metro: 2.5, national: 6.0 }
 // Heavy search = unlocked via research (3 mo, $2M, up to Legendary).
 export const STAFF_ROLES = [
   {
-    id: 'personnel', label: 'Personnel Director', icon: '👔',
-    desc: 'Required to hire any other director. Quick searches always available; better searches unlock more.',
+    id: 'personnel', label: 'VP of Personnel', icon: '👔',
+    desc: 'Required to hire any other VP. Quick searches always available; better searches unlock more.',
   },
   {
-    id: 'innovation', label: 'Innovation Director', icon: '🔬',
+    id: 'innovation', label: 'VP of Innovation', icon: '🔬',
     desc: 'Speeds up and discounts research. Common −5%, Legendary −55% cost / −50% time.',
   },
   {
-    id: 'operations', label: 'Operations Director', icon: '⚙️',
+    id: 'operations', label: 'VP of Operations', icon: '⚙️',
     desc: 'Lowers production cost on every show. Common −5%, Legendary −30%.',
   },
   {
-    id: 'marketing', label: 'Marketing Director', icon: '📣',
+    id: 'marketing', label: 'VP of Marketing', icon: '📣',
     desc: 'Discounts marketing campaigns AND boosts their impact. Common −10% / +10% impact, Legendary −40% / +60% impact.',
   },
   {
-    id: 'content', label: 'Content Director', icon: '🎨',
+    id: 'content', label: 'VP of Content', icon: '🎨',
     desc: 'Permanent quality bonus on every show. Common +0.3, Legendary +1.2.',
   },
 ]
@@ -1828,6 +1836,114 @@ export const STAFF_EFFECTS = {
   },
 }
 
+// ─── DIRECTOR ROLES (National-only sub-tier under VPs) ────────────────────────
+// Directors sit below VPs and have specialized effects. Unlike VPs, they are
+// ALWAYS Common tier — no rarity rolling, no searches.
+//
+// Gating:
+//   - Requires station.market === 'national'
+//   - Requires the parent VP is hired
+//   - Requires Director of Staff is hired, EXCEPT Director of Staff itself
+//     (which only requires VP of Personnel — mirrors the personnel-first VP gate)
+//
+// Special director: 'scheduling' — supports up to 4 simultaneous hires
+// (each scheduling director can auto-program one slot focus).
+export const DIRECTOR_ROLES = [
+  // Personnel branch
+  {
+    id: 'talent', label: 'Director of Talent', icon: '🧑‍🤝‍🧑',
+    parentVP: 'personnel',
+    desc: 'Expands talent capacity from 15 to 25 at the National office.',
+  },
+  {
+    id: 'staff', label: 'Director of Staff', icon: '🗂️',
+    parentVP: 'personnel',
+    desc: 'Required to hire any other Director. Like VP of Personnel — but one level deeper.',
+  },
+
+  // Content branch
+  {
+    id: 'production', label: 'Director of Production', icon: '🎬',
+    parentVP: 'content',
+    desc: '−15% cost and +15% quality on top production tiers (Ad-Hoc design, Heavy SFX, Surround, 4K UHD, Multilingual subs).',
+  },
+  {
+    id: 'creative', label: 'Creative Director', icon: '✒️',
+    parentVP: 'content',
+    desc: '+15% quality on scripts your writers create.',
+  },
+
+  // Innovation branch
+  {
+    id: 'techinnov', label: 'Director of Technology Innovation', icon: '🧪',
+    parentVP: 'innovation',
+    desc: 'Required to research Surround Sound, 4K UHD, and Heavy SFX. Without one, those projects can\'t even be opened.',
+  },
+
+  // Marketing branch
+  {
+    id: 'marketing', label: 'Director of Marketing', icon: '📊',
+    parentVP: 'marketing',
+    desc: 'Unlocks Standard Ads and TV+Radio+Print campaign tiers. Without this director those tiers are locked.',
+  },
+  {
+    id: 'merchandising', label: 'Director of Merchandising', icon: '🧸',
+    parentVP: 'marketing',
+    desc: 'Enables "Prepare Merchandising" on Large and Super productions for a chance at large hype-scaled side revenue.',
+  },
+
+  // Operations branch (special: up to 4 of these)
+  {
+    id: 'scheduling', label: 'Director of Scheduling', icon: '🗓️',
+    parentVP: 'operations', maxCount: 4,
+    desc: 'Auto-schedules a slot with a content focus. Auto-scheduled programs run at 0.9× quality and 0.85× hype vs hand-crafted.',
+  },
+]
+
+// Common-tier flat salary for every director. Cheap relative to VPs because
+// they are narrower in effect and always Common.
+export const DIRECTOR_SALARY = 0.5  // $M / month
+export const DIRECTOR_FIRE_PENALTY = DIRECTOR_SALARY * STAFF_FIRE_PENALTY_MULT
+export const DIRECTOR_HIRE_COST = 1.5  // $M one-time on hire (no search/lottery)
+
+// Effect tuning constants used by engine code.
+// (Tier doesn't vary — keep it simple as flat coefficients.)
+export const DIRECTOR_EFFECTS = {
+  // Director of Production: cost discount + quality boost on top production tiers
+  production: {
+    topTierCostMult: 0.85,   // 15% off
+    topTierQMult:    1.15,   // 15% quality up
+    // IDs covered by the boost (cross-axis "top tier" choices):
+    topTierIds: ['pd_adhoc', 'sfx_heavy', 'audio_surround', 'video_uhd', 'subs_multi'],
+  },
+  // Creative Director: writer-written script quality boost
+  creative: {
+    scriptQMult: 1.15,        // applied when writer-script transitions to 'ready'
+  },
+  // Director of Talent: bumps national talent cap
+  talent: {
+    talentCapNational: 25,    // without it, national stays at 15
+  },
+  // Director of Tech Innovation: gates research starts
+  techinnov: {
+    gatedResearch: ['tech_audio_surround', 'tech_video_uhd', 'tech_sfx_heavy'],
+    gatedSfxTier: 'sfx_heavy',  // production view: lock Heavy SFX without it
+  },
+  // Director of Marketing: unlocks paid ad tiers
+  marketing: {
+    unlocksMarketingTiers: ['medium', 'big'],  // Standard Ads + TV+Radio+Print
+  },
+  // Director of Merchandising: enabler flag for prepare-merchandising option
+  merchandising: {
+    // Effect is enabling the option in ProductionView; logic itself comes next
+    // session. Stub here so the data model is in place.
+    enabled: true,
+  },
+  // Scheduling and Staff have no direct quality/cost effects — pure gates.
+  scheduling: {},
+  staff: {},
+}
+
 // Name pool for randomly-generated staff candidates
 export const STAFF_NAME_POOL = {
   first: ['Alex', 'Sam', 'Jordan', 'Casey', 'Morgan', 'Taylor', 'Riley', 'Avery', 'Quinn', 'Cameron',
@@ -1840,7 +1956,34 @@ export const STAFF_NAME_POOL = {
 export const STAFF_FIRST_NAMES = STAFF_NAME_POOL.first
 export const STAFF_LAST_NAMES = STAFF_NAME_POOL.last
 
-// ─── AUDIO / SUBTITLES / VIDEO QUALITY ───────────────────────────────────────
+
+// Available only on Large and Super productions with Director of Merchandising.
+// Tens of millions upfront; revenue scales as hype^1.8 × quality, so:
+//   - mid-range hype + quality → slight loss (the gamble doesn't pay)
+//   - high quality + hype → meaningful profit
+//   - exceptional → massive profit
+// Movies, sports, normal-tier scripted shows: not eligible (toggle hidden).
+export const MERCH_PREPARE_COST = { large: 15, super: 40 } // $M upfront on production start
+export const MERCH_BASE_REVENUE = { large: 8,  super: 22 } // $M base scalar per airing
+export const MERCH_HYPE_EXPONENT = 1.8                     // bend the curve so mid → loss
+
+// ─── AUTO-SCHEDULING (Director of Scheduling) ────────────────────────────────
+// When a Director of Scheduling is assigned to a slot with a category focus,
+// they spawn one auto-program per month into that slot. The slot is LOCKED —
+// manual scheduling is unavailable until the director is canceled.
+//
+// Quality/hype rolls fresh each month, then multiplied by these factors so
+// auto-programs are slightly worse than hand-crafted ones.
+export const AUTO_SCHED_Q_MULT = 0.9
+export const AUTO_SCHED_H_MULT = 0.85
+// Auto-programs roll a base quality + hype from a narrow random band so
+// canceling and re-assigning later gives a slightly different rating.
+export const AUTO_SCHED_BASE_Q_MIN = 4.5
+export const AUTO_SCHED_BASE_Q_MAX = 6.5
+export const AUTO_SCHED_BASE_H_MIN = 4.0
+export const AUTO_SCHED_BASE_H_MAX = 6.0
+
+
 // 3 independent dimensions, 3 levels each. Better levels unlocked via research.
 // Per-month cost added to show, quality + hype bonuses.
 export const TECH_QUALITY = {

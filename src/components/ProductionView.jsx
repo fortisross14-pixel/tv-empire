@@ -13,6 +13,8 @@ import {
   estimateProgramQH, programBuildCost,
   productionMethodFor, productionMonthsFor,
   unlockedTechFor, findTechOption,
+  hasDirector,
+  canPrepareMerch, merchPrepareCost,
   fmtM,
 } from '../engine.js'
 
@@ -147,6 +149,13 @@ export function ProductionView({
 
   // ── MARKETING ────────────────────────────────────────────────────────────
   const [marketingId, setMarketingId] = useState('none')
+  const [prepareMerch, setPrepareMerch] = useState(false)
+  const merchAvailable = canPrepareMerch(station, scriptTier)
+  // If user toggled merch but later swaps to a script tier that doesn't qualify,
+  // clear the flag so cost estimates don't show ghost merch dollars.
+  useEffect(() => {
+    if (!merchAvailable && prepareMerch) setPrepareMerch(false)
+  }, [merchAvailable, prepareMerch])
 
   // ── PLANNED RUN LENGTH (cosmetic for build; drives prod time) ────────────
   const [plannedRunMonths, setPlannedRunMonths] = useState(
@@ -172,10 +181,12 @@ export function ProductionView({
     audioId, subsId, videoId,
     marketingId,
     plannedRunMonths,
+    prepareMerch: merchAvailable && prepareMerch,
   }), [name, buildType, scriptId, movieId, sportsLeagueId, categoryId, topicId, ipId,
        needsCrew, directorId, starId, starId2, scriptTier,
        prodDesignId, sfxId, musicId,
-       audioId, subsId, videoId, marketingId, plannedRunMonths])
+       audioId, subsId, videoId, marketingId, plannedRunMonths,
+       merchAvailable, prepareMerch])
 
   // ── LIVE ESTIMATE (re-rolls slightly each toggle due to noise; that's OK) ──
   // Use a deterministic seed-ish display: estimate once per change, but we'll
@@ -481,6 +492,7 @@ export function ProductionView({
                 selectedId={sfxId}
                 onPick={(id) => { setSfxId(id); setEstVersion(v => v+1) }}
                 scriptTierRank={scriptTierRank}
+                research={research}
               />
             </Field>
 
@@ -520,13 +532,48 @@ export function ProductionView({
           <select value={marketingId} onChange={e => { setMarketingId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
             {MARKETING_TIERS
               .filter(m => !m.localOnly || station.market === 'local')
-              .map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.label} {m.cost > 0 ? `· ${fmtM(m.cost)}` : '· free'}
-                </option>
-              ))}
+              .map(m => {
+                const lockedByDir = (m.id === 'medium' || m.id === 'big') && !hasDirector(station, 'marketing')
+                return (
+                  <option key={m.id} value={m.id} disabled={lockedByDir}>
+                    {m.label} {m.cost > 0 ? `· ${fmtM(m.cost)}` : '· free'}{lockedByDir ? ' 🔒 needs Dir. of Marketing' : ''}
+                  </option>
+                )
+              })}
           </select>
         </Field>
+
+        {/* ── MERCHANDISING (Large/Super + Director of Merch only) ──── */}
+        {merchAvailable && (
+          <Field label="Merchandising">
+            <button
+              onClick={() => { setPrepareMerch(v => !v); setEstVersion(v => v+1) }}
+              style={{
+                width: '100%', textAlign: 'left',
+                background: prepareMerch ? T.accent + '22' : T.card,
+                border: `1.5px solid ${prepareMerch ? T.accent : T.border}`,
+                color: T.text, borderRadius: 5,
+                padding: '10px 12px', cursor: 'pointer',
+              }}
+            >
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                marginBottom: 4,
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: prepareMerch ? T.accent : T.text }}>
+                  {prepareMerch ? '✓ ' : ''}Prepare Merchandising
+                </span>
+                <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono', color: T.red, fontWeight: 700 }}>
+                  +{fmtM(merchPrepareCost(scriptTier))} upfront
+                </span>
+              </div>
+              <div style={{ fontSize: 10.5, color: T.muted, lineHeight: 1.4 }}>
+                Heavy upfront bet. Per-airing revenue scales with hype<sup>1.8</sup> × quality —
+                mid-range performance loses money, but a hit returns it many times over.
+              </div>
+            </button>
+          </Field>
+        )}
 
         {/* ── RUN LENGTH (preproduced/live only) ─────────────────────── */}
         {buildType === 'script' && (
@@ -636,13 +683,15 @@ export function ProductionView({
 }
 
 // ─── SUBCOMPONENTS ──────────────────────────────────────────────────────────
-function TierPicker({ tiers, selectedId, onPick, scriptTierRank = 0 }) {
+function TierPicker({ tiers, selectedId, onPick, scriptTierRank = 0, research = {} }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
       {tiers.map(t => {
         const isSel = t.id === selectedId
         const needRank = SCRIPT_TIER_RANK[t.minScriptTier] ?? 0
-        const locked = needRank > scriptTierRank
+        const lockedScript = needRank > scriptTierRank
+        const needsResearch = t.requires && !(research?.unlocked || []).includes(t.requires)
+        const locked = lockedScript || needsResearch
         return (
           <button
             key={t.id}
@@ -670,9 +719,14 @@ function TierPicker({ tiers, selectedId, onPick, scriptTierRank = 0 }) {
             }}>
               {t.cost > 0 ? fmtM(t.cost) : 'free'}
             </div>
-            {locked && (
+            {lockedScript && (
               <div style={{ fontSize: 9, color: T.red, marginTop: 3 }}>
                 Requires {t.minScriptTier} script
+              </div>
+            )}
+            {!lockedScript && needsResearch && (
+              <div style={{ fontSize: 9, color: T.red, marginTop: 3 }}>
+                Needs research unlock
               </div>
             )}
           </button>

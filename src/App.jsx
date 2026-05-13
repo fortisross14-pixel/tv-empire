@@ -3,6 +3,7 @@ import { T, findBrand } from './theme'
 import {
   MARKETS, RESEARCH, MOVIES, SLOT_TYPES, MONTHS,
   SPORTS_LEAGUES, IPS, IPS as IPS_FOR_NAMES,
+  DIRECTOR_ROLES,
 } from './constants'
 import {
   initGame,
@@ -13,6 +14,7 @@ import {
   assignAudiences,
   cancelRunCost,
   buildAwards,
+  findStar,
   applyResearch,
   canResearch,
   canPromote,
@@ -42,6 +44,13 @@ import {
   cancelStaffPosition,
   hireStaffCandidate,
   fireStaffMember,
+  hireDirector,
+  fireDirector,
+  canHireDirector,
+  directorSalaryTotal,
+  assignSchedulingDirector,
+  cancelSchedulingDirector,
+  idleSchedulingDirectors,
   buyIPLicense,
   activeIPLicenses,
   launchNetworkCampaign,
@@ -82,6 +91,9 @@ import {
   scanAchievements,
   applyUnlockedAchievements,
   recordMarketAchievement,
+  getAchievementCatalog,
+  totalCountableAchievements,
+  unlockedCountableAchievements,
 } from './engine'
 
 import { SetupScreen } from './components/SetupScreen'
@@ -100,58 +112,108 @@ import { SectionTitle } from './components/ui'
 import { play as playSound, initOnGesture, isMuted, toggleMuted } from './audio'
 import { Icon } from './icons.jsx'
 
-// ─── AUTO-SAVE ──────────────────────────────────────────────────────────
-const SAVE_KEY = 'tv-empire-save-v9'
+// ─── SAVE SLOTS ─────────────────────────────────────────────────────────
+// Multiple save slots, each holding a full game state plus a small summary
+// for display in the home screen. Auto-saves to the currently-active slot.
+const SLOTS_KEY = 'tv-empire-slots-v1'
+const LEGACY_SAVE_KEY = 'tv-empire-save-v9'  // for one-time migration
+const SLOT_COUNT = 6
 
-function saveGame(game) {
+function loadAllSlots() {
   try {
-    if (!game || game.phase === 'setup') return
-    localStorage.setItem(SAVE_KEY, JSON.stringify(game))
-  } catch (e) { /* localStorage full or unavailable */ }
-}
-
-function loadGame() {
-  try {
-    const raw = localStorage.getItem(SAVE_KEY)
-    if (!raw) return null
-    const g = JSON.parse(raw)
-    // Validate required fields — if any missing, treat save as invalid
-    if (!g || !g.station || !g.research) return null
-    if (!Array.isArray(g.runs)) return null
-    if (!Array.isArray(g.competitors)) return null
-    if (typeof g.monthIdx !== 'number' || typeof g.year !== 'number') return null
-    // Stage (b) station fields all present in fresh init — defensive defaults only
-    if (!g.station.staff) g.station.staff = { personnel: null, innovation: null, operations: null, marketing: null, content: null }
-    if (!g.station.openPositions) g.station.openPositions = []
-    if (!g.station.ipLicenses) g.station.ipLicenses = []
-    if (!g.station.sportsLicenses) g.station.sportsLicenses = []
-    if (!g.station.hiredWriters) g.station.hiredWriters = []
-    if (!g.station.scripts) g.station.scripts = []
-    if (!g.station.programs) g.station.programs = []
-    if (!g.station.brandId) g.station.brandId = 'ember'
-    if (!g.station.moviePacks) g.station.moviePacks = []
-    if (!g.station.specStars) {
-      // Default: focus genre 1★, everything else 0
-      g.station.specStars = { news: 0, reality: 0, series: 0, latenight: 0, sports: 0, movie: 0, family: 0, kids: 0 }
-      if (g.station.focus) g.station.specStars[g.station.focus] = 1
+    const raw = localStorage.getItem(SLOTS_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw)
+      if (Array.isArray(arr)) {
+        // Ensure length is SLOT_COUNT
+        const out = arr.slice(0, SLOT_COUNT)
+        while (out.length < SLOT_COUNT) out.push(null)
+        return out
+      }
     }
-    if (!g.station.specXP) g.station.specXP = { news: 0, reality: 0, series: 0, latenight: 0, sports: 0, movie: 0, family: 0, kids: 0 }
-    if (!g.station.achievements) g.station.achievements = { unlocked: {} }
-    if (!g.research.inProgress) g.research.inProgress = []
-    if (!g.research.scriptTiersUnlocked) g.research.scriptTiersUnlocked = []
-    if (!g.pendingHires) g.pendingHires = []
-    if (!g.pendingReviews) g.pendingReviews = []
-    if (!g.ownedShows) g.ownedShows = []
-    if (!g.allShows) g.allShows = []
-    if (!g.competitorAllShows) g.competitorAllShows = []
-    if (!g.ledger) g.ledger = []
-    if (!g.awardsByYear) g.awardsByYear = {}
-    return g
-  } catch (e) { return null }
+  } catch (e) { /* fall through */ }
+  // One-time migration: lift the old single-save into slot 0
+  try {
+    const legacy = localStorage.getItem(LEGACY_SAVE_KEY)
+    if (legacy) {
+      const g = JSON.parse(legacy)
+      if (g && g.station) {
+        const slot = makeSlotFromGame(g, 'Continued game')
+        const slots = [slot, null, null, null, null, null]
+        localStorage.setItem(SLOTS_KEY, JSON.stringify(slots))
+        return slots
+      }
+    }
+  } catch (e) { /* ignore */ }
+  return new Array(SLOT_COUNT).fill(null)
 }
 
-function clearSave() {
-  try { localStorage.removeItem(SAVE_KEY) } catch (e) { /* noop */ }
+function makeSlotFromGame(game, name) {
+  return {
+    id: Math.random().toString(36).slice(2, 9),
+    name: name || (game?.station?.name || 'Untitled') + ' — Y' + (game?.year || 1),
+    savedAt: Date.now(),
+    summary: {
+      stationName: game?.station?.name || 'Unknown',
+      year: game?.year || 1,
+      monthIdx: game?.monthIdx || 0,
+      market: game?.station?.market || 'local',
+      fame: game?.station?.fame || 0,
+      cash: game?.station?.cash || 0,
+    },
+    state: game,
+  }
+}
+
+function saveAllSlots(slots) {
+  try {
+    localStorage.setItem(SLOTS_KEY, JSON.stringify(slots))
+  } catch (e) { /* full disk, ignore */ }
+}
+
+function writeSlot(slotIdx, game, existingName) {
+  const slots = loadAllSlots()
+  slots[slotIdx] = makeSlotFromGame(game, existingName)
+  saveAllSlots(slots)
+}
+
+function deleteSlot(slotIdx) {
+  const slots = loadAllSlots()
+  slots[slotIdx] = null
+  saveAllSlots(slots)
+}
+
+// Validate + apply backfills to a loaded game state
+function hydrateLoadedGame(g) {
+  if (!g || !g.station || !g.research) return null
+  if (!Array.isArray(g.runs)) return null
+  if (!Array.isArray(g.competitors)) return null
+  if (typeof g.monthIdx !== 'number' || typeof g.year !== 'number') return null
+  if (!g.station.staff) g.station.staff = { personnel: null, innovation: null, operations: null, marketing: null, content: null }
+  if (!g.station.openPositions) g.station.openPositions = []
+  if (!g.station.ipLicenses) g.station.ipLicenses = []
+  if (!g.station.sportsLicenses) g.station.sportsLicenses = []
+  if (!g.station.hiredWriters) g.station.hiredWriters = []
+  if (!g.station.scripts) g.station.scripts = []
+  if (!g.station.programs) g.station.programs = []
+  if (!g.station.brandId) g.station.brandId = 'ember'
+  if (!g.station.moviePacks) g.station.moviePacks = []
+  if (!g.station.specStars) {
+    g.station.specStars = { news: 0, reality: 0, series: 0, latenight: 0, sports: 0, movie: 0, family: 0, kids: 0 }
+    if (g.station.focus) g.station.specStars[g.station.focus] = 1
+  }
+  if (!g.station.specXP) g.station.specXP = { news: 0, reality: 0, series: 0, latenight: 0, sports: 0, movie: 0, family: 0, kids: 0 }
+  if (!g.station.achievements) g.station.achievements = { unlocked: {} }
+  if (!g.research.inProgress) g.research.inProgress = []
+  if (!g.research.scriptTiersUnlocked) g.research.scriptTiersUnlocked = []
+  if (!g.pendingHires) g.pendingHires = []
+  if (!g.pendingReviews) g.pendingReviews = []
+  if (!g.ownedShows) g.ownedShows = []
+  if (!g.allShows) g.allShows = []
+  if (!g.competitorAllShows) g.competitorAllShows = []
+  if (!g.ledger) g.ledger = []
+  if (!g.awardsByYear) g.awardsByYear = {}
+  return g
 }
 
 // ─── ERROR BOUNDARY ─────────────────────────────────────────────────────────
@@ -183,13 +245,19 @@ class ErrorBoundary extends React.Component {
             marginBottom: 16,
           }}>{String(this.state.error?.stack || this.state.error)}</pre>
           <button
-            onClick={() => { clearSave(); window.location.reload() }}
+            onClick={() => {
+              try {
+                localStorage.removeItem(SLOTS_KEY)
+                localStorage.removeItem(LEGACY_SAVE_KEY)
+              } catch (e) { /* ignore */ }
+              window.location.reload()
+            }}
             style={{
               padding: '10px 16px', background: T.accent, color: T.bg,
               border: 'none', borderRadius: 5, fontSize: 14, fontWeight: 700,
               cursor: 'pointer',
             }}
-          >Reset save and reload</button>
+          >Reset all saves and reload</button>
         </div>
       )
     }
@@ -198,19 +266,36 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function App() {
-  const [game, setGame] = useState(() => {
-    const saved = loadGame()
-    return saved || { phase: 'setup' }
-  })
+  // App-level view: 'home' (slot picker) or 'game' (playing)
+  const [appView, setAppView] = useState('home')
+  // Which slot index we're currently playing — null when on home
+  const [currentSlotIdx, setCurrentSlotIdx] = useState(null)
+  // Saved game state (set when we enter a slot)
+  const [game, setGame] = useState({ phase: 'setup' })
+  // Settings menu open?
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  // Achievements modal open?
+  const [achievementsOpen, setAchievementsOpen] = useState(false)
+  // Queue of newly-unlocked achievements waiting to be shown as a popup.
+  // Populated by the monthly tick when achievements fire; shown one at a time.
+  const [achievementPopupQueue, setAchievementPopupQueue] = useState([])
+
   const [editingSlotIdx, setEditingSlotIdx] = useState(null)
   const [view, setView] = useState('plan')
   const [muted, setMutedState] = useState(() => isMuted())
   const prevPhase = React.useRef(game.phase)
 
-  // Auto-save on every game state change
+  // Auto-save the current slot whenever the game state changes — but only
+  // while we're actually IN a game (a slot is selected). Setup screens
+  // shouldn't write to the slot until the player presses "Start".
   React.useEffect(() => {
-    saveGame(game)
-  }, [game])
+    if (appView !== 'game') return
+    if (currentSlotIdx === null) return
+    if (!game || game.phase === 'setup') return
+    // Preserve the slot's display name (if any) across saves
+    const existing = loadAllSlots()[currentSlotIdx]
+    writeSlot(currentSlotIdx, game, existing?.name)
+  }, [game, appView, currentSlotIdx])
 
   // Unlock Web Audio on first user interaction anywhere in the document.
   // (Browsers require a gesture before sound can play.)
@@ -348,6 +433,10 @@ export default function App() {
       return
     }
     playSound('month_advance')
+
+    // Captured across the setGame closure so we can queue unlock popups
+    // outside of React's state updater (which must remain pure).
+    let unlocksThisTick = []
 
     setGame((g) => {
       // ── Phase 1: produce airings (no audience yet) ───────────────────
@@ -553,15 +642,31 @@ export default function App() {
         if (!a.programId) return
         const prog = programsAfterAirings.find(p => p.id === a.programId)
                   || g.station.programs.find(p => p.id === a.programId)
+        // For auto-scheduled airings the airing carries its own name.
         const progName = prog?.name
+                     || (a._isAuto ? a.name : null)
                      || (a.sportsRunLeagueId ? `${findLeague(a.sportsRunLeagueId)?.label || 'Sports'} Coverage` : null)
                      || 'Untitled'
-        if ((a.revenue || 0) > 0) {
+        // Split the airing's revenue into ad revenue and merchandising revenue
+        // so the financial statement can show them on separate lines. If neither
+        // is broken out (legacy), fall back to using a.revenue as ad revenue.
+        const adRev = (a.adRevenue != null) ? a.adRevenue : ((a.revenue || 0) - (a.merchRevenue || 0))
+        const merchRev = a.merchRevenue || 0
+        if (adRev > 0) {
           monthLedger.push(ledgerEntry({
             year: g.year, month: g.monthIdx,
             kind: 'program_revenue',
             label: 'Airing revenue',
-            amount: a.revenue,
+            amount: adRev,
+            programId: a.programId, programName: progName,
+          }))
+        }
+        if (merchRev > 0) {
+          monthLedger.push(ledgerEntry({
+            year: g.year, month: g.monthIdx,
+            kind: 'program_revenue',
+            label: 'Merchandising revenue',
+            amount: merchRev,
             programId: a.programId, programName: progName,
           }))
         }
@@ -689,18 +794,47 @@ export default function App() {
         a.slotTotal = group.length
       })
 
+      // Compute this month's P&L (revenue and profit) for state-based checks.
+      // The full game.monthlyPnL list lets checks like "Self-Sustaining" walk back
+      // through history without rebuilding it from the ledger every time.
+      const monthRevenue = r1(playerRev)
+      const monthExpense = r1(playerCost + (ticked.perMonthCharge || 0) + salaryThisMonth + infraCost)
+      const monthProfit = r1(monthRevenue - monthExpense)
+      const monthlyPnLEntry = {
+        year: g.year, month: g.monthIdx,
+        revenue: monthRevenue, expense: monthExpense, profit: monthProfit,
+      }
+      const monthlyPnL = [...(g.monthlyPnL || []), monthlyPnLEntry]
+
       // ── Achievements scan ──
+      // Build a snapshot view of game state for state-based checks. We pass
+      // the latest research and the just-extended monthlyPnL so checks see
+      // the freshest values.
+      const gameSnapshot = {
+        year: g.year,
+        monthIdx: g.monthIdx,
+        runs: remainingRuns,
+        research: researchState,
+        monthlyPnL,
+        awardsByYear: g.awardsByYear || {},
+        station: stationWithSpec,
+      }
       const achScan = scanAchievements(
-        stationWithSpec,         // most up-to-date station before this month's final compose
+        stationWithSpec,
         playerAirings,
         competitorAiringsThisMonth,
         g.station.market,
         g.year,
         g.monthIdx,
+        gameSnapshot,
       )
       // Apply firsts: merge unlocked achievements into the final station so
       // they persist. Recurring events fire each month and aren't stored.
       station = applyUnlockedAchievements(station, achScan.unlocked, g.year, g.monthIdx)
+      // Stash for the popup queue effect after setGame finishes.
+      if (achScan.unlocked.length > 0) {
+        unlocksThisTick = achScan.unlocked.slice()
+      }
 
       const lastMonthResult = {
         airings: playerAirings,
@@ -724,7 +858,19 @@ export default function App() {
 
       if (isYearEnd) {
         const allYearShows = [...g.yearShows, ...playerAirings]
-        const awards = buildAwards(allYearShows, station)
+        // Competitor shows aired this year (g.competitorAllShows holds the
+        // full history; we filter to current year + add this month's)
+        const competitorThisYear = [
+          ...(g.competitorAllShows || []).filter(s => s.year === g.year),
+          ...competitorAiringsThisMonth,
+        ]
+        const awards = buildAwards(
+          allYearShows,
+          competitorThisYear,
+          station,
+          g.year,
+          (id) => findStar(id)?.name || null,
+        )
         let cash = station.cash
         let fame = station.fame
         const awardLedger = []
@@ -737,21 +883,12 @@ export default function App() {
             amount: w.cashBonus,
           }))
         })
-        if (awards.bestOverall) {
-          cash += awards.bestOverall.cashBonus; fame += awards.bestOverall.fameBonus
-          if (awards.bestOverall.cashBonus > 0) awardLedger.push(ledgerEntry({
-            year: g.year, month: g.monthIdx,
-            kind: 'award_bonus',
-            label: `Award: Best Overall`,
-            amount: awards.bestOverall.cashBonus,
-          }))
-        }
         if (awards.mostWatched) {
           cash += awards.mostWatched.cashBonus; fame += awards.mostWatched.fameBonus
           if (awards.mostWatched.cashBonus > 0) awardLedger.push(ledgerEntry({
             year: g.year, month: g.monthIdx,
             kind: 'award_bonus',
-            label: `Award: Most Watched`,
+            label: `Award: Fan Favorite`,
             amount: awards.mostWatched.cashBonus,
           }))
         }
@@ -776,6 +913,7 @@ export default function App() {
           awardsByYear: { ...(g.awardsByYear || {}), [g.year]: awards },
           pendingReviews: newReviews,
           ledger: [...(g.ledger || []), ...monthLedger, ...awardLedger],
+          monthlyPnL,
           phase: 'awards',
           log: logLines,
         }
@@ -799,10 +937,18 @@ export default function App() {
         lastMonthResult,
         pendingReviews: newReviews,
         ledger: [...(g.ledger || []), ...monthLedger],
+        monthlyPnL,
         phase: playerAirings.length > 0 ? 'results' : 'plan',
         log: logLines,
       }
     })
+
+    // After the tick state is committed, queue up popups for any achievements
+    // unlocked during the tick. They'll be displayed one at a time as the
+    // player taps through them.
+    if (unlocksThisTick.length > 0) {
+      setAchievementPopupQueue(q => [...q, ...unlocksThisTick])
+    }
   }
 
   const continueAfterResults = () => {
@@ -1211,14 +1357,99 @@ export default function App() {
       const entry = result.penalty > 0 ? ledgerEntry({
         year: g.year, month: g.monthIdx,
         kind: 'fire_penalty',
-        label: `Severance (${role})`,
+        label: `Severance (VP ${role})`,
         amount: -result.penalty,
       }) : null
       return {
         ...g,
         station: result.station,
         ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
-        log: [...g.log, `🚪 Fired ${role} director (severance ${fmtM(result.penalty)})`],
+        log: [...g.log, `🚪 Fired VP of ${role} (severance ${fmtM(result.penalty)})`],
+      }
+    })
+  }
+
+  // ─── DIRECTORS (National sub-tier) ──────────────────────────────────
+  const onHireDirector = (roleId) => {
+    const probe = canHireDirector(game.station, roleId)
+    const roleLabel = DIRECTOR_ROLES.find(r => r.id === roleId)?.label || roleId
+    if (!probe.ok) {
+      playSound('error')
+      setGame((g) => ({ ...g, log: [...g.log, `⚠ ${roleLabel}: ${probe.reason}`] }))
+      return
+    }
+    setGame((g) => {
+      const result = hireDirector(g.station, roleId, g.year, g.monthIdx)
+      if (result.error) {
+        return { ...g, log: [...g.log, `⚠ ${roleLabel}: ${result.error}`] }
+      }
+      const entry = ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'director_hire',
+        label: `Hire ${roleLabel}`,
+        amount: -1.5,  // DIRECTOR_HIRE_COST
+      })
+      playSound('confirm')
+      return {
+        ...g,
+        station: result.station,
+        ledger: [...(g.ledger || []), entry],
+        log: [...g.log, `🎯 Hired ${roleLabel}`],
+      }
+    })
+  }
+
+  const onFireDirector = (roleId) => {
+    const roleLabel = DIRECTOR_ROLES.find(r => r.id === roleId)?.label || roleId
+    setGame((g) => {
+      const result = fireDirector(g.station, roleId)
+      if (result.error) {
+        return { ...g, log: [...g.log, `⚠ ${roleLabel}: ${result.error}`] }
+      }
+      const entry = result.penalty > 0 ? ledgerEntry({
+        year: g.year, month: g.monthIdx,
+        kind: 'fire_penalty',
+        label: `Severance (${roleLabel})`,
+        amount: -result.penalty,
+      }) : null
+      return {
+        ...g,
+        station: result.station,
+        ledger: entry ? [...(g.ledger || []), entry] : (g.ledger || []),
+        log: [...g.log, `🚪 Fired ${roleLabel} (severance ${fmtM(result.penalty)})`],
+      }
+    })
+  }
+
+  // ─── AUTO-SCHEDULING (Director of Scheduling assignments) ──────────
+  const onAssignSchedDirector = (slotIdx, categoryId) => {
+    setGame((g) => {
+      const result = assignSchedulingDirector(g.station, slotIdx, categoryId)
+      if (result.error) {
+        playSound('error')
+        return { ...g, log: [...g.log, `⚠ Auto-schedule: ${result.error}`] }
+      }
+      playSound('confirm')
+      const slotType = g.station.slotIds[slotIdx]
+      return {
+        ...g,
+        station: result.station,
+        log: [...g.log, `🗓 Director of Scheduling assigned to ${slotType} → ${categoryId}`],
+      }
+    })
+  }
+
+  const onCancelSchedDirector = (slotIdx) => {
+    setGame((g) => {
+      const result = cancelSchedulingDirector(g.station, slotIdx)
+      if (result.error) {
+        return { ...g, log: [...g.log, `⚠ Auto-schedule: ${result.error}`] }
+      }
+      const slotType = g.station.slotIds[slotIdx]
+      return {
+        ...g,
+        station: result.station,
+        log: [...g.log, `🗓 Cancelled auto-scheduling on ${slotType}`],
       }
     })
   }
@@ -1306,11 +1537,42 @@ export default function App() {
   }
 
   // ─── RENDER ──────────────────────────────────────────────────────────
+  // Home screen — slot picker (must be first to keep SetupScreen confined to in-game)
+  if (appView === 'home') {
+    return (
+      <ErrorBoundary>
+        <HomeScreen
+          onStartNew={(slotIdx) => {
+            setCurrentSlotIdx(slotIdx)
+            setGame({ phase: 'setup' })
+            setView('plan')
+            setAppView('game')
+          }}
+          onLoadSlot={(slotIdx, state) => {
+            const hydrated = hydrateLoadedGame(state)
+            if (!hydrated) { window.alert('Save is corrupt or from an older version.'); return }
+            setCurrentSlotIdx(slotIdx)
+            setGame(hydrated)
+            setView('plan')
+            setAppView('game')
+          }}
+          onDeleteSlot={(slotIdx) => {
+            if (window.confirm('Delete this save permanently?')) {
+              deleteSlot(slotIdx)
+              // Force re-render
+              setEditingSlotIdx(prev => prev === null ? 'tick' : null)
+            }
+          }}
+        />
+      </ErrorBoundary>
+    )
+  }
+
   if (game.phase === 'setup') {
     return <SetupScreen onStart={startGame} />
   }
 
-  const cashBlocker = nextMonthCost + permanentCharge > game.station.cash
+  const cashBlocker = game.station ? (nextMonthCost + permanentCharge > game.station.cash) : false
 
   return (
     <ErrorBoundary>
@@ -1326,6 +1588,7 @@ export default function App() {
         onContinueAwards={newYear}
         muted={muted}
         onToggleMute={onToggleMute}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       {game.phase === 'plan' && view === 'plan' && (
@@ -1357,6 +1620,8 @@ export default function App() {
           onCancelPosition={onCancelPosition}
           onPickCandidate={onPickCandidate}
           onFireStaff={onFireStaff}
+          onHireDirector={onHireDirector}
+          onFireDirector={onFireDirector}
           onBuyIP={onBuyIP}
           onBuyMoviePack={onBuyMoviePack}
           onBuySportsLicense={buySportsLicense}
@@ -1414,6 +1679,7 @@ export default function App() {
           year={game.year}
           monthIdx={game.monthIdx}
           yearShows={game.yearShows || []}
+          allShows={game.allShows || []}
           competitorAllShows={game.competitorAllShows || []}
           onBack={() => setView('plan')}
         />
@@ -1466,13 +1732,57 @@ export default function App() {
           onClose={() => setGame(g => ({ ...g, pendingReviews: [] }))}
         />
       )}
+
+      {settingsOpen && (
+        <SettingsModal
+          station={game.station}
+          muted={muted}
+          onToggleMute={onToggleMute}
+          onGoHome={() => {
+            setSettingsOpen(false)
+            setAppView('home')
+            setCurrentSlotIdx(null)
+            setGame({ phase: 'setup' })
+          }}
+          onOpenAchievements={() => {
+            setSettingsOpen(false)
+            setAchievementsOpen(true)
+          }}
+          onResetCurrentSlot={() => {
+            if (window.confirm('Reset this slot — delete the save and start fresh?')) {
+              if (currentSlotIdx !== null) deleteSlot(currentSlotIdx)
+              setSettingsOpen(false)
+              setAppView('home')
+              setCurrentSlotIdx(null)
+              setGame({ phase: 'setup' })
+            }
+          }}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {achievementsOpen && (
+        <AchievementsModal
+          station={game.station}
+          onClose={() => setAchievementsOpen(false)}
+        />
+      )}
+
+      {/* Achievement unlock popup — one at a time, tap-to-dismiss */}
+      {achievementPopupQueue.length > 0 && (
+        <AchievementUnlockPopup
+          unlock={achievementPopupQueue[0]}
+          remaining={achievementPopupQueue.length}
+          onDismiss={() => setAchievementPopupQueue(q => q.slice(1))}
+        />
+      )}
     </div>
     </ErrorBoundary>
   )
 }
 
 // ─── TOP BAR ────────────────────────────────────────────────────────────
-function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCost, onContinueResults, onContinueAwards, muted, onToggleMute }) {
+function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCost, onContinueResults, onContinueAwards, muted, onToggleMute, onOpenSettings }) {
   const m = MARKETS[game.station.market]
   const isInPlanFlow = game.phase === 'plan'
   const brand = findBrand(game.station.brandId)
@@ -1545,15 +1855,15 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
           <MiniStat label="FAME" value={game.station.fame.toFixed(1)} accent={T.gold} />
         </div>
 
-        {/* Mute toggle */}
+        {/* Settings (gear) — opens menu with home, achievements, audio, reset */}
         <button
-          onClick={onToggleMute}
-          aria-label={muted ? 'Unmute' : 'Mute'}
-          title={muted ? 'Audio muted' : 'Audio on'}
+          onClick={onOpenSettings}
+          aria-label="Settings"
+          title="Settings"
           style={{
             background: 'transparent',
             border: `1px solid ${T.border}`,
-            color: muted ? T.muted : T.text,
+            color: T.text,
             borderRadius: 4,
             width: 32, height: 32,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1564,7 +1874,11 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
           onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi }}
           onMouseLeave={e => { e.currentTarget.style.borderColor = T.border }}
         >
-          <Icon name={muted ? 'speaker_off' : 'speaker_on'} size={15} color="currentColor" />
+          {/* Gear icon as inline SVG to avoid needing a new icon name */}
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M8 1v2M8 13v2M15 8h-2M3 8H1M12.95 3.05l-1.4 1.4M4.45 11.55l-1.4 1.4M12.95 12.95l-1.4-1.4M4.45 4.45l-1.4-1.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
         </button>
 
         {/* DATE + Continue — on mobile this gets pulled to its own row via CSS */}
@@ -1622,7 +1936,7 @@ function TopBar({ game, view, setView, onAdvanceMonth, cashBlocker, nextMonthCos
           <NavTab label="Operations" active={view === 'operations'} onClick={() => setView('operations')} brand={brand} />
           <NavTab label="Research" active={view === 'research'} onClick={() => setView('research')} brand={brand} />
           <NavTab label="History" active={view === 'history'} onClick={() => setView('history')} brand={brand} />
-          <NavTab label="Market" active={view === 'market'} onClick={() => setView('market')} brand={brand} />
+          <NavTab label="Audiences" active={view === 'market'} onClick={() => setView('market')} brand={brand} />
           <NavTab label="Financials" active={view === 'financials'} onClick={() => setView('financials')} brand={brand} />
         </div>
       )}
@@ -1751,6 +2065,8 @@ function PlanView({
               research={game.research}
               onClick={() => !run && onOpenSlot(i)}
               onCancel={run ? () => onCancelRun(run.id) : null}
+              onAssignSchedDirector={onAssignSchedDirector}
+              onCancelSchedDirector={onCancelSchedDirector}
             />
           )
         })}
@@ -1800,20 +2116,7 @@ function PlanView({
         marginTop: 16, padding: '10px 14px',
         fontSize: 10.5, color: T.muted, textAlign: 'center',
       }}>
-        Auto-saved.{' '}
-        <button
-          onClick={() => {
-            if (window.confirm('Reset the game and start a new station? Current save will be deleted.')) {
-              clearSave()
-              window.location.reload()
-            }
-          }}
-          style={{
-            background: 'transparent', border: 'none',
-            color: T.muted, textDecoration: 'underline',
-            cursor: 'pointer', fontSize: 10.5,
-          }}
-        >Reset game</button>
+        Auto-saved. Use the settings menu (top-right) to switch slots or reset.
       </div>
     </div>
   )
@@ -1838,6 +2141,527 @@ function ActivityLog({ log }) {
           color: i === 0 ? T.text : T.muted, padding: '3px 0',
         }}>{line}</div>
       ))}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// HOME SCREEN — slot picker
+// ─────────────────────────────────────────────────────────────────────────
+function HomeScreen({ onStartNew, onLoadSlot, onDeleteSlot }) {
+  const slots = loadAllSlots()
+
+  return (
+    <div style={{
+      minHeight: '100vh', background: T.bg, color: T.text,
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: '60px 20px 40px',
+    }}>
+      {/* Title */}
+      <div style={{ textAlign: 'center', marginBottom: 36 }}>
+        <div className="mono" style={{
+          fontSize: 12, color: T.muted, letterSpacing: '.25em',
+          textTransform: 'uppercase', marginBottom: 8,
+        }}>
+          Welcome to
+        </div>
+        <div className="display" style={{
+          fontSize: 56, color: T.accent, lineHeight: 1, letterSpacing: '.04em',
+          textShadow: `0 0 30px ${T.accent}40`,
+        }}>
+          TV EMPIRE
+        </div>
+        <div style={{
+          fontSize: 13, color: T.muted, marginTop: 12, lineHeight: 1.5,
+          maxWidth: 460, margin: '12px auto 0',
+        }}>
+          Build a television network from a small local station to a national broadcaster.
+          Pick a save slot to continue, or start a new game in an empty one.
+        </div>
+      </div>
+
+      {/* Slot grid */}
+      <div style={{
+        width: '100%', maxWidth: 720,
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: 12,
+      }}>
+        {slots.map((slot, i) => (
+          <SlotEntry
+            key={i}
+            idx={i}
+            slot={slot}
+            onLoad={() => onLoadSlot(i, slot.state)}
+            onStartNew={() => onStartNew(i)}
+            onDelete={() => onDeleteSlot(i)}
+          />
+        ))}
+      </div>
+
+      <div style={{
+        marginTop: 32, fontSize: 11, color: T.muted, textAlign: 'center',
+        maxWidth: 460,
+      }}>
+        Saves live in your browser's local storage. Clearing site data will erase them.
+      </div>
+    </div>
+  )
+}
+
+function SlotEntry({ idx, slot, onLoad, onStartNew, onDelete }) {
+  const isEmpty = !slot
+  if (isEmpty) {
+    return (
+      <button
+        onClick={onStartNew}
+        style={{
+          background: T.surface,
+          border: `1px dashed ${T.borderHi}`,
+          borderRadius: 6,
+          padding: '24px 18px',
+          color: T.text,
+          cursor: 'pointer',
+          textAlign: 'left',
+          minHeight: 130,
+          display: 'flex', flexDirection: 'column', justifyContent: 'center',
+          transition: 'all .15s',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.borderColor = T.accent
+          e.currentTarget.style.borderStyle = 'solid'
+          e.currentTarget.style.background = T.card
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = T.borderHi
+          e.currentTarget.style.borderStyle = 'dashed'
+          e.currentTarget.style.background = T.surface
+        }}
+      >
+        <div className="mono" style={{
+          fontSize: 9.5, color: T.muted, letterSpacing: '.18em', marginBottom: 6,
+        }}>
+          SLOT {idx + 1} · EMPTY
+        </div>
+        <div style={{
+          fontSize: 16, color: T.accent, fontWeight: 600,
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <span style={{ fontSize: 18 }}>+</span> New Game
+        </div>
+      </button>
+    )
+  }
+  const market = MARKETS[slot.summary.market] || MARKETS.local
+  const savedDate = new Date(slot.savedAt)
+  const monthLabel = MONTHS[slot.summary.monthIdx] || 'Jan'
+  return (
+    <div style={{
+      background: T.card,
+      border: `1px solid ${T.border}`,
+      borderRadius: 6,
+      padding: 14,
+      position: 'relative',
+    }}>
+      <div className="mono" style={{
+        fontSize: 9.5, color: T.muted, letterSpacing: '.18em', marginBottom: 4,
+      }}>
+        SLOT {idx + 1}
+      </div>
+      <div style={{
+        fontSize: 16, color: T.text, fontWeight: 700,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>
+        {slot.summary.stationName}
+      </div>
+      <div style={{ fontSize: 11, color: T.muted, marginTop: 3, marginBottom: 10 }}>
+        {market.label} · {monthLabel} Y{slot.summary.year}
+      </div>
+
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
+        fontSize: 11, marginBottom: 12,
+      }}>
+        <div>
+          <div className="mono" style={{ fontSize: 9, color: T.muted, letterSpacing: '.1em' }}>CASH</div>
+          <div className="mono" style={{ fontSize: 12, color: T.green, fontWeight: 600, marginTop: 2 }}>
+            {fmtM(slot.summary.cash)}
+          </div>
+        </div>
+        <div>
+          <div className="mono" style={{ fontSize: 9, color: T.muted, letterSpacing: '.1em' }}>FAME</div>
+          <div className="mono" style={{ fontSize: 12, color: T.gold, fontWeight: 600, marginTop: 2 }}>
+            {slot.summary.fame.toFixed(1)}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 9, color: T.muted, marginBottom: 10 }}>
+        Saved {savedDate.toLocaleDateString()} {savedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </div>
+
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          onClick={onLoad}
+          style={{
+            flex: 1, padding: '8px 12px',
+            background: T.accent, color: T.bg, border: 'none',
+            borderRadius: 4, fontWeight: 700, cursor: 'pointer',
+            fontSize: 12, letterSpacing: '.04em',
+          }}
+        >
+          LOAD
+        </button>
+        <button
+          onClick={onDelete}
+          aria-label="Delete save"
+          title="Delete save"
+          style={{
+            padding: '8px 12px',
+            background: 'transparent',
+            border: `1px solid ${T.red}55`,
+            color: T.red,
+            borderRadius: 4, cursor: 'pointer',
+            fontSize: 12,
+          }}
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SETTINGS MODAL — in-game menu
+// ─────────────────────────────────────────────────────────────────────────
+function SettingsModal({ muted, onToggleMute, onGoHome, onOpenAchievements, onResetCurrentSlot, onClose, station }) {
+  const unlocked = unlockedCountableAchievements(station)
+  const total = totalCountableAchievements()
+  return (
+    <ModalShell onClose={onClose} title="Settings">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <SettingsRow
+          label={`Achievements · ${unlocked}/${total}`}
+          desc="View unlocked and locked achievements and their cash rewards."
+          onClick={onOpenAchievements}
+        />
+        <SettingsRow
+          label={muted ? 'Audio: OFF' : 'Audio: ON'}
+          desc={muted ? 'Click to enable sound effects.' : 'Click to mute sound effects.'}
+          onClick={onToggleMute}
+          accent={muted ? T.muted : T.text}
+        />
+        <SettingsRow
+          label="Back to Home"
+          desc="Auto-saves before exiting to slot picker."
+          onClick={onGoHome}
+        />
+        <SettingsRow
+          label="Reset This Slot"
+          desc="Delete this game and start over."
+          onClick={onResetCurrentSlot}
+          accent={T.red}
+        />
+      </div>
+    </ModalShell>
+  )
+}
+
+function SettingsRow({ label, desc, onClick, accent }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: T.card,
+        border: `1px solid ${T.border}`,
+        borderRadius: 5,
+        padding: '12px 14px',
+        textAlign: 'left',
+        color: T.text,
+        cursor: 'pointer',
+        transition: 'all .15s',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = T.border }}
+    >
+      <div style={{
+        fontSize: 13, fontWeight: 600, color: accent || T.text, marginBottom: 2,
+      }}>{label}</div>
+      <div style={{ fontSize: 10.5, color: T.muted, lineHeight: 1.4 }}>{desc}</div>
+    </button>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ACHIEVEMENT UNLOCK POPUP — one-at-a-time, tap to dismiss
+// Shows when an achievement fires during a monthly tick. Stacks if multiple
+// unlock in the same month (rare, but possible at game start).
+// ─────────────────────────────────────────────────────────────────────────
+function AchievementUnlockPopup({ unlock, remaining, onDismiss }) {
+  const a = unlock.achievement
+  if (!a) return null
+  return (
+    <div
+      onClick={onDismiss}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 320,
+        background: 'rgba(0,0,0,.78)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16, cursor: 'pointer',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: T.bg,
+          border: `2px solid ${T.green}`,
+          borderRadius: 10,
+          width: '100%', maxWidth: 380,
+          padding: '22px 22px 18px',
+          textAlign: 'center',
+          boxShadow: `0 12px 40px rgba(0,0,0,.55), 0 0 60px ${T.green}33`,
+        }}
+      >
+        <div className="mono" style={{
+          fontSize: 10, color: T.green, letterSpacing: '.2em',
+          marginBottom: 14,
+        }}>
+          🏆 ACHIEVEMENT UNLOCKED
+        </div>
+        <div style={{ fontSize: 42, lineHeight: 1, marginBottom: 12 }}>
+          {a.icon}
+        </div>
+        <div style={{
+          fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 6,
+        }}>
+          {a.title}
+        </div>
+        <div style={{
+          fontSize: 12, color: T.muted, lineHeight: 1.5, marginBottom: 14,
+        }}>
+          {a.desc}
+        </div>
+        {a.reward > 0 && (
+          <div style={{
+            display: 'inline-block',
+            padding: '6px 16px', marginBottom: 14,
+            background: T.green + '22',
+            border: `1px solid ${T.green}55`,
+            borderRadius: 4,
+            fontFamily: 'JetBrains Mono', fontSize: 14, fontWeight: 700,
+            color: T.green,
+          }}>
+            +${a.reward}M bonus
+          </div>
+        )}
+        <button
+          onClick={onDismiss}
+          style={{
+            display: 'block', width: '100%',
+            padding: '10px',
+            background: T.green, color: T.bg,
+            border: 'none', borderRadius: 5,
+            fontSize: 13, fontWeight: 700, letterSpacing: '.05em',
+            cursor: 'pointer',
+          }}
+        >
+          {remaining > 1 ? `Next (${remaining - 1} more)` : 'Continue'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+
+// Per design: locked entries show name + description visibly (not "???"),
+// graphic state communicates progress — unlocked rows go green with a trophy,
+// locked rows stay muted gray.
+// ─────────────────────────────────────────────────────────────────────────
+function AchievementsModal({ station, onClose }) {
+  const catalog = getAchievementCatalog()
+  const unlocked = station?.achievements?.unlocked || {}
+
+  // Hide the "recurring" pseudo-achievement (month_top) from the X/Y counter
+  // and the list — it's not a one-shot first.
+  const display = catalog.filter(a => !a.recurring)
+  const unlockedCount = display.filter(a => unlocked[a.id]).length
+  const totalCount = display.length
+  const totalRewards = display
+    .filter(a => unlocked[a.id])
+    .reduce((sum, a) => sum + (a.reward || 0), 0)
+
+  const groupOrder = [
+    { id: 'office',    label: 'Office & Market' },
+    { id: 'staff',     label: 'Staffing' },
+    { id: 'talent',    label: 'Talent' },
+    { id: 'programs',  label: 'Programs' },
+    { id: 'firsts',    label: 'Genre Firsts' },
+    { id: 'slot',      label: 'Slot Leadership' },
+    { id: 'research',  label: 'Research & Tech' },
+    { id: 'rights',    label: 'Rights & IP' },
+    { id: 'finance',   label: 'Finance' },
+    { id: 'merch',     label: 'Merchandising' },
+    { id: 'awards',    label: 'Awards' },
+    { id: 'meta',      label: 'Capstone' },
+  ]
+
+  return (
+    <ModalShell onClose={onClose} title="Achievements" wide>
+      <div style={{
+        marginBottom: 18, padding: '10px 12px',
+        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: 8,
+      }}>
+        <div>
+          <div className="mono" style={{ fontSize: 10, color: T.muted, letterSpacing: '.1em', marginBottom: 2 }}>
+            PROGRESS
+          </div>
+          <div style={{ fontSize: 16, color: T.text, fontWeight: 700 }}>
+            {unlockedCount} / {totalCount} unlocked
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div className="mono" style={{ fontSize: 10, color: T.muted, letterSpacing: '.1em', marginBottom: 2 }}>
+            BONUSES EARNED
+          </div>
+          <div style={{ fontSize: 16, color: T.green, fontWeight: 700, fontFamily: 'JetBrains Mono' }}>
+            ${totalRewards}M
+          </div>
+        </div>
+      </div>
+
+      {groupOrder.map(g => {
+        const items = display.filter(a => a.group === g.id)
+        if (items.length === 0) return null
+        const groupUnlocked = items.filter(a => unlocked[a.id]).length
+        return (
+          <div key={g.id} style={{ marginBottom: 18 }}>
+            <div className="mono" style={{
+              fontSize: 10, color: T.muted, letterSpacing: '.15em',
+              marginBottom: 8, display: 'flex', justifyContent: 'space-between',
+            }}>
+              <span>{g.label.toUpperCase()}</span>
+              <span>{groupUnlocked}/{items.length}</span>
+            </div>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              gap: 8,
+            }}>
+              {items.map(a => {
+                const got = !!unlocked[a.id]
+                const ctx = unlocked[a.id]
+                // Unlocked rows go bright green with trophy. Locked stay muted gray.
+                // Both show the title and description so players can see what they're
+                // working toward (per the user's design choice).
+                const accent = got ? T.green : T.muted
+                return (
+                  <div key={a.id} style={{
+                    background: got ? T.green + '12' : T.surface,
+                    border: `1px solid ${got ? T.green + '55' : T.border}`,
+                    borderLeft: `3px solid ${accent}`,
+                    borderRadius: 5,
+                    padding: 10,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <div style={{
+                        fontSize: 18, lineHeight: 1, flexShrink: 0,
+                        filter: got ? 'none' : 'grayscale(1) opacity(.5)',
+                      }}>
+                        {got ? '🏆' : a.icon}
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{
+                          display: 'flex', justifyContent: 'space-between',
+                          alignItems: 'baseline', gap: 8,
+                        }}>
+                          <div style={{
+                            fontSize: 13, fontWeight: 700, color: got ? T.green : T.text,
+                          }}>
+                            {a.title}
+                          </div>
+                          {a.reward > 0 && (
+                            <div className="mono" style={{
+                              fontSize: 10, color: got ? T.green : T.muted, fontWeight: 700,
+                              whiteSpace: 'nowrap',
+                            }}>
+                              +${a.reward}M
+                            </div>
+                          )}
+                        </div>
+                        <div style={{
+                          fontSize: 10.5,
+                          color: got ? T.textDim : T.muted,
+                          marginTop: 3, lineHeight: 1.4,
+                        }}>
+                          {a.desc}
+                        </div>
+                        {got && ctx?.year && (
+                          <div className="mono" style={{ fontSize: 9, color: T.muted, marginTop: 4 }}>
+                            UNLOCKED · Y{ctx.year} {MONTHS[ctx.month] || ''}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </ModalShell>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODAL SHELL — shared dialog frame
+// ─────────────────────────────────────────────────────────────────────────
+function ModalShell({ title, onClose, wide, children }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 250,
+        background: 'rgba(0, 0, 0, .7)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: T.bg,
+          border: `1px solid ${T.borderHi}`,
+          borderRadius: 8,
+          width: '100%',
+          maxWidth: wide ? 720 : 460,
+          maxHeight: '85vh',
+          overflowY: 'auto',
+          padding: 18,
+          boxShadow: '0 20px 60px rgba(0,0,0,.5)',
+        }}
+      >
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          marginBottom: 16, paddingBottom: 10, borderBottom: `1px solid ${T.border}`,
+        }}>
+          <div className="display" style={{
+            fontSize: 18, color: T.text, letterSpacing: '.06em',
+            textTransform: 'uppercase',
+          }}>{title}</div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: 'transparent', border: `1px solid ${T.border}`,
+              color: T.muted, width: 28, height: 28, borderRadius: 4,
+              cursor: 'pointer', fontSize: 14, lineHeight: 1,
+            }}
+          >✕</button>
+        </div>
+        {children}
+      </div>
     </div>
   )
 }

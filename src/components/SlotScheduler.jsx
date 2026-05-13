@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { T } from '../theme.js'
 import {
-  CATEGORIES, SLOT_TYPES, MONTHS, RUN_LENGTHS,
+  CATEGORIES, SLOT_TYPES, MONTHS,
 } from '../constants.js'
 import { HTag } from './ui.jsx'
 import { Icon, SlotIcon, CategoryIcon } from '../icons.jsx'
@@ -15,7 +15,8 @@ import {
  * Programs:
  *   - must have status === 'shelf'
  *   - sports programs only schedulable when league is in-season this month
- *   - movies forced to 1 month run; sports forced to 12; others pick from RUN_LENGTHS
+ *   - run length is LOCKED to whatever was committed at production time
+ *     (plannedRunMonths). Movies always 1, sports always 12.
  */
 export function SlotScheduler({
   slotTypeId, cycleIdx, year, station,
@@ -38,13 +39,20 @@ export function SlotScheduler({
   }, [shelf, slotTypeId])
 
   const [selectedId, setSelectedId] = useState(sorted[0]?.id || null)
-  const [runMonths, setRunMonths] = useState(1)
 
   const selected = shelf.find(p => p.id === selectedId)
 
-  // Determine valid runMonths for selected program
-  const forcedLength = selected?.movieId ? 1 : (selected?.sportsLeagueId ? 12 : null)
-  const effectiveRunMonths = forcedLength ?? runMonths
+  // Run length is committed at production time and CANNOT be changed here.
+  //   - Movies   → 1 month  (one-off airing)
+  //   - Sports   → 12 months (full calendar year, skipping out-of-season months)
+  //   - Scripted → whatever was planned at production (plannedRunMonths)
+  //   - Legacy (no plannedRunMonths) → defaults to 1 to be safe
+  const lockedRunMonths = selected?.movieId
+    ? 1
+    : (selected?.sportsLeagueId
+      ? 12
+      : (selected?.plannedRunMonths || 1))
+  const isLegacy = selected && !selected.movieId && !selected.sportsLeagueId && !selected.plannedRunMonths
 
   // Sports availability gate — must be in-season THIS month to start airing
   const sportsBlocker = selected?.sportsLeagueId
@@ -177,39 +185,23 @@ export function SlotScheduler({
             })}
           </div>
 
-          {/* Run length selector */}
-          {selected && !forcedLength && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 10, color: T.muted, letterSpacing: '.1em', marginBottom: 6 }}>
-                RUN LENGTH
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {RUN_LENGTHS.map(rl => (
-                  <button
-                    key={rl.id}
-                    onClick={() => setRunMonths(rl.months)}
-                    style={{
-                      background: runMonths === rl.months ? T.accent + '33' : 'transparent',
-                      border: `1px solid ${runMonths === rl.months ? T.accent : T.border}`,
-                      color: runMonths === rl.months ? T.accent : T.muted,
-                      borderRadius: 4, padding: '6px 12px',
-                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    }}
-                  >{rl.label}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {forcedLength && selected && (
+          {/* Run length is LOCKED at production time — no picker here */}
+          {selected && (
             <div style={{
               padding: '8px 10px', marginBottom: 12, fontSize: 11,
               background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4,
-              color: T.muted,
+              color: T.muted, lineHeight: 1.5,
             }}>
+              <div style={{ color: T.text, fontWeight: 600, marginBottom: 2 }}>
+                Run length: {lockedRunMonths} {lockedRunMonths === 1 ? 'month' : 'months'}
+              </div>
               {selected.movieId
-                ? 'Movies run for 1 month (one-off airing).'
-                : 'Sports rights run for the full calendar year (skip out-of-season months).'}
+                ? 'Movies air for a single month (one-off).'
+                : selected.sportsLeagueId
+                  ? 'Sports rights run the full calendar year — out-of-season months are skipped automatically.'
+                  : isLegacy
+                    ? 'Legacy program (no planned run committed at production). Defaulting to 1 month.'
+                    : `Locked in at production. Programs are built to run for a fixed length — they cannot be stretched or shortened at scheduling time.`}
             </div>
           )}
 
@@ -217,13 +209,13 @@ export function SlotScheduler({
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={onClose} style={btnSecondary}>Cancel</button>
             <button
-              onClick={() => canSchedule && onSchedule(selected.id, slotTypeId, effectiveRunMonths)}
+              onClick={() => canSchedule && onSchedule(selected.id, slotTypeId, lockedRunMonths)}
               disabled={!canSchedule}
               style={{ ...btnPrimary, opacity: canSchedule ? 1 : 0.4, cursor: canSchedule ? 'pointer' : 'not-allowed' }}
             >
               {sportsBlocker
                 ? 'Out of season'
-                : `Schedule (${effectiveRunMonths} mo)`}
+                : `Schedule (${lockedRunMonths} mo)`}
             </button>
           </div>
         </>

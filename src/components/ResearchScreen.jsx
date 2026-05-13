@@ -32,11 +32,11 @@ export function ResearchScreen({ research, station, cash, onBuy, onBack }) {
       <SectionTitle>Research & Development</SectionTitle>
 
       <div style={{ fontSize: 12, color: T.muted, marginBottom: 16, lineHeight: 1.5 }}>
-        Research takes time (months) and money. An Innovation Director discounts both.
+        Research takes time (months) and money. A VP of Innovation discounts both.
         Researching in a domain you already know is faster.
       </div>
 
-      {/* Innovation Director gate banner */}
+      {/* VP of Innovation gate banner */}
       {!hasInnovationDir && (
         <div style={{
           marginBottom: 16, padding: '12px 14px',
@@ -48,7 +48,7 @@ export function ResearchScreen({ research, station, cash, onBuy, onBack }) {
             R&amp;D department closed
           </div>
           <div style={{ fontSize: 11.5, color: T.textDim, lineHeight: 1.5 }}>
-            Hire an Innovation Director (Operations → Staff) before any research can begin.
+            Hire a VP of Innovation (Operations → Staff) before any research can begin.
             Without one, the department doesn't exist.
           </div>
         </div>

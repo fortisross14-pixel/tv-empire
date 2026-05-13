@@ -4,6 +4,7 @@ import {
   CATEGORIES, MARKETS, MARKETING_TIERS, IPS, SPORTS_LEAGUES, MONTHS,
   STAFF_ROLES, STAFF_SEARCHES, STAFF_SALARY_BY_TIER, STAFF_EFFECTS,
   STAFF_FIRE_PENALTY_MULT,
+  DIRECTOR_ROLES, DIRECTOR_SALARY, DIRECTOR_HIRE_COST,
   IP_LICENSE_TERMS, NETWORK_CAMPAIGNS,
   CONTRACT_TYPES, TIERS, MARKET_ORDER,
   MOVIES, MOVIE_PACK_REBUY_HYPE_PENALTY, MOVIE_PACK_COOLDOWN_MONTHS,
@@ -11,9 +12,13 @@ import {
 } from '../constants.js'
 import { HTag, Bar, Pill, SectionTitle } from './ui.jsx'
 import { Icon, CategoryIcon } from '../icons.jsx'
+import { OfficeFloorPlan } from './OfficeFloorPlan.jsx'
 import {
   findDirector, findStar, findIP, findLeague, findWriter,
-  staffSalaryTotal, contractCost, fameLabel, sportsLicenseCost,
+  staffSalaryTotal, directorSalaryTotal,
+  canHireDirector, hasDirector, directorCount,
+  talentCapacity, talentCount,
+  contractCost, fameLabel, sportsLicenseCost,
   ipLicenseCost, ownsIP, activeIPLicenses, canHireStaffRole,
   SPEC_GENRES, specThresholdFor, fmtM, canPromote,
   specQualityBonus, specHypeBonus,
@@ -716,12 +721,16 @@ function IPLicenseModal({ ip, station, year, research, onConfirm, onCancel }) {
 }
 
 // ─── 3. STAFF TAB ────────────────────────────────────────────────────────
-function StaffTab({ station, pendingHires, onOpenPosition, onCancelPosition, onPickCandidate, onFireStaff, research }) {
+function StaffTab({ station, pendingHires, onOpenPosition, onCancelPosition, onPickCandidate, onFireStaff, onHireDirector, onFireDirector, research }) {
   const personnelHired = !!station.staff?.personnel
   const salary = staffSalaryTotal(station)
+  const isNational = station.market === 'national'
 
   return (
     <div>
+      {/* Office floor plan — visual status of who's been hired */}
+      <OfficeFloorPlan station={station} />
+
       {/* Pending hires — must resolve first */}
       {pendingHires.length > 0 && (
         <div style={{
@@ -749,7 +758,8 @@ function StaffTab({ station, pendingHires, onOpenPosition, onCancelPosition, onP
         </div>
       </div>
 
-      {/* Role grid */}
+      {/* VP section */}
+      <SectionTitle>Vice Presidents</SectionTitle>
       <div style={{ display: 'grid', gap: 10 }}>
         {STAFF_ROLES.map(role => (
           <StaffRoleCard
@@ -771,10 +781,111 @@ function StaffTab({ station, pendingHires, onOpenPosition, onCancelPosition, onP
           background: T.cardHi, border: `1px dashed ${T.border}`, borderRadius: 5,
           fontSize: 11, color: T.muted, lineHeight: 1.5,
         }}>
-          💡 Hire a Personnel Director first — they unlock searches for all other roles.
+          💡 Hire a VP of Personnel first — they unlock searches for all other VPs.
           Until then only Personnel can be opened (via Quick Search).
         </div>
       )}
+
+      {/* Directors section — only relevant at National */}
+      <div style={{ marginTop: 28 }}>
+        <SectionTitle>Directors</SectionTitle>
+        {!isNational ? (
+          <div style={{
+            padding: 12, background: T.cardHi,
+            border: `1px dashed ${T.border}`, borderRadius: 5,
+            fontSize: 11, color: T.muted, lineHeight: 1.5,
+          }}>
+            🔒 Director-level hires are only available at the National office.
+            Promote your market when you're ready.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {DIRECTOR_ROLES.map(role => (
+              <DirectorRoleCard
+                key={role.id}
+                role={role}
+                station={station}
+                onHire={onHireDirector}
+                onFire={onFireDirector}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** A single director card — hire/fire UI for one DIRECTOR_ROLES entry. */
+function DirectorRoleCard({ role, station, onHire, onFire }) {
+  const cur = directorCount(station, role.id)
+  const isScheduling = role.id === 'scheduling'
+  const max = role.maxCount || 1
+  const filled = cur >= max
+  const check = canHireDirector(station, role.id)
+  const canHire = check.ok && station.cash >= DIRECTOR_HIRE_COST
+  const hireDisabledReason = !check.ok
+    ? check.reason
+    : (station.cash < DIRECTOR_HIRE_COST ? `Need $${DIRECTOR_HIRE_COST}M` : null)
+
+  return (
+    <div style={{
+      padding: 12, background: T.surface,
+      border: `1px solid ${cur > 0 ? T.gold + '88' : T.border}`,
+      borderRadius: 5,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{role.icon}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{role.label}</div>
+            {cur > 0 && (
+              <Pill color={T.gold}>
+                {isScheduling ? `${cur} / ${max}` : 'Hired'}
+              </Pill>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4, marginBottom: 8 }}>
+            {role.desc}
+          </div>
+          <div style={{ fontSize: 10, color: T.muted, marginBottom: 8 }}>
+            ${DIRECTOR_SALARY.toFixed(1)}M / month · ${DIRECTOR_HIRE_COST.toFixed(1)}M to hire (Common)
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => onHire(role.id)}
+              disabled={!canHire || filled}
+              style={{
+                background: (canHire && !filled) ? T.accent + '22' : 'transparent',
+                border: `1.5px solid ${(canHire && !filled) ? T.accent : T.border}`,
+                color: (canHire && !filled) ? T.accent : T.muted,
+                padding: '6px 12px', fontSize: 11, fontWeight: 700,
+                borderRadius: 4,
+                cursor: (canHire && !filled) ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {filled ? 'Slots full' : (isScheduling && cur > 0 ? `Hire another (${cur + 1}/${max})` : 'Hire')}
+            </button>
+            {cur > 0 && (
+              <button
+                onClick={() => onFire(role.id)}
+                style={{
+                  background: 'transparent', border: `1.5px solid ${T.red}88`,
+                  color: T.red, padding: '6px 12px', fontSize: 11, fontWeight: 600,
+                  borderRadius: 4, cursor: 'pointer',
+                }}
+              >
+                {isScheduling && cur > 1 ? `Fire one (${cur - 1} remain)` : 'Fire'}
+              </button>
+            )}
+          </div>
+          {hireDisabledReason && cur === 0 && (
+            <div style={{ fontSize: 10, color: T.muted, marginTop: 6, fontStyle: 'italic' }}>
+              {hireDisabledReason}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -783,7 +894,7 @@ function PendingHireBlock({ pending, onPick }) {
   return (
     <div style={{ marginBottom: 10 }}>
       <div style={{ fontSize: 11, color: T.muted, marginBottom: 5 }}>
-        {pending.role.toUpperCase()} DIRECTOR — pick one of {pending.candidates.length}
+        VP OF {pending.role.toUpperCase()} — pick one of {pending.candidates.length}
       </div>
       <div style={{ display: 'grid', gap: 5 }}>
         {pending.candidates.map((c, i) => (
