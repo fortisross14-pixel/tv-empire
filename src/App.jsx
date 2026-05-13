@@ -1132,24 +1132,35 @@ export default function App() {
     const cost = sportsLicenseCost(leagueId, game.station.market)
     if (game.station.cash < cost) { playSound('error'); return }
     if (ownsLicense(game.station, leagueId, game.year)) { playSound('error'); return }
+    const lg = findLeague(leagueId)
+    // Mega events gated by year availability — refuse to sell off-cycle.
+    if (lg?.yearAvailable && !lg.yearAvailable(game.year)) {
+      playSound('error')
+      setGame(g => ({ ...g, log: [...g.log, `⚠ ${lg.label} not available in Y${g.year}`] }))
+      return
+    }
     playSound('confirm')
     setGame((g) => {
-      const lg = findLeague(leagueId)
+      const fameBoost = lg?.fameOnSign || 0
       const entry = ledgerEntry({
         year: g.year, month: g.monthIdx,
         kind: 'rights_sports',
         label: `${lg.label} rights (Y${g.year})`,
         amount: -cost,
       })
+      const fameLog = fameBoost > 0
+        ? ` · +${fameBoost} fame from joining the broadcast`
+        : ''
       return {
         ...g,
         station: {
           ...g.station,
           cash: g.station.cash - cost,
+          fame: r1((g.station.fame || 0) + fameBoost),
           sportsLicenses: [...(g.station.sportsLicenses || []), { leagueId, year: g.year }],
         },
         ledger: [...(g.ledger || []), entry],
-        log: [...g.log, `🏆 Acquired ${lg.label} rights for Y${g.year} (${fmtM(-cost)})`],
+        log: [...g.log, `🏆 Acquired ${lg.label} rights for Y${g.year} (${fmtM(-cost)})${fameLog}`],
       }
     })
   }

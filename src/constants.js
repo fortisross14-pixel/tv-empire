@@ -82,10 +82,10 @@ export const CATEGORIES = {
     color: '#e84545',
     base_q: 6.0,
     base_h: 5.5,
-    cost_mult: 2.0,
+    cost_mult: 1.0,
     topics: [
       { id: 'live',     label: 'Live Game Coverage', q: 0.5, h: 1.0 },
-      { id: 'analysis', label: 'Analysis / Talk',    q: 0.2, h: 0.3 },
+      { id: 'analysis', label: 'Sports News / Analysis', q: 0.2, h: 0.3 },
       { id: 'doc',      label: 'Sports Documentary', q: 0.6, h: 0.4 },
     ],
   },
@@ -1623,6 +1623,10 @@ export const SEASONAL_PREFS = {
 export function defaultUnlocks(focusId) {
   const baseAll = [
     ['movie', '*'],   // movies always available — they're licensed per-film
+    // Sports news/analysis is a starter category for everyone — gives you a
+    // way to put sports content on the air without buying a (very expensive)
+    // league license. Live game coverage still requires owning rights.
+    ['sports', 'analysis'],
   ]
   const byFocus = {
     // News stations: local + global. Field reporting and big-topic specials need research.
@@ -1687,6 +1691,15 @@ export const SEQUEL_BONUSES = [0, 0.10, 0.08, 0.06, 0.04, 0.03, 0.03, 0.02, 0.02
 // based on which market you're broadcasting from. The big pro leagues are
 // genuinely expensive — they should feel like a major capital commitment.
 //
+// `fameOnSign` — fame granted to the station the moment the license is signed.
+// This is how big sports rights help you compete with established networks.
+// Olympics and World Cup are the biggest (you become a household name just by
+// having them); pros are substantial; college and regional are modest.
+//
+// Optional `yearAvailable(year)` — predicate that gates the league by year.
+// Olympics happen in Y4/8/12/...; World Cup in Y2/6/10/... When absent the
+// league is available every year.
+//
 // Optional `marketHypeMult: { local, metro, national }` (default 1.0 everywhere)
 // scales the league's base hype by market. College sports and local sports
 // run hot in their home markets but underperform at the national tier
@@ -1694,54 +1707,106 @@ export const SEQUEL_BONUSES = [0, 0.10, 0.08, 0.06, 0.04, 0.03, 0.03, 0.02, 0.02
 //
 // Optional `tier` field is informational only — used by the picker UI for grouping.
 export const SPORTS_LEAGUES = [
-  // ── PROS (expensive, broad national appeal) ──
+  // ── MEGA EVENTS (quadrennial, fortune cost, huge fame boost) ──
+  // These exist purely as prestige plays. The cost is staggering and the
+  // active season is short (Olympics is one month, World Cup ~2), but the
+  // fame they grant is the only realistic way for a new network to catch
+  // up to the major incumbents.
+  {
+    id: 'olympics', label: 'Olympics', icon: '🥇', tier: 'mega',
+    season: [6],          // July only
+    peakMonth: 6, peakLabel: 'Olympic Finals',
+    cost: 400, baseQ: 9.0, baseH: 9.5, peakBonus: 3.0,
+    fameOnSign: 12,
+    yearAvailable: (year) => year % 4 === 0,   // Y4, Y8, Y12, ...
+  },
+  {
+    id: 'world_cup', label: 'Soccer World Cup', icon: '🏆', tier: 'mega',
+    season: [5, 6],       // June-July
+    peakMonth: 6, peakLabel: 'World Cup Final',
+    cost: 300, baseQ: 8.8, baseH: 9.5, peakBonus: 3.0,
+    fameOnSign: 10,
+    yearAvailable: (year) => year % 4 === 2,   // Y2, Y6, Y10, ...
+  },
+
+  // ── PROS (expensive, broad national appeal, high fame) ──
   {
     id: 'nfl', label: 'NFL Football', icon: '🏈', tier: 'pro',
     season: [7, 8, 9, 10, 11, 0, 1],
     peakMonth: 1, peakLabel: 'Super Bowl',
     cost: 180, baseQ: 8.5, baseH: 9.0, peakBonus: 2.5,
+    fameOnSign: 5,
   },
   {
     id: 'nba', label: 'NBA Basketball', icon: '🏀', tier: 'pro',
     season: [8, 9, 10, 11, 0, 1, 2, 3],
     peakMonth: 5, peakLabel: 'Finals',
     cost: 140, baseQ: 7.5, baseH: 8.0, peakBonus: 2.0,
+    fameOnSign: 5,
   },
   {
     id: 'mlb', label: 'MLB Baseball', icon: '⚾', tier: 'pro',
     season: [2, 3, 4, 5, 6, 7, 8, 9],
     peakMonth: 9, peakLabel: 'World Series',
     cost: 110, baseQ: 7.0, baseH: 6.5, peakBonus: 2.0,
+    fameOnSign: 4,
+  },
+  {
+    id: 'champions_league', label: 'Champions League', icon: '⚽', tier: 'pro',
+    season: [8, 9, 10, 11, 0, 1, 2, 3, 4],   // Sep-May knockout calendar
+    peakMonth: 4, peakLabel: 'Final',
+    cost: 75, baseQ: 7.5, baseH: 7.5, peakBonus: 2.0,
+    fameOnSign: 4,
   },
   {
     id: 'nhl', label: 'NHL Hockey', icon: '🏒', tier: 'pro',
     season: [9, 10, 11, 0, 1, 2, 3, 4, 5],
     peakMonth: 5, peakLabel: 'Stanley Cup',
     cost: 80, baseQ: 7.0, baseH: 6.5, peakBonus: 1.8,
+    fameOnSign: 3,
   },
   {
     id: 'soccer', label: 'Pro Soccer League', icon: '⚽', tier: 'pro',
     season: [7, 8, 9, 10, 11, 0, 1, 2, 3, 4],
     peakMonth: 4, peakLabel: 'Championship',
-    cost: 75, baseQ: 7.2, baseH: 7.0, peakBonus: 1.8,
+    cost: 58, baseQ: 7.0, baseH: 6.8, peakBonus: 1.8,
+    fameOnSign: 3,
   },
   {
     id: 'wwe', label: 'WWE Wrestling', icon: '🤼', tier: 'pro',
     season: [0,1,2,3,4,5,6,7,8,9,10,11],
     peakMonth: 3, peakLabel: 'WrestleMania',
     cost: 65, baseQ: 5.5, baseH: 8.5, peakBonus: 2.5,
+    fameOnSign: 3,
+  },
+  {
+    id: 'f1', label: 'Formula 1', icon: '🏎', tier: 'pro',
+    season: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],   // Mar-Dec
+    peakMonth: 11, peakLabel: 'Abu Dhabi GP',
+    cost: 42, baseQ: 7.2, baseH: 6.5, peakBonus: 1.8,
+    fameOnSign: 3,
   },
   {
     id: 'tennis', label: 'Tennis Tour', icon: '🎾', tier: 'pro',
     season: [0,1,2,3,4,5,6,7,8,9,10],
     peakMonth: 6, peakLabel: 'Wimbledon',
     cost: 55, baseQ: 7.0, baseH: 6.0, peakBonus: 2.0,
+    fameOnSign: 2,
   },
   {
     id: 'golf', label: 'PGA Tour', icon: '⛳', tier: 'pro',
     season: [0,1,2,3,4,5,6,7,8,9,10],
     peakMonth: 3, peakLabel: 'The Masters',
     cost: 48, baseQ: 6.8, baseH: 5.5, peakBonus: 1.8,
+    fameOnSign: 2,
+  },
+  {
+    id: 'nascar', label: 'NASCAR', icon: '🏁', tier: 'pro',
+    season: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],   // Feb-Nov
+    peakMonth: 10, peakLabel: 'Championship',
+    cost: 30, baseQ: 6.0, baseH: 6.2, peakBonus: 1.8,
+    fameOnSign: 2,
+    marketHypeMult: { local: 1.2, metro: 1.05, national: 0.9 },
   },
 
   // ── COLLEGE / REGIONAL (cheap, huge in local/metro, fades nationally) ──
@@ -1753,6 +1818,7 @@ export const SPORTS_LEAGUES = [
     season: [7, 8, 9, 10, 11, 0],
     peakMonth: 0, peakLabel: 'Bowl Season',
     cost: 25, baseQ: 7.0, baseH: 7.5, peakBonus: 2.0,
+    fameOnSign: 1.5,
     marketHypeMult: { local: 1.4, metro: 1.25, national: 0.65 },
   },
   {
@@ -1760,13 +1826,23 @@ export const SPORTS_LEAGUES = [
     season: [10, 11, 0, 1, 2, 3],
     peakMonth: 2, peakLabel: 'March Madness',
     cost: 22, baseQ: 6.5, baseH: 7.2, peakBonus: 2.8,
+    fameOnSign: 1.5,
     marketHypeMult: { local: 1.35, metro: 1.2, national: 0.7 },
+  },
+  {
+    id: 'state_champ', label: 'State Championship', icon: '🥎', tier: 'regional',
+    season: [0,1,2,3,4,5,6,7,8,9,10,11],   // year-round mixed sports
+    peakMonth: 7, peakLabel: 'State Finals',
+    cost: 4, baseQ: 4.8, baseH: 5.0, peakBonus: 1.5,
+    fameOnSign: 0.5,
+    marketHypeMult: { local: 1.3, metro: 1.0, national: 0.5 },
   },
   {
     id: 'local_soccer', label: 'Local Soccer League', icon: '🥅', tier: 'regional',
     season: [3, 4, 5, 6, 7, 8, 9, 10],
     peakMonth: 9, peakLabel: 'Regional Cup',
     cost: 8, baseQ: 5.8, baseH: 6.0, peakBonus: 1.2,
+    fameOnSign: 1,
     marketHypeMult: { local: 1.5, metro: 1.1, national: 0.45 },
   },
   {
@@ -1774,6 +1850,7 @@ export const SPORTS_LEAGUES = [
     season: [3, 4, 5, 6, 7, 8],
     peakMonth: 6, peakLabel: 'Championships',
     cost: 6, baseQ: 6.2, baseH: 4.5, peakBonus: 1.5,
+    fameOnSign: 0.5,
     marketHypeMult: { local: 1.2, metro: 1.1, national: 0.85 },
   },
   {
@@ -1781,11 +1858,29 @@ export const SPORTS_LEAGUES = [
     season: [7, 8, 9, 10, 11],
     peakMonth: 11, peakLabel: 'State Finals',
     cost: 3, baseQ: 5.0, baseH: 5.8, peakBonus: 1.2,
+    fameOnSign: 0.5,
     marketHypeMult: { local: 1.6, metro: 0.9, national: 0.3 },
   },
 ]
 // Cost multipliers by station market — applied to license cost only.
 export const SPORTS_MARKET_COST_MULT = { local: 1.0, metro: 2.5, national: 6.0 }
+
+/** Is a sports league available to license in the given year?
+ *  Mega events (Olympics, World Cup) are only available on their cycle.
+ *  All other leagues are available every year. */
+export function leagueAvailableInYear(league, year) {
+  if (!league?.yearAvailable) return true
+  return league.yearAvailable(year)
+}
+
+/** For a league not available this year, how many years until it returns? */
+export function leagueYearsUntilReturn(league, year) {
+  if (!league?.yearAvailable) return 0
+  for (let i = 1; i <= 8; i++) {
+    if (league.yearAvailable(year + i)) return i
+  }
+  return null
+}
 
 // ─── STAFF (Directors of …) ──────────────────────────────────────────────────
 // 5 roles. Personnel is the gate — until you hire one, you can't hire others.

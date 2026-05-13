@@ -737,7 +737,7 @@ function NewScriptModal({ station, year, research, onCancel, onConfirm }) {
   const unlocks = useMemo(() => getUnlocks(station, research), [station.focus, research?.contentUnlocks])
   // Movies are licensed, not scripted. Sports use the rights path, not scripts.
   const unlockedCategoryIds = useMemo(
-    () => Object.keys(CATEGORIES).filter(id => id !== 'movie' && id !== 'sports' && unlocks.hasCat(id)),
+    () => Object.keys(CATEGORIES).filter(id => id !== 'movie' && unlocks.hasCat(id)),
     [unlocks]
   )
 

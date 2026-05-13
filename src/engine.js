@@ -684,7 +684,7 @@ function rollProgramComponents(opts, station, research, deterministic = false) {
     // Specialization bonus — movies count as 'movie' genre
     const bumped = applySpecBonuses(rawQ, rawH, station, 'movie')
     const q = bumped.q
-    const h = bumped.h
+    const h = compressHype(bumped.h)
     // Synthesize components clustered around q so UI is consistent
     return {
       narrative: r1(clamp(q + noise(-0.5, 0.5), 0, 10)),
@@ -743,7 +743,7 @@ function rollProgramComponents(opts, station, research, deterministic = false) {
     const bumped = applySpecBonuses(rawQ, h, station, 'sports')
     return {
       narrative: r1(narrative), art: r1(art), innovation: r1(innovation), technical: r1(technical),
-      q: r1(bumped.q), h: r1(bumped.h),
+      q: r1(bumped.q), h: r1(compressHype(bumped.h)),
     }
   }
 
@@ -814,7 +814,11 @@ function rollProgramComponents(opts, station, research, deterministic = false) {
 
   // ── HYPE ───────────────────────────────────────────────────────────────
   // Hype is its own track — script hype, star+director hype, IP hype, marketing.
-  const scriptH = script ? (script.hype / 100) * 3 : 0
+  // scriptH contribution intentionally modest — script hype was previously
+  // *3 which let any decent script push hype into the 7-8 range regardless
+  // of cast/marketing. Dialed back to *2 so hype reflects the full package
+  // (talent, marketing, slot) rather than the script alone.
+  const scriptH = script ? (script.hype / 100) * 2 : 0
   const dirH = dir ? dir.h * dirMatch : 0
   const starH = starHContrib
   const ipH = ip ? (ip.h || 0) : 0
@@ -831,7 +835,7 @@ function rollProgramComponents(opts, station, research, deterministic = false) {
     innovation: r1(innovation),
     technical: r1(technical),
     q: r1(bumped.q),
-    h: r1(bumped.h),
+    h: r1(compressHype(bumped.h)),
   }
 }
 
@@ -839,6 +843,23 @@ function rollProgramComponents(opts, station, research, deterministic = false) {
 function weightedQuality(c, categoryId) {
   const w = CATEGORY_QUALITY_WEIGHTS[categoryId] || CATEGORY_QUALITY_WEIGHTS.movie
   return c.narrative * w.narrative + c.art * w.art + c.innovation * w.innovation + c.technical * w.technical
+}
+
+/** Soft compression on hype above 6. Below 6, hype is unchanged. Above 6,
+ *  the slope flattens — every "additional" point of raw hype only buys
+ *  ~0.5 points of effective hype. Keeps the top end harder to reach.
+ *
+ *  6  → 6.0     (no change below threshold)
+ *  8  → 7.0     (was easy to hit, now needs more inputs)
+ *  10 → 8.0     (raw max becomes 8, still reachable with a stacked show)
+ *  Above the math: result = 6 + (h - 6) * 0.5 for h > 6.
+ *
+ *  Applied to the PLAYER's hype roll at production and airing time. AI
+ *  competitor shows roll through a separate path and aren't compressed
+ *  (they don't have the same lever-stacking problem). */
+function compressHype(h) {
+  if (h <= 6) return h
+  return 6 + (h - 6) * 0.5
 }
 
 /** Legacy adapter — components-aware. Returns { q, h }. */
@@ -2472,6 +2493,25 @@ export function airShow(planned, station, research, monthIdx = 0) {
     peakBonus = proj.peakBonus || 0
   }
 
+  // ── FINALE HYPE BOOST ─────────────────────────────────────────────────
+  // The last airing of a multi-month scripted/reality run gets a +25%
+  // boost on its base hype — that's the "series finale" effect. Sports
+  // rights runs ALREADY have peakBonus on the championship month, so
+  // we skip the finale boost for them to avoid double-counting.
+  //
+  // Only applies when:
+  //   - runMonths >= 2 (1-month "runs" have no real finale concept)
+  //   - this is the final airing (monthsAired = runMonths - 1, since
+  //     runMonth increments monthsAired AFTER calling airShow)
+  //   - not a sports rights run (peak already handles that)
+  let isFinale = false
+  if (!planned.sportsRunLeagueId &&
+      (planned.runMonths || 1) >= 2 &&
+      (planned.monthsAired || 0) === (planned.runMonths - 1)) {
+    isFinale = true
+    baseH = clamp(baseH * 1.25, 0, 10)
+  }
+
   // Live noise — bigger swing on hype than quality.
   const qLive = clamp(baseQ + rnd(-1.0, 1.0), 1, 10)
   const hLive = clamp(baseH + rnd(-1.4, 1.4), 1, 10)
@@ -2489,6 +2529,7 @@ export function airShow(planned, station, research, monthIdx = 0) {
     peakBonus,
     slotBonusH,
     seasonBonusH,
+    isFinale,
     audience: 0,        // assigned later by assignAudiences()
     revenue: 0,
     demoBreakdown: null,
@@ -3986,7 +4027,10 @@ const CATEGORY_TO_ACHIEVEMENT_ID = {
   reality:   'first_reality',
   series:    'first_series',
   latenight: 'first_latenight',
-  sports:    'first_sports',
+  // 'sports' intentionally omitted — scripted Sports News doesn't count as a
+  // "Sports Broadcast" achievement. That achievement fires only when the
+  // player airs actual sports-rights coverage (handled in the explicit
+  // sportsRunLeagueId branch in applyUnlockedAchievements).
   family:    'first_family',
   kids:      'first_kids',
   movie:     'first_movie',

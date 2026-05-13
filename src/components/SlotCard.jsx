@@ -272,6 +272,10 @@ function ActiveRunCard({ run, slotType, cycleIdx, station, research, onCancel })
   const inSeasonNow = isSports ? league?.season.includes(cycleIdx) : true
   const cancelCost = cancelRunCost(run)
   const isOnAir = inSeasonNow && monthsRemaining > 0
+  // "Finale next" — the upcoming airing will be the last in a multi-month
+  // scripted/reality run. Gets a +25% hype boost at airing time (see airShow).
+  // Sports rights use peakBonus instead, so they don't show this badge.
+  const finaleNext = !isSports && run.runMonths >= 2 && monthsRemaining === 1
 
   return (
     <div style={{
@@ -329,6 +333,16 @@ function ActiveRunCard({ run, slotType, cycleIdx, station, research, onCancel })
           border: `1px solid rgba(91, 214, 135, .25)`,
           whiteSpace: 'nowrap',
         }}>{run.monthsAired}/{run.runMonths}MO</span>
+        {finaleNext && (
+          <span className="mono" style={{
+            color: T.gold, fontSize: 9, fontWeight: 700,
+            background: T.gold + '1a',
+            padding: '2px 6px', borderRadius: 3,
+            border: `1px solid ${T.gold}55`,
+            whiteSpace: 'nowrap', letterSpacing: '.08em',
+            marginLeft: 4,
+          }}>🎬 FINALE NEXT</span>
+        )}
       </div>
 
       {/* TITLE BLOCK */}

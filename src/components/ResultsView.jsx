@@ -216,6 +216,17 @@ function ProgramRow({ airing: a }) {
           </div>
           <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginTop: 2, lineHeight: 1.2 }}>
             {a.name || 'Untitled'}
+            {a.isFinale && (
+              <span style={{
+                marginLeft: 6,
+                fontSize: 9, color: T.gold,
+                background: T.gold + '22',
+                border: `1px solid ${T.gold}66`,
+                padding: '1px 6px', borderRadius: 3,
+                letterSpacing: '.1em', fontWeight: 700,
+                verticalAlign: 'middle',
+              }}>🎬 FINALE</span>
+            )}
           </div>
           <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>
             {isMovie ? '🎞 Movie' : isSports ? `${league?.icon || '🏆'} ${league?.label || 'Sports'}` : ((cat?.icon || '') + ' ' + (cat?.label || a.categoryId))}

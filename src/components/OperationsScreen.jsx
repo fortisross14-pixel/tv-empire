@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { T } from '../theme.js'
 import {
   CATEGORIES, MARKETS, MARKETING_TIERS, IPS, SPORTS_LEAGUES, MONTHS,
+  leagueAvailableInYear, leagueYearsUntilReturn,
   STAFF_ROLES, STAFF_SEARCHES, STAFF_SALARY_BY_TIER, STAFF_EFFECTS,
   STAFF_FIRE_PENALTY_MULT,
   DIRECTOR_ROLES, DIRECTOR_SALARY, DIRECTOR_HIRE_COST,
@@ -604,49 +605,101 @@ function SportsBlock({ station, year, onBuy }) {
   const ownedIds = new Set(owned.map(l => l.leagueId))
   const market = station.market
 
+  // Group leagues by tier so the UI tells the story: mega → pro → college →
+  // regional. Mega events sit at the top because they're the most expensive
+  // AND grant the most fame — they're the headline acquisitions.
+  const tierOrder = ['mega', 'pro', 'college', 'regional', 'niche']
+  const byTier = {}
+  for (const lg of SPORTS_LEAGUES) {
+    const t = lg.tier || 'pro'
+    if (!byTier[t]) byTier[t] = []
+    byTier[t].push(lg)
+  }
+  const tierLabels = {
+    mega: 'Mega Events',
+    pro: 'Pro Leagues',
+    college: 'College',
+    regional: 'Regional',
+    niche: 'Niche',
+  }
+
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-      gap: 8,
-    }}>
-      {SPORTS_LEAGUES.map(lg => {
-        const isOwned = ownedIds.has(lg.id)
-        const cost = sportsLicenseCost(lg.id, market)
-        const affordable = station.cash >= cost
-        return (
-          <div key={lg.id} style={{
-            background: isOwned ? T.green + '15' : T.card,
-            border: `1px solid ${isOwned ? T.green : T.border}`,
-            borderRadius: 5, padding: 10,
+    <div>
+      {tierOrder.filter(t => byTier[t]).map(t => (
+        <div key={t} style={{ marginBottom: 16 }}>
+          <div style={{
+            fontSize: 10, color: T.muted, letterSpacing: '.15em',
+            textTransform: 'uppercase', marginBottom: 6,
+          }}>{tierLabels[t]}</div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: 8,
           }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: isOwned ? T.green : T.text }}>
-              {lg.icon} {lg.label} {isOwned && '✓'}
-            </div>
-            <div style={{ fontSize: 10, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
-              Season: {lg.season.length} mo · Peak: {MONTHS[lg.peakMonth]} ({lg.peakLabel})
-            </div>
-            {!isOwned ? (
-              <button
-                onClick={() => onBuy(lg.id)}
-                disabled={!affordable}
-                style={{
-                  width: '100%', marginTop: 7, padding: '6px 8px',
-                  background: affordable ? T.accent : T.border,
-                  color: affordable ? T.bg : T.muted,
-                  border: 'none', borderRadius: 4,
-                  fontSize: 11, fontWeight: 700,
-                  cursor: affordable ? 'pointer' : 'not-allowed',
-                }}
-              >${cost.toFixed(0)}M · BUY</button>
-            ) : (
-              <div style={{ marginTop: 7, fontSize: 10, color: T.green, fontStyle: 'italic' }}>
-                Owned · Use in slot editor
-              </div>
-            )}
+            {byTier[t].map(lg => {
+              const isOwned = ownedIds.has(lg.id)
+              const cost = sportsLicenseCost(lg.id, market)
+              const affordable = station.cash >= cost
+              const availableThisYear = leagueAvailableInYear(lg, year)
+              const yearsAway = availableThisYear ? 0 : leagueYearsUntilReturn(lg, year)
+              const fame = lg.fameOnSign || 0
+              const canBuy = !isOwned && affordable && availableThisYear
+
+              return (
+                <div key={lg.id} style={{
+                  background: isOwned ? T.green + '15' : (!availableThisYear ? T.bg : T.card),
+                  border: `1px solid ${isOwned ? T.green : (!availableThisYear ? T.border : T.border)}`,
+                  borderRadius: 5, padding: 10,
+                  opacity: availableThisYear ? 1 : 0.65,
+                }}>
+                  <div style={{
+                    fontSize: 13, fontWeight: 600,
+                    color: isOwned ? T.green : T.text,
+                  }}>
+                    {lg.icon} {lg.label} {isOwned && '✓'}
+                  </div>
+                  <div style={{ fontSize: 10, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
+                    Season: {lg.season.length} mo · Peak: {MONTHS[lg.peakMonth]} ({lg.peakLabel})
+                  </div>
+                  {fame > 0 && (
+                    <div style={{
+                      fontSize: 10, color: T.gold, marginTop: 4, fontWeight: 600,
+                    }}>
+                      ⭐ +{fame} fame on signing
+                    </div>
+                  )}
+                  {!availableThisYear ? (
+                    <div style={{
+                      marginTop: 7, fontSize: 10, color: T.muted,
+                      fontStyle: 'italic',
+                      background: T.border + '33', padding: '4px 6px', borderRadius: 3,
+                    }}>
+                      Returns in Y{year + (yearsAway || 1)}
+                    </div>
+                  ) : !isOwned ? (
+                    <button
+                      onClick={() => onBuy(lg.id)}
+                      disabled={!affordable}
+                      style={{
+                        width: '100%', marginTop: 7, padding: '6px 8px',
+                        background: affordable ? T.accent : T.border,
+                        color: affordable ? T.bg : T.muted,
+                        border: 'none', borderRadius: 4,
+                        fontSize: 11, fontWeight: 700,
+                        cursor: affordable ? 'pointer' : 'not-allowed',
+                      }}
+                    >${cost.toFixed(0)}M · BUY</button>
+                  ) : (
+                    <div style={{ marginTop: 7, fontSize: 10, color: T.green, fontStyle: 'italic' }}>
+                      Owned · Use in slot editor
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
-        )
-      })}
+        </div>
+      ))}
     </div>
   )
 }
