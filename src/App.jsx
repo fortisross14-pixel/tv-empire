@@ -2444,17 +2444,35 @@ function AchievementUnlockPopup({ unlock, remaining, onDismiss }) {
         }}>
           {a.desc}
         </div>
-        {a.reward > 0 && (
+        {(a.reward > 0 || a.fame > 0) && (
           <div style={{
-            display: 'inline-block',
-            padding: '6px 16px', marginBottom: 14,
-            background: T.green + '22',
-            border: `1px solid ${T.green}55`,
-            borderRadius: 4,
-            fontFamily: 'JetBrains Mono', fontSize: 14, fontWeight: 700,
-            color: T.green,
+            display: 'flex', gap: 8, justifyContent: 'center',
+            marginBottom: 14, flexWrap: 'wrap',
           }}>
-            +${a.reward}M bonus
+            {a.reward > 0 && (
+              <div style={{
+                padding: '6px 14px',
+                background: T.green + '22',
+                border: `1px solid ${T.green}55`,
+                borderRadius: 4,
+                fontFamily: 'JetBrains Mono', fontSize: 14, fontWeight: 700,
+                color: T.green,
+              }}>
+                +${a.reward}M
+              </div>
+            )}
+            {a.fame > 0 && (
+              <div style={{
+                padding: '6px 14px',
+                background: T.gold + '22',
+                border: `1px solid ${T.gold}55`,
+                borderRadius: 4,
+                fontFamily: 'JetBrains Mono', fontSize: 14, fontWeight: 700,
+                color: T.gold,
+              }}>
+                +{a.fame} fame
+              </div>
+            )}
           </div>
         )}
         <button
@@ -2583,12 +2601,18 @@ function AchievementsModal({ station, onClose }) {
                           }}>
                             {a.title}
                           </div>
-                          {a.reward > 0 && (
+                          {(a.reward > 0 || a.fame > 0) && (
                             <div className="mono" style={{
-                              fontSize: 10, color: got ? T.green : T.muted, fontWeight: 700,
+                              fontSize: 10, fontWeight: 700,
                               whiteSpace: 'nowrap',
+                              display: 'flex', gap: 6,
                             }}>
-                              +${a.reward}M
+                              {a.reward > 0 && (
+                                <span style={{ color: got ? T.green : T.muted }}>+${a.reward}M</span>
+                              )}
+                              {a.fame > 0 && (
+                                <span style={{ color: got ? T.gold : T.muted, opacity: got ? 1 : 0.7 }}>+{a.fame}f</span>
+                              )}
                             </div>
                           )}
                         </div>

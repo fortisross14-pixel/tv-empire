@@ -31,7 +31,7 @@ import {
   LIVE_PREP_FRACTION, LIVE_AIRING_FRACTION,
   PREPRODUCED_TRANSMISSION_FRACTION, MOVIE_EDITING_FRACTION,
   ESTIMATION_RANGE,
-  MUSIC_TIERS, CATEGORY_QUALITY_WEIGHTS, REVIEW_TEMPLATES,
+  MUSIC_TIERS, CATEGORY_QUALITY_WEIGHTS, REVIEW_OUTLETS, scoreBand, VERDICT_LABELS,
 } from './constants.js'
 
 // ─── MATH HELPERS ────────────────────────────────────────────────────────────
@@ -728,7 +728,11 @@ function rollProgramComponents(opts, station, research) {
       + tech.q * 1.5
       + rnd(-0.3, 0.3)
     , 0, 10)
-    const h = clamp((lg?.baseH || 5) + (mkt?.h || 0) + tech.h, 0, 10)
+    // Per-market hype multiplier — college and regional leagues run hot in
+    // local/metro markets but cool at national scale, where they compete with
+    // pro leagues. Defaults to 1.0 everywhere if absent.
+    const mhm = (lg?.marketHypeMult && lg.marketHypeMult[station.market]) || 1.0
+    const h = clamp(((lg?.baseH || 5) * mhm) + (mkt?.h || 0) + tech.h, 0, 10)
     const rawQ = weightedQuality({ narrative, art, innovation, technical }, opts.categoryId)
     // Specialization bonus — sports broadcasts count as 'sports' genre
     const bumped = applySpecBonuses(rawQ, h, station, 'sports')
@@ -1248,35 +1252,58 @@ export function finishProgram(station, programId, finalStats, year, month) {
 }
 
 /** Helper: aggregate per-airing stats onto a program after each month. */
-/** Generate a review for a freshly-aired program.
- *  Picks from REVIEW_TEMPLATES based on the program's components + first
- *  airing rating. Returns { quote, bucket, rating, components } — or null
- *  if the program is a movie (movies skip the review modal).
+/** Generate a three-outlet review for a freshly-aired program.
+ *  Returns an object:
+ *    {
+ *      rating,            // 0..10 — the live airing rating for context
+ *      aggregate,         // 0..10 — average of the three outlet scores
+ *      band,              // 'flop'|'soft'|'solid'|'hit'|'blockbuster'
+ *      verdict,           // { label, tone } from VERDICT_LABELS
+ *      components,        // copy of program.components
+ *      outlets: [{ id, name, icon, description, score, band, line }, ...]
+ *    }
+ *  Returns null for movies (movies skip the review modal).
  */
-export function generateReview(program, firstAiring, networkName) {
-  if (program.movieId) return null    // movies skip reviews
+export function generateReviews(program, firstAiring, networkName) {
+  if (program.movieId) return null
   const c = program.components
   if (!c) return null
   const rating = firstAiring?.rating || program.trueQ
-  const candidates = REVIEW_TEMPLATES.filter(t => {
-    try { return t.test(c, rating) } catch (e) { return false }
+
+  const outlets = REVIEW_OUTLETS.map(o => {
+    const score = clamp(o.scoreFrom(c) || 0, 0, 10)
+    const band = scoreBand(score)
+    const pool = o.lines[band] || o.lines.solid
+    const line = pool[Math.floor(Math.random() * pool.length)]
+      .replaceAll('{network}', networkName || 'The network')
+    return {
+      id: o.id, name: o.name, icon: o.icon,
+      description: o.description,
+      score: r1(score),
+      band,
+      line,
+    }
   })
-  // Prefer non-fallback if any matched
-  const nonFallback = candidates.filter(t => t.bucket !== 'fallback')
-  const pool = nonFallback.length > 0 ? nonFallback : candidates
-  const template = pool[Math.floor(Math.random() * pool.length)]
-  if (!template) return null
-  const cat = CATEGORIES[program.categoryId]
-  const kindLabel = cat?.label?.toLowerCase() || 'show'
-  const quote = template.quote
-    .replaceAll('{network}', networkName || 'The network')
-    .replaceAll('{kind}', kindLabel)
+
+  const aggregateRaw = outlets.reduce((s, o) => s + o.score, 0) / outlets.length
+  const aggregate = r1(aggregateRaw)
+  const band = scoreBand(aggregate)
+  const verdict = VERDICT_LABELS[band]
+
   return {
-    quote,
-    bucket: template.bucket,
     rating: r2(rating),
+    aggregate,
+    band,
+    verdict,
     components: { ...c },
+    outlets,
   }
+}
+
+/** Back-compat shim: old call sites might still ask for a single review.
+ *  Returns the new 3-outlet shape so callers can adapt. */
+export function generateReview(program, firstAiring, networkName) {
+  return generateReviews(program, firstAiring, networkName)
 }
 
 export function updateProgramFromAiring(station, programId, airing, networkName) {
@@ -1614,12 +1641,12 @@ export function isMarketingTierUnlocked(station, tierId) {
   // 'none' is always available; 'flyers' depends on market; 'online' always.
   if (tierId === 'none' || tierId === 'online') return true
   if (tierId === 'flyers') return true  // localOnly already handled in UI
-  // Standard Ads and TV+Radio+Print require Director of Marketing.
-  if (tierId === 'medium' || tierId === 'big') {
+  // Standard Ads, TV+Radio+Print, AND Disney-Scale all require Director of
+  // Marketing. Money alone is no longer enough to buy Disney-Scale —
+  // you need the expertise to spend it well.
+  if (tierId === 'medium' || tierId === 'big' || tierId === 'massive') {
     return hasDirector(station, 'marketing')
   }
-  // Disney-Scale stays available — money is its own gate.
-  if (tierId === 'massive') return true
   return true
 }
 
@@ -2236,7 +2263,10 @@ export function projectShow(planned, station, research, monthIdx = 0) {
     const campHype = station.activeCampaign?.hypeBoost || 0
 
     const rawQ = clamp(lg.baseQ + (dir?.q || 0) * dMatch + (star?.q || 0) * sMatch + focusQ + contentQ + tech.q, 1, 10)
-    const rawH = clamp(lg.baseH + (dir?.h || 0) * dMatch + (star?.h || 0) * sMatch + focusH + fameH + slotBonusH + seasonBonusH + peakBonus + tech.h + campHype, 1, 10)
+    // Per-market hype multiplier — college/regional sports peak in local
+    // markets and fade nationally. See SPORTS_LEAGUES.marketHypeMult.
+    const mhm = (lg.marketHypeMult && lg.marketHypeMult[station.market]) || 1.0
+    const rawH = clamp((lg.baseH * mhm) + (dir?.h || 0) * dMatch + (star?.h || 0) * sMatch + focusH + fameH + slotBonusH + seasonBonusH + peakBonus + tech.h + campHype, 1, 10)
     // Specialization bonus — sports broadcasts use 'sports' genre
     const bumped = applySpecBonuses(rawQ, rawH, station, 'sports')
 
@@ -3581,67 +3611,67 @@ export function applySpecBonuses(q, h, station, categoryId) {
 //   $40M = capstone (boardroom full, empire, completionist)
 const ACHIEVEMENT_CATALOG = [
   // ── GENRE FIRSTS ──
-  { id: 'first_news',      group: 'firsts', tone: 'silver', icon: '📰', title: 'First News Bulletin',     desc: 'Aired your first News program.',     reward: 2, evalKind: 'airing' },
-  { id: 'first_reality',   group: 'firsts', tone: 'silver', icon: '👁',  title: 'First Reality Show',      desc: 'Aired your first Reality program.',  reward: 2, evalKind: 'airing' },
-  { id: 'first_series',    group: 'firsts', tone: 'silver', icon: '🎬', title: 'First Scripted Series',   desc: 'Aired your first scripted Series.',  reward: 2, evalKind: 'airing' },
-  { id: 'first_latenight', group: 'firsts', tone: 'silver', icon: '🌙', title: 'First Late-Night',        desc: 'Aired your first Late-Night program.', reward: 2, evalKind: 'airing' },
-  { id: 'first_sports',    group: 'firsts', tone: 'silver', icon: '🏆', title: 'First Sports Broadcast',  desc: 'Aired your first Sports rights coverage.', reward: 2, evalKind: 'airing' },
-  { id: 'first_family',    group: 'firsts', tone: 'silver', icon: '🏡', title: 'First Family Program',    desc: 'Aired your first Family program.',   reward: 2, evalKind: 'airing' },
-  { id: 'first_kids',      group: 'firsts', tone: 'silver', icon: '🧒', title: 'First Kids Show',         desc: 'Aired your first Kids program.',     reward: 2, evalKind: 'airing' },
-  { id: 'first_movie',     group: 'firsts', tone: 'silver', icon: '🎞', title: 'First Movie',             desc: 'Aired your first licensed Movie.',   reward: 2, evalKind: 'airing' },
+  { id: 'first_news',      group: 'firsts', tone: 'silver', icon: '📰', title: 'First News Bulletin',     desc: 'Aired your first News program.',     reward: 0.5, fame: 0.5, evalKind: 'airing' },
+  { id: 'first_reality',   group: 'firsts', tone: 'silver', icon: '👁',  title: 'First Reality Show',      desc: 'Aired your first Reality program.',  reward: 0.5, fame: 0.5, evalKind: 'airing' },
+  { id: 'first_series',    group: 'firsts', tone: 'silver', icon: '🎬', title: 'First Scripted Series',   desc: 'Aired your first scripted Series.',  reward: 0.5, fame: 0.5, evalKind: 'airing' },
+  { id: 'first_latenight', group: 'firsts', tone: 'silver', icon: '🌙', title: 'First Late-Night',        desc: 'Aired your first Late-Night program.', reward: 0.5, fame: 0.5, evalKind: 'airing' },
+  { id: 'first_sports',    group: 'firsts', tone: 'silver', icon: '🏆', title: 'First Sports Broadcast',  desc: 'Aired your first Sports rights coverage.', reward: 0.5, fame: 0.5, evalKind: 'airing' },
+  { id: 'first_family',    group: 'firsts', tone: 'silver', icon: '🏡', title: 'First Family Program',    desc: 'Aired your first Family program.',   reward: 0.5, fame: 0.5, evalKind: 'airing' },
+  { id: 'first_kids',      group: 'firsts', tone: 'silver', icon: '🧒', title: 'First Kids Show',         desc: 'Aired your first Kids program.',     reward: 0.5, fame: 0.5, evalKind: 'airing' },
+  { id: 'first_movie',     group: 'firsts', tone: 'silver', icon: '🎞', title: 'First Movie',             desc: 'Aired your first licensed Movie.',   reward: 0.5, fame: 0.5, evalKind: 'airing' },
 
   // ── PROGRAM QUALITY FIRSTS ──
   { id: 'lights_on',         group: 'programs', tone: 'bronze', icon: '💡', title: 'Lights On',         desc: 'Air your first program.',
-    reward: 2, evalKind: 'state', check: ({ game }) => (game.runs || []).some(r => (r.aiHistory || []).length >= 1) || hasAnyAiredProgram(game) },
-  { id: 'first_hit',         group: 'programs', tone: 'silver', icon: '⭐', title: 'First Hit',         desc: 'Air a program with rating 7.0+.', reward: 5, evalKind: 'airing' },
-  { id: 'first_blockbuster', group: 'programs', tone: 'gold',   icon: '💥', title: 'First Blockbuster', desc: 'Air a program with rating 8.0+.', reward: 15, evalKind: 'airing' },
-  { id: 'first_masterpiece', group: 'programs', tone: 'gold',   icon: '👑', title: 'First Masterpiece', desc: 'Air a program with rating 9.0+.', reward: 15, evalKind: 'airing' },
+    reward: 0.5, fame: 0.5, evalKind: 'state', check: ({ game }) => (game.runs || []).some(r => (r.aiHistory || []).length >= 1) || hasAnyAiredProgram(game) },
+  { id: 'first_hit',         group: 'programs', tone: 'silver', icon: '⭐', title: 'First Hit',         desc: 'Air a program with rating 7.0+.', reward: 1, fame: 1, evalKind: 'airing' },
+  { id: 'first_blockbuster', group: 'programs', tone: 'gold',   icon: '💥', title: 'First Blockbuster', desc: 'Air a program with rating 8.0+.', reward: 15.0, fame: 5, evalKind: 'airing' },
+  { id: 'first_masterpiece', group: 'programs', tone: 'gold',   icon: '👑', title: 'First Masterpiece', desc: 'Air a program with rating 9.0+.', reward: 15.0, fame: 5, evalKind: 'airing' },
   { id: 'hits_factory',      group: 'programs', tone: 'gold',   icon: '🏭', title: 'Hits Factory',      desc: 'Score 5 different programs at 8.0+.',
-    reward: 15, evalKind: 'state', check: ({ game }) => countDistinctHitPrograms(game, 8.0) >= 5 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ game }) => countDistinctHitPrograms(game, 8.0) >= 5 },
   { id: 'big_production',    group: 'programs', tone: 'silver', icon: '🎥', title: 'Big Production',    desc: 'Air a Large-tier production.',
-    reward: 5, evalKind: 'state', check: ({ station, game }) => airedProgramsByTier(station, game, 'large') >= 1 },
+    reward: 5.0, fame: 2, evalKind: 'state', check: ({ station, game }) => airedProgramsByTier(station, game, 'large') >= 1 },
   { id: 'super_sized',       group: 'programs', tone: 'gold',   icon: '🦣', title: 'Super-Sized',       desc: 'Air a Super-tier production.',
-    reward: 15, evalKind: 'state', check: ({ station, game }) => airedProgramsByTier(station, game, 'super') >= 1 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ station, game }) => airedProgramsByTier(station, game, 'super') >= 1 },
   { id: 'franchise',         group: 'programs', tone: 'gold',   icon: '🔁', title: 'Franchise',         desc: 'Take a program through 3 sequel seasons.',
-    reward: 15, evalKind: 'state', check: ({ game, station }) => maxSeqSeasonSeen(game, station) >= 3 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ game, station }) => maxSeqSeasonSeen(game, station) >= 3 },
   { id: 'year_of_hits',      group: 'programs', tone: 'gold',   icon: '📈', title: 'Year of Hits',      desc: '6 programs at 8.0+ in a single year.',
-    reward: 15, evalKind: 'state', check: ({ game }) => bestYearOfHits(game, 8.0) >= 6 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ game }) => bestYearOfHits(game, 8.0) >= 6 },
 
   // ── SLOT LEADERSHIP ──
-  { id: 'slot_lead_weekday_morning', group: 'slot', tone: 'bronze', icon: '🌅', title: 'Morning Champion',         desc: 'First time #1 in Weekday Morning.', reward: 5, evalKind: 'airing' },
-  { id: 'slot_lead_weekday_evening', group: 'slot', tone: 'bronze', icon: '🌆', title: 'Evening Champion',         desc: 'First time #1 in Weekday Evening.', reward: 5, evalKind: 'airing' },
-  { id: 'slot_lead_prime',           group: 'slot', tone: 'gold',   icon: '🌟', title: 'Prime-Time Champion',      desc: 'First time #1 in Prime Time.',      reward: 15, evalKind: 'airing' },
-  { id: 'slot_lead_lateprime',       group: 'slot', tone: 'bronze', icon: '🌃', title: 'Late-Prime Champion',      desc: 'First time #1 in Late Prime.',      reward: 5, evalKind: 'airing' },
-  { id: 'slot_lead_weekend_morning', group: 'slot', tone: 'bronze', icon: '🧒', title: 'Weekend Morning Champion', desc: 'First time #1 in Weekend Morning.', reward: 5, evalKind: 'airing' },
-  { id: 'slot_lead_weekend_prime',   group: 'slot', tone: 'gold',   icon: '🎯', title: 'Weekend Prime Champion',   desc: 'First time #1 in Weekend Prime.',   reward: 15, evalKind: 'airing' },
+  { id: 'slot_lead_weekday_morning', group: 'slot', tone: 'bronze', icon: '🌅', title: 'Morning Champion',         desc: 'First time #1 in Weekday Morning.', reward: 5.0, fame: 2, evalKind: 'airing' },
+  { id: 'slot_lead_weekday_evening', group: 'slot', tone: 'bronze', icon: '🌆', title: 'Evening Champion',         desc: 'First time #1 in Weekday Evening.', reward: 5.0, fame: 2, evalKind: 'airing' },
+  { id: 'slot_lead_prime',           group: 'slot', tone: 'gold',   icon: '🌟', title: 'Prime-Time Champion',      desc: 'First time #1 in Prime Time.',      reward: 15.0, fame: 5, evalKind: 'airing' },
+  { id: 'slot_lead_lateprime',       group: 'slot', tone: 'bronze', icon: '🌃', title: 'Late-Prime Champion',      desc: 'First time #1 in Late Prime.',      reward: 5.0, fame: 2, evalKind: 'airing' },
+  { id: 'slot_lead_weekend_morning', group: 'slot', tone: 'bronze', icon: '🧒', title: 'Weekend Morning Champion', desc: 'First time #1 in Weekend Morning.', reward: 5.0, fame: 2, evalKind: 'airing' },
+  { id: 'slot_lead_weekend_prime',   group: 'slot', tone: 'gold',   icon: '🎯', title: 'Weekend Prime Champion',   desc: 'First time #1 in Weekend Prime.',   reward: 15.0, fame: 5, evalKind: 'airing' },
 
   // ── MARKET / OFFICE ──
   { id: 'open_for_business', group: 'office', tone: 'bronze', icon: '📡', title: 'Open for Business', desc: 'Survive your first month.',
-    reward: 2, evalKind: 'state', check: ({ game }) => (game.year || 1) > 1 || (game.monthIdx || 0) >= 1 },
+    reward: 0.5, fame: 0.5, evalKind: 'state', check: ({ game }) => (game.year || 1) > 1 || (game.monthIdx || 0) >= 1 },
   { id: 'market_metro',      group: 'office', tone: 'gold',   icon: '🏙', title: 'Welcome to the Metro',  desc: 'Promote your station to Metro.',
-    reward: 5,  evalKind: 'state', check: ({ station }) => station.market === 'metro' || station.market === 'national' },
+    reward: 5.0, fame: 2,  evalKind: 'state', check: ({ station }) => station.market === 'metro' || station.market === 'national' },
   { id: 'market_national',   group: 'office', tone: 'gold',   icon: '🇺🇸', title: 'Going National',        desc: 'Promote your station to National.',
-    reward: 15, evalKind: 'state', check: ({ station }) => station.market === 'national' },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ station }) => station.market === 'national' },
   { id: 'empire',            group: 'office', tone: 'gold',   icon: '💰', title: 'Empire',                desc: 'Hold $500M cash on hand.',
-    reward: 40, evalKind: 'state', check: ({ station }) => (station.cash || 0) >= 500 },
+    reward: 40.0, fame: 10, evalKind: 'state', check: ({ station }) => (station.cash || 0) >= 500 },
 
   // ── STAFFING ──
   { id: 'first_vp',         group: 'staff', tone: 'silver', icon: '👔', title: 'First Lieutenant',  desc: 'Hire your first VP.',
-    reward: 5,  evalKind: 'state', check: ({ station }) => Object.values(station.staff || {}).filter(Boolean).length >= 1 },
+    reward: 5.0, fame: 2,  evalKind: 'state', check: ({ station }) => Object.values(station.staff || {}).filter(Boolean).length >= 1 },
   { id: 'full_cabinet',     group: 'staff', tone: 'gold',   icon: '🏛', title: 'Full Cabinet',      desc: 'Hire all 5 VPs at once.',
-    reward: 15, evalKind: 'state', check: ({ station }) => Object.values(station.staff || {}).filter(Boolean).length >= 5 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ station }) => Object.values(station.staff || {}).filter(Boolean).length >= 5 },
   { id: 'first_director',   group: 'staff', tone: 'silver', icon: '🪪', title: 'Inner Circle',      desc: 'Hire your first Director.',
-    reward: 5,  evalKind: 'state', check: ({ station }) => Object.keys(station.directors || {}).length >= 1 },
+    reward: 5.0, fame: 2,  evalKind: 'state', check: ({ station }) => Object.keys(station.directors || {}).length >= 1 },
   { id: 'directors_cut',    group: 'staff', tone: 'gold',   icon: '✂', title: "Director's Cut",    desc: 'Hire 4 Directors at once.',
-    reward: 15, evalKind: 'state', check: ({ station }) => totalDirectorHeadcount(station) >= 4 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ station }) => totalDirectorHeadcount(station) >= 4 },
   { id: 'boardroom_full',   group: 'staff', tone: 'gold',   icon: '🏢', title: 'Boardroom Full',    desc: 'Hire all 8 Director role types.',
-    reward: 40, evalKind: 'state', check: ({ station }) => Object.keys(station.directors || {}).length >= 8 },
+    reward: 40.0, fame: 10, evalKind: 'state', check: ({ station }) => Object.keys(station.directors || {}).length >= 8 },
   { id: 'auto_pilot',       group: 'staff', tone: 'silver', icon: '🗓', title: 'Auto-Pilot',        desc: 'Assign a Director of Scheduling.',
-    reward: 5,  evalKind: 'state', check: ({ station }) => (station.slotAuto || []).some(Boolean) },
+    reward: 5.0, fame: 2,  evalKind: 'state', check: ({ station }) => (station.slotAuto || []).some(Boolean) },
   { id: 'mission_control',  group: 'staff', tone: 'gold',   icon: '🛰', title: 'Mission Control',   desc: '4 Directors of Scheduling assigned.',
-    reward: 15, evalKind: 'state', check: ({ station }) => (station.slotAuto || []).filter(Boolean).length >= 4 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ station }) => (station.slotAuto || []).filter(Boolean).length >= 4 },
   { id: 'the_bench',        group: 'staff', tone: 'gold',   icon: '🪑', title: 'The Bench',         desc: 'Fill National talent to 25/25.',
-    reward: 15, evalKind: 'state', check: ({ station }) => {
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ station }) => {
       if (station.market !== 'national') return false
       const cap = (station.directors || {}).talent ? 25 : 15
       const cnt = (station.hiredDirectors || []).length + (station.hiredStars || []).length + (station.hiredWriters || []).length
@@ -3650,62 +3680,62 @@ const ACHIEVEMENT_CATALOG = [
 
   // ── TALENT ──
   { id: 'first_hire',  group: 'talent', tone: 'bronze', icon: '✍', title: 'First Hire',  desc: 'Sign your first creative talent.',
-    reward: 2, evalKind: 'state', check: ({ station }) => ((station.hiredDirectors || []).length + (station.hiredStars || []).length + (station.hiredWriters || []).length) >= 1 },
+    reward: 0.5, fame: 0.5, evalKind: 'state', check: ({ station }) => ((station.hiredDirectors || []).length + (station.hiredStars || []).length + (station.hiredWriters || []).length) >= 1 },
   { id: 'star_power',  group: 'talent', tone: 'gold',   icon: '🌟', title: 'Star Power',  desc: 'Sign a Legendary star.',
-    reward: 5, evalKind: 'state', check: ({ station }) => hasLegendaryHire(station, 'hiredStars') },
+    reward: 5.0, fame: 2, evalKind: 'state', check: ({ station }) => hasLegendaryHire(station, 'hiredStars') },
   { id: 'auteur',      group: 'talent', tone: 'gold',   icon: '🎬', title: 'Auteur',      desc: 'Sign a Legendary creative director.',
-    reward: 5, evalKind: 'state', check: ({ station }) => hasLegendaryHire(station, 'hiredDirectors') },
+    reward: 5.0, fame: 2, evalKind: 'state', check: ({ station }) => hasLegendaryHire(station, 'hiredDirectors') },
   { id: 'pen_mightier',group: 'talent', tone: 'silver', icon: '✒', title: 'Pen Mightier', desc: 'Have 3 writers on contract.',
-    reward: 5, evalKind: 'state', check: ({ station }) => (station.hiredWriters || []).length >= 3 },
+    reward: 5.0, fame: 2, evalKind: 'state', check: ({ station }) => (station.hiredWriters || []).length >= 3 },
   { id: 'hot_streak',  group: 'talent', tone: 'silver', icon: '🔥', title: 'Hot Streak',   desc: 'Same star on contract 24 months.',
-    reward: 5, evalKind: 'state', check: ({ station }) => (station.hiredStars || []).some(s => (s.monthsOn || s.monthsLogged || 0) >= 24) },
+    reward: 5.0, fame: 2, evalKind: 'state', check: ({ station }) => (station.hiredStars || []).some(s => (s.monthsOn || s.monthsLogged || 0) >= 24) },
 
   // ── RESEARCH / TECH ──
   { id: 'bookworm',     group: 'research', tone: 'bronze', icon: '📚', title: 'Bookworm',    desc: 'Complete your first research project.',
-    reward: 2, evalKind: 'state', check: ({ game }) => (game.research?.unlocked || []).length >= 1 },
+    reward: 0.5, fame: 0.5, evalKind: 'state', check: ({ game }) => (game.research?.unlocked || []).length >= 1 },
   { id: 'beyond_hd',    group: 'research', tone: 'gold',   icon: '📺', title: 'Beyond HD',   desc: 'Complete 4K UHD research.',
-    reward: 15, evalKind: 'state', check: ({ game }) => (game.research?.unlocked || []).includes('tech_video_uhd') },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ game }) => (game.research?.unlocked || []).includes('tech_video_uhd') },
   { id: 'full_spectrum',group: 'research', tone: 'gold',   icon: '🎧', title: 'Full Spectrum', desc: 'Complete Surround Sound research.',
-    reward: 15, evalKind: 'state', check: ({ game }) => (game.research?.unlocked || []).includes('tech_audio_surround') },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ game }) => (game.research?.unlocked || []).includes('tech_audio_surround') },
   { id: 'tech_stack',   group: 'research', tone: 'gold',   icon: '🧪', title: 'Tech Stack',  desc: 'Complete Heavy SFX, Surround, 4K UHD.',
-    reward: 40, evalKind: 'state', check: ({ game }) => {
+    reward: 40.0, fame: 10, evalKind: 'state', check: ({ game }) => {
       const u = game.research?.unlocked || []
       return u.includes('tech_video_uhd') && u.includes('tech_audio_surround') && u.includes('tech_sfx_heavy')
     }},
 
   // ── RIGHTS / IP ──
   { id: 'pop_culture',    group: 'rights', tone: 'silver', icon: '🎭', title: 'Pop Culture',    desc: 'License your first IP.',
-    reward: 5,  evalKind: 'state', check: ({ station }) => (station.ipLicenses || []).length >= 1 },
+    reward: 5.0, fame: 2,  evalKind: 'state', check: ({ station }) => (station.ipLicenses || []).length >= 1 },
   { id: 'big_league',     group: 'rights', tone: 'silver', icon: '⚾', title: 'Big League',     desc: 'Sign your first sports rights.',
-    reward: 5,  evalKind: 'state', check: ({ station }) => (station.sportsLicenses || []).length >= 1 },
+    reward: 5.0, fame: 2,  evalKind: 'state', check: ({ station }) => (station.sportsLicenses || []).length >= 1 },
   { id: 'studio_catalog', group: 'rights', tone: 'gold',   icon: '📚', title: 'Studio Catalog', desc: 'Hold 3 active IP licenses.',
-    reward: 15, evalKind: 'state', check: ({ station, game }) => (station.ipLicenses || []).filter(l => (l.expiresYear || 0) >= (game.year || 1)).length >= 3 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ station, game }) => (station.ipLicenses || []).filter(l => (l.expiresYear || 0) >= (game.year || 1)).length >= 3 },
 
   // ── FINANCE ──
   { id: 'in_the_black',     group: 'finance', tone: 'bronze', icon: '✅', title: 'In the Black',    desc: 'Finish a month with positive profit.',
-    reward: 2,  evalKind: 'state', check: ({ game }) => maxMonthlyProfit(game) > 0 },
+    reward: 0.5, fame: 0.5,  evalKind: 'state', check: ({ game }) => maxMonthlyProfit(game) > 0 },
   { id: 'cash_machine',     group: 'finance', tone: 'silver', icon: '🪙', title: 'Cash Machine',    desc: 'Earn $50M revenue in one month.',
-    reward: 5,  evalKind: 'state', check: ({ game }) => maxMonthlyRevenue(game) >= 50 },
+    reward: 5.0, fame: 2,  evalKind: 'state', check: ({ game }) => maxMonthlyRevenue(game) >= 50 },
   { id: 'whale',            group: 'finance', tone: 'gold',   icon: '🐋', title: 'Whale',           desc: 'Earn $100M revenue in one month.',
-    reward: 15, evalKind: 'state', check: ({ game }) => maxMonthlyRevenue(game) >= 100 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ game }) => maxMonthlyRevenue(game) >= 100 },
   { id: 'self_sustaining',  group: 'finance', tone: 'gold',   icon: '♻', title: 'Self-Sustaining', desc: 'Profitable 12 months in a row.',
-    reward: 15, evalKind: 'state', check: ({ game }) => longestProfitableStreak(game) >= 12 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ game }) => longestProfitableStreak(game) >= 12 },
 
   // ── MERCHANDISING ──
   { id: 'brand_builder', group: 'merch', tone: 'silver', icon: '🧸', title: 'Brand Builder', desc: 'Prepare merchandising on a program.',
-    reward: 5,  evalKind: 'state', check: ({ station }) => (station.programs || []).some(p => p.prepareMerch) },
+    reward: 5.0, fame: 2,  evalKind: 'state', check: ({ station }) => (station.programs || []).some(p => p.prepareMerch) },
   { id: 'cha_ching',     group: 'merch', tone: 'gold',   icon: '💸', title: 'Cha-Ching',     desc: '$100M total merchandising revenue.',
-    reward: 15, evalKind: 'state', check: ({ station }) => totalMerchRevenue(station) >= 100 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ station }) => totalMerchRevenue(station) >= 100 },
 
   // ── AWARDS ──
   { id: 'recognition', group: 'awards', tone: 'gold', icon: '🏅', title: 'Recognition', desc: 'Win your first award.',
-    reward: 5,  evalKind: 'state', check: ({ game }) => anyAwardWon(game) },
+    reward: 5.0, fame: 2,  evalKind: 'state', check: ({ game }) => anyAwardWon(game) },
   { id: 'sweep',       group: 'awards', tone: 'gold', icon: '🎖', title: 'Sweep',       desc: 'Win 3+ awards in one ceremony.',
-    reward: 15, evalKind: 'state', check: ({ game }) => maxAwardsOneCeremony(game) >= 3 },
+    reward: 15.0, fame: 5, evalKind: 'state', check: ({ game }) => maxAwardsOneCeremony(game) >= 3 },
 
   // ── CAPSTONE ──
   { id: 'completionist', group: 'meta', tone: 'gold', icon: '🏁', title: 'Completionist', desc: 'Unlock every other achievement.',
-    reward: 40, evalKind: 'state', check: ({ station }) => {
+    reward: 40.0, fame: 10, evalKind: 'state', check: ({ station }) => {
       const unlocked = Object.keys(station.achievements?.unlocked || {})
       const total = ACHIEVEMENT_CATALOG.filter(a => a.id !== 'completionist' && !a.recurring).length
       return unlocked.filter(id => id !== 'completionist').length >= total
@@ -3713,7 +3743,7 @@ const ACHIEVEMENT_CATALOG = [
 
   // ── RECURRING (does NOT count toward X/Y) ──
   { id: 'month_top', group: 'recurring', tone: 'gold', icon: '🏆', title: 'Most-Watched This Month',
-    desc: 'Had the #1 program across all networks.', reward: 0, recurring: true, evalKind: 'airing' },
+    desc: 'Had the #1 program across all networks.', reward: 0.0, fame: 0.5, recurring: true, evalKind: 'airing' },
 ]
 
 // ─── ACHIEVEMENT CHECK HELPERS ──────────────────────────────────────────────
@@ -3998,11 +4028,13 @@ export function applyUnlockedAchievements(station, unlocked, year, month) {
   const achievements = { ...(station.achievements || { unlocked: {} }) }
   achievements.unlocked = { ...(achievements.unlocked || {}) }
   let cashBonus = 0
+  let fameBonus = 0
   const ledgerAdds = []
   for (const u of unlocked) {
     achievements.unlocked[u.id] = { year, month, context: u.context }
     const a = u.achievement
     const reward = a?.reward || 0
+    const fame = a?.fame || 0
     if (reward > 0) {
       cashBonus += reward
       ledgerAdds.push({
@@ -4012,10 +4044,12 @@ export function applyUnlockedAchievements(station, unlocked, year, month) {
         amount: reward,
       })
     }
+    if (fame > 0) fameBonus += fame
   }
   return {
     ...station,
     cash: r1((station.cash || 0) + cashBonus),
+    fame: r2((station.fame || 0) + fameBonus),
     achievements,
     ledger: [...(station.ledger || []), ...ledgerAdds],
   }

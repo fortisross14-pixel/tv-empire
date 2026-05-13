@@ -705,192 +705,161 @@ export const CATEGORY_QUALITY_WEIGHTS = {
   movie:     { narrative: 0.35, art: 0.30, innovation: 0.15, technical: 0.20 },
 }
 
-// ─── REVIEW SENTENCE TEMPLATES ───────────────────────────────────────────────
-// Each template has a condition function that takes (components, rating, networkName)
-// and returns true if it applies; and a `quote` template using {network} as
-// the placeholder for the network name.
+// ─── REVIEWER OUTLETS ────────────────────────────────────────────────────────
+// Each new program gets THREE reviews when it first airs — one per outlet.
+// Each outlet specializes in scoring a specific component of the show:
+//   tech-mag      → technical
+//   script-pod    → narrative
+//   art-quarterly → art (with a touch of innovation)
 //
-// `bucket` groups templates by overall reception so we can pick from a
-// matching pool. The score from `score(components)` is used to pick the best
-// within the bucket.
+// Each outlet has a `lines` pool keyed by score band (0..10). When a review is
+// generated we pick a random line from the band that matches the score.
 //
-// Components: { narrative, art, innovation, technical } 0..10
-// rating: 0..10 overall live rating
-export const REVIEW_TEMPLATES = [
-  // ── MASTERPIECES (rating >= 8.5) ─────────────────────────────────────────
+// The aggregate score = avg of the three reviewer scores, which closely tracks
+// the program's overall rating. A verdict label is attached based on aggregate.
+//
+// Banding (used for both line selection and verdict):
+//   0-3   FLOP        red
+//   3-5   SOFT        muted
+//   5-7   SOLID       accent
+//   7-8.5 HIT         green
+//   8.5+  BLOCKBUSTER gold
+export const REVIEW_OUTLETS = [
   {
-    bucket: 'masterpiece',
-    quote: '{network} has created a masterpiece. Every department firing at once.',
-    test: (c, r) => r >= 8.5 && minComp(c) >= 7.0,
+    id: 'tech',
+    name: 'TV Technology Magazine',
+    icon: '📺',
+    scoreFrom: (c) => c.technical,  // 0..10
+    description: 'Production tech, audio, visual quality, post-production polish.',
+    lines: {
+      flop: [
+        'Embarrassing technical execution. The mics audibly clip in the cold open.',
+        'Looks like it was edited on a dare. Every other cut is a sin.',
+        'Audio mix is unforgivable. Couldn\'t finish the pilot.',
+        'A masterclass in how NOT to produce television.',
+      ],
+      soft: [
+        'Improvable and basic technology. The gear is fine — the craft isn\'t.',
+        'Watchable but rough. Color grading reads like an afterthought.',
+        'Production values stuck somewhere around 2009.',
+        'Sound design is doing the bare minimum, and you can tell.',
+      ],
+      solid: [
+        'Solid TV technology. Nothing flashy, but it never breaks the spell.',
+        'Production is competent throughout — clean image, decent mix.',
+        'No shame in the tech here. Just don\'t expect spectacle.',
+        'Workmanlike production. Gets the job done without showing off.',
+      ],
+      hit: [
+        'Production values you can feel. The audio mix alone elevates this.',
+        'Technically polished — cinematography and sound are in lockstep.',
+        'High-end production craft. The grade and mix sing.',
+        'A genuine technical achievement for the budget bracket.',
+      ],
+      blockbuster: [
+        'Reference-grade production. Every department firing at maximum.',
+        'A technical marvel. They built the future of TV production here.',
+        'Best-in-class craft across every technical metric we track.',
+        'The most polished broadcast we\'ve reviewed all year.',
+      ],
+    },
   },
   {
-    bucket: 'masterpiece',
-    quote: 'This is outstanding TV. A new high water mark for the medium.',
-    test: (c, r) => r >= 8.5 && avgComp(c) >= 7.5,
+    id: 'script',
+    name: 'Scriptwriting Podcast',
+    icon: '🎙',
+    scoreFrom: (c) => c.narrative,
+    description: 'Story structure, dialogue, characters, thematic depth.',
+    lines: {
+      flop: [
+        'The script is incoherent. No structure, no characters worth caring about.',
+        'Dialogue so wooden you can hear the splinters.',
+        'A first draft that nobody had the heart to revise.',
+        'Plot holes you could drive a Mack truck through. And it\'s still boring.',
+      ],
+      soft: [
+        'Improvable script — the bones are there but the meat is missing.',
+        'Average writing. Hits expected beats, never deeper.',
+        'You can tell the writers\' room ran out of time on act two.',
+        'Forgettable dialogue, predictable arcs.',
+      ],
+      solid: [
+        'Decent script. The structure holds together; the characters mostly do too.',
+        'Solid writing. Doesn\'t reinvent anything but doesn\'t need to.',
+        'Workmanlike storytelling. Sturdy bones, no surprises.',
+        'A competent script that knows what it\'s doing.',
+      ],
+      hit: [
+        'Very good script — deep and relevant. Lines you\'ll quote.',
+        'Real craft in the writing. Character work is genuinely affecting.',
+        'A confident, well-structured story. The themes land.',
+        'Writing this thoughtful is rare. Worth the watch on script alone.',
+      ],
+      blockbuster: [
+        'Landmark writing. Future writers\' rooms will study this.',
+        'A near-perfect screenplay. Every line earns its place.',
+        'The kind of script that makes you fall in love with TV all over again.',
+        'Generational writing. We\'ll be talking about this script for years.',
+      ],
+    },
   },
   {
-    bucket: 'masterpiece',
-    quote: 'A landmark production. Critics are already calling it the show of the year.',
-    test: (c, r) => r >= 9.0,
-  },
-
-  // ── HITS WITH ONE STANDOUT COMPONENT ─────────────────────────────────────
-  {
-    bucket: 'hit-narrative',
-    quote: "You can't press pause. A gripping story that doesn't let go.",
-    test: (c, r) => r >= 7.0 && dominant(c) === 'narrative' && c.narrative >= 7.5,
-  },
-  {
-    bucket: 'hit-narrative',
-    quote: 'Writing this sharp is rare. Every line earns its place on screen.',
-    test: (c, r) => r >= 7.0 && c.narrative >= 8.0,
-  },
-  {
-    bucket: 'hit-art',
-    quote: 'A visual marvel. {network} clearly invested where it counts.',
-    test: (c, r) => r >= 7.0 && dominant(c) === 'art' && c.art >= 7.5,
-  },
-  {
-    bucket: 'hit-art',
-    quote: 'Every frame is a painting. The cinematography alone is worth tuning in.',
-    test: (c, r) => r >= 7.0 && c.art >= 8.0,
-  },
-  {
-    bucket: 'hit-innovation',
-    quote: 'Genuinely inventive — this could redefine the genre.',
-    test: (c, r) => r >= 7.0 && dominant(c) === 'innovation' && c.innovation >= 7.5,
-  },
-  {
-    bucket: 'hit-innovation',
-    quote: "We haven't seen something this fresh in years.",
-    test: (c, r) => r >= 7.0 && c.innovation >= 8.0,
-  },
-  {
-    bucket: 'hit-technical',
-    quote: 'Technically flawless. The production values raise the entire format.',
-    test: (c, r) => r >= 7.0 && dominant(c) === 'technical' && c.technical >= 7.5,
-  },
-  {
-    bucket: 'hit-technical',
-    quote: 'Polished to a mirror shine. A textbook on how to mount a broadcast.',
-    test: (c, r) => r >= 7.0 && c.technical >= 8.0,
-  },
-
-  // ── HITS WITH BALANCED STRENGTH ──────────────────────────────────────────
-  {
-    bucket: 'hit-balanced',
-    quote: 'A confident, well-rounded production. {network} should be proud.',
-    test: (c, r) => r >= 7.0 && minComp(c) >= 6.0,
-  },
-  {
-    bucket: 'hit-balanced',
-    quote: 'No weak link in the chain. Worth the slot.',
-    test: (c, r) => r >= 7.0 && stdComp(c) <= 1.0,
-  },
-
-  // ── ONE STRENGTH, OTHERS WEAK (rating 6.0–7.0) ───────────────────────────
-  {
-    bucket: 'lopsided-narrative',
-    quote: 'A compelling story, but the rest of the package struggles to keep up.',
-    test: (c, r) => r >= 6.0 && r < 7.5 && c.narrative >= 7.0 && (c.art < 5.0 || c.technical < 5.0),
-  },
-  {
-    bucket: 'lopsided-art',
-    quote: 'Visual marvel with limitations in other areas. Pretty but thin.',
-    test: (c, r) => r >= 6.0 && r < 7.5 && c.art >= 7.0 && (c.narrative < 5.0 || c.innovation < 5.0),
-  },
-  {
-    bucket: 'lopsided-innovation',
-    quote: 'A bold idea in search of better execution.',
-    test: (c, r) => r >= 6.0 && r < 7.5 && c.innovation >= 7.0 && minComp(c) < 5.0,
-  },
-  {
-    bucket: 'lopsided-technical',
-    quote: 'Polished but hollow. The craft is there; the substance is missing.',
-    test: (c, r) => r >= 6.0 && r < 7.5 && c.technical >= 7.0 && c.narrative < 5.0,
-  },
-
-  // ── AVERAGE (rating 5.0–7.0) ─────────────────────────────────────────────
-  {
-    bucket: 'average',
-    quote: 'Nothing special. Watchable, forgettable.',
-    test: (c, r) => r >= 5.0 && r < 7.0 && avgComp(c) >= 4.5 && avgComp(c) < 6.5,
-  },
-  {
-    bucket: 'average',
-    quote: 'One more {kind} on a crowded schedule.',
-    test: (c, r) => r >= 5.0 && r < 7.0,
-  },
-  {
-    bucket: 'average',
-    quote: 'Competent but anonymous. {network} needs to take more risks.',
-    test: (c, r) => r >= 5.0 && r < 7.0 && c.innovation < 5.0,
-  },
-  {
-    bucket: 'average',
-    quote: 'Solid enough for the slot. Hard to recommend, hard to dismiss.',
-    test: (c, r) => r >= 5.5 && r < 7.0,
-  },
-
-  // ── WEAK (rating 4.0–5.0) ───────────────────────────────────────────────
-  {
-    bucket: 'weak',
-    quote: 'Misses more than it hits. Several departments need a rethink.',
-    test: (c, r) => r >= 4.0 && r < 5.0,
-  },
-  {
-    bucket: 'weak',
-    quote: "Doesn't quite work — and you can feel it from the first minute.",
-    test: (c, r) => r >= 4.0 && r < 5.0,
-  },
-  {
-    bucket: 'weak',
-    quote: 'A rough draft that should have stayed on the cutting room floor.',
-    test: (c, r) => r >= 4.0 && r < 5.0 && minComp(c) < 4.0,
-  },
-
-  // ── FLOPS (rating < 4.0) ────────────────────────────────────────────────
-  {
-    bucket: 'flop',
-    quote: "We're sure {network} isn't happy with the end product.",
-    test: (c, r) => r < 4.0 && avgComp(c) < 4.0,
-  },
-  {
-    bucket: 'flop',
-    quote: '{network} should rethink what their strategy is with this show.',
-    test: (c, r) => r < 4.0 && c.innovation < 3.5,
-  },
-  {
-    bucket: 'flop',
-    quote: 'Painful to sit through. Painful to write about.',
-    test: (c, r) => r < 3.5,
-  },
-  {
-    bucket: 'flop',
-    quote: 'Cancel it. Quickly.',
-    test: (c, r) => r < 3.0,
-  },
-
-  // ── ABSOLUTE FALLBACKS (always match) ────────────────────────────────────
-  {
-    bucket: 'fallback',
-    quote: 'A mixed bag — moments of promise, stretches of mediocrity.',
-    test: () => true,
+    id: 'art',
+    name: 'Art & Direction Quarterly',
+    icon: '🎨',
+    scoreFrom: (c) => (c.art * 0.7) + (c.innovation * 0.3),
+    description: 'Visual style, art direction, originality, world-building.',
+    lines: {
+      flop: [
+        'Visually inert. The art department seemingly didn\'t show up.',
+        'No style, no vision, no point of view. Just frames.',
+        'Generic to a fault. Could be any other show on any other network.',
+        'Acceptable, can tell art was not a priority for this production. Painful, actually.',
+      ],
+      soft: [
+        'Acceptable — can tell art was not a priority for this production.',
+        'Functional visuals, nothing more. The composition rarely surprises.',
+        'Set design that screams "we had a budget but no taste."',
+        'Forgettable look. The show is over before the visuals register.',
+      ],
+      solid: [
+        'A pleasant visual identity. Nothing radical but never ugly.',
+        'Solid art direction. The world feels lived-in.',
+        'Honest craft in the design — restrained but considered.',
+        'Reliable visual storytelling. The look serves the story.',
+      ],
+      hit: [
+        'Beautifully composed. Frame-by-frame, this is a real production.',
+        'Bold visual choices. The art direction is its own character.',
+        'A distinct, confident style. Every department in dialogue.',
+        'Striking and original. The kind of show you\'ll recognize in stills.',
+      ],
+      blockbuster: [
+        'A visual landmark. The art direction alone justifies the budget.',
+        'Every frame a painting. Director and DP at the peak of their powers.',
+        'Cinema-grade visuals on a TV schedule. Astonishing.',
+        'The most beautiful production we\'ve seen this year, hands down.',
+      ],
+    },
   },
 ]
 
-// helpers used by review templates
-function minComp(c) { return Math.min(c.narrative, c.art, c.innovation, c.technical) }
-function avgComp(c) { return (c.narrative + c.art + c.innovation + c.technical) / 4 }
-function dominant(c) {
-  const entries = [['narrative', c.narrative], ['art', c.art], ['innovation', c.innovation], ['technical', c.technical]]
-  entries.sort((a, b) => b[1] - a[1])
-  return entries[0][0]
+/** Pick a band id for a 0..10 score. */
+export function scoreBand(score) {
+  if (score >= 8.5) return 'blockbuster'
+  if (score >= 7.0) return 'hit'
+  if (score >= 5.0) return 'solid'
+  if (score >= 3.0) return 'soft'
+  return 'flop'
 }
-function stdComp(c) {
-  const a = avgComp(c)
-  const sq = [c.narrative, c.art, c.innovation, c.technical].map(x => (x - a) ** 2)
-  return Math.sqrt(sq.reduce((x, y) => x + y, 0) / 4)
+
+/** Verdict labels — same banding as score lines, used on aggregate. */
+export const VERDICT_LABELS = {
+  blockbuster: { label: 'BLOCKBUSTER', tone: 'gold' },
+  hit:         { label: 'HIT',         tone: 'green' },
+  solid:       { label: 'SOLID',       tone: 'accent' },
+  soft:        { label: 'SOFT',        tone: 'muted' },
+  flop:        { label: 'FLOP',        tone: 'red' },
 }
 
 // ─── IP CATALOG ──────────────────────────────────────────────────────────────
@@ -918,20 +887,43 @@ export const IPS = [
 //
 // q/h are pack-level — the same numbers apply to every airing from the pack.
 export const MOVIES = [
+  // ── LEGENDARY (premium tentpole movies) ──
   { id: 'mv_titanic',    name: 'Titanic Returns Pack',    tier: 'Legendary', q: 9.0, h: 8.5, cost: 22,  packSize: 3 },
   { id: 'mv_avatar',     name: 'Avatar Trilogy Pack',     tier: 'Legendary', q: 8.5, h: 9.0, cost: 24,  packSize: 3 },
+  { id: 'mv_dinos',      name: 'Dinosaur Park Pack',      tier: 'Legendary', q: 8.2, h: 9.2, cost: 23,  packSize: 3 },
+  { id: 'mv_bondish',    name: 'Spy Thriller Pack',       tier: 'Legendary', q: 8.5, h: 8.8, cost: 22,  packSize: 3 },
+
+  // ── EPIC (prestige + culturally large) ──
   { id: 'mv_oppen',      name: 'Atomicore Pack',          tier: 'Epic',      q: 9.0, h: 7.0, cost: 12,  packSize: 3 },
   { id: 'mv_barbie',     name: 'Doll House Pack',         tier: 'Epic',      q: 7.5, h: 8.5, cost: 11,  packSize: 3 },
   { id: 'mv_inception',  name: 'Dream Layers Pack',       tier: 'Epic',      q: 8.5, h: 7.5, cost: 11,  packSize: 3 },
+  { id: 'mv_warEpic',    name: 'Battlefield Epics Pack',  tier: 'Epic',      q: 8.0, h: 7.2, cost: 11,  packSize: 3 },
+  { id: 'mv_disasterB',  name: 'Disaster Blockbuster Pack', tier: 'Epic',    q: 7.0, h: 8.2, cost: 10,  packSize: 3 },
+
+  // ── RARE (genre crowd-pleasers) ──
   { id: 'mv_marvel1',    name: 'Heroes Unite Pack',       tier: 'Rare',      q: 7.0, h: 7.5, cost: 5.5, packSize: 3 },
   { id: 'mv_pixar',      name: 'Animated Adventure Pack', tier: 'Rare',      q: 8.0, h: 6.5, cost: 5,   packSize: 3 },
   { id: 'mv_horror1',    name: 'Cabin Screams Pack',      tier: 'Rare',      q: 6.5, h: 7.0, cost: 4.5, packSize: 3 },
   { id: 'mv_action1',    name: 'Fast & Loud Pack',        tier: 'Rare',      q: 6.0, h: 7.5, cost: 5,   packSize: 3 },
+  { id: 'mv_kungfu',     name: 'Martial Arts Cinema Pack',tier: 'Rare',      q: 7.2, h: 6.8, cost: 4.5, packSize: 3 },
+  { id: 'mv_heist',      name: 'Big Heist Pack',          tier: 'Rare',      q: 7.0, h: 7.0, cost: 5,   packSize: 3 },
+  { id: 'mv_holiday',    name: 'Holiday Classics Pack',   tier: 'Rare',      q: 6.8, h: 7.4, cost: 5,   packSize: 3 },
+
+  // ── UNCOMMON (festival + niche) ──
   { id: 'mv_indie1',     name: 'Sundance Darling Pack',   tier: 'Uncommon',  q: 7.5, h: 4.5, cost: 2,   packSize: 3 },
   { id: 'mv_romcom1',    name: 'Coffee Shop Romance Pack',tier: 'Uncommon',  q: 6.0, h: 5.5, cost: 1.8, packSize: 3 },
+  { id: 'mv_90sromcom',  name: "90s Rom-Com Revival Pack",tier: 'Uncommon',  q: 6.2, h: 5.8, cost: 1.8, packSize: 3 },
+  { id: 'mv_indieDrama', name: 'Indie Drama Pack',        tier: 'Uncommon',  q: 7.8, h: 3.8, cost: 2,   packSize: 3 },
+  { id: 'mv_docfilm',    name: 'Documentary Pack',        tier: 'Uncommon',  q: 7.0, h: 4.0, cost: 1.6, packSize: 3 },
+  { id: 'mv_foreign',    name: 'Foreign Cinema Pack',     tier: 'Uncommon',  q: 7.5, h: 3.5, cost: 1.5, packSize: 3 },
+
+  // ── COMMON (filler / late-night) ──
   { id: 'mv_oldclassic', name: 'Classic Hollywood Pack',  tier: 'Common',    q: 6.5, h: 4.0, cost: 1.0, packSize: 3 },
+  { id: 'mv_western',    name: 'Spaghetti Western Pack',  tier: 'Common',    q: 6.2, h: 4.2, cost: 1.0, packSize: 3 },
+  { id: 'mv_creature',   name: 'Creature Feature Pack',   tier: 'Common',    q: 4.8, h: 4.5, cost: 0.7, packSize: 3 },
   { id: 'mv_btv1',       name: 'B-Movie Saturday Pack',   tier: 'Common',    q: 4.5, h: 4.0, cost: 0.6, packSize: 3 },
   { id: 'mv_btv2',       name: 'Direct-to-Video Pack',    tier: 'Common',    q: 4.0, h: 3.5, cost: 0.5, packSize: 3 },
+  { id: 'mv_madeForTV',  name: 'Made-for-TV Movie Pack',  tier: 'Common',    q: 4.2, h: 3.8, cost: 0.5, packSize: 3 },
 ]
 
 // Hype penalty applied when a pack is re-bought within MOVIE_PACK_COOLDOWN_MONTHS
@@ -1674,57 +1666,109 @@ export const SEQUEL_BONUSES = [0, 0.10, 0.08, 0.06, 0.04, 0.03, 0.03, 0.02, 0.02
 //   - peakBonus: extra hype for peak month
 //   - baseQ, baseH: quality + hype baseline (live games)
 //   - cost: full-year rights cost, scales 1.0× local / 2.5× metro / 6× national
+// Sports leagues.
+// `cost` is the base annual license cost — multiplied by SPORTS_MARKET_COST_MULT
+// based on which market you're broadcasting from. The big pro leagues are
+// genuinely expensive — they should feel like a major capital commitment.
+//
+// Optional `marketHypeMult: { local, metro, national }` (default 1.0 everywhere)
+// scales the league's base hype by market. College sports and local sports
+// run hot in their home markets but underperform at the national tier
+// (where they compete with the pros).
+//
+// Optional `tier` field is informational only — used by the picker UI for grouping.
 export const SPORTS_LEAGUES = [
+  // ── PROS (expensive, broad national appeal) ──
   {
-    id: 'nfl', label: 'NFL Football', icon: '🏈',
-    season: [7, 8, 9, 10, 11, 0, 1], // Aug-Feb (wraps)
+    id: 'nfl', label: 'NFL Football', icon: '🏈', tier: 'pro',
+    season: [7, 8, 9, 10, 11, 0, 1],
     peakMonth: 1, peakLabel: 'Super Bowl',
-    cost: 120, baseQ: 8.5, baseH: 9.0, peakBonus: 2.5,
+    cost: 180, baseQ: 8.5, baseH: 9.0, peakBonus: 2.5,
   },
   {
-    id: 'nba', label: 'NBA Basketball', icon: '🏀',
-    season: [8, 9, 10, 11, 0, 1, 2, 3], // Sep-Apr
+    id: 'nba', label: 'NBA Basketball', icon: '🏀', tier: 'pro',
+    season: [8, 9, 10, 11, 0, 1, 2, 3],
     peakMonth: 5, peakLabel: 'Finals',
-    cost: 90, baseQ: 7.5, baseH: 8.0, peakBonus: 2.0,
+    cost: 140, baseQ: 7.5, baseH: 8.0, peakBonus: 2.0,
   },
   {
-    id: 'mlb', label: 'MLB Baseball', icon: '⚾',
-    season: [2, 3, 4, 5, 6, 7, 8, 9], // Mar-Oct
+    id: 'mlb', label: 'MLB Baseball', icon: '⚾', tier: 'pro',
+    season: [2, 3, 4, 5, 6, 7, 8, 9],
     peakMonth: 9, peakLabel: 'World Series',
-    cost: 70, baseQ: 7.0, baseH: 6.5, peakBonus: 2.0,
+    cost: 110, baseQ: 7.0, baseH: 6.5, peakBonus: 2.0,
   },
   {
-    id: 'wwe', label: 'WWE Wrestling', icon: '🤼',
-    season: [0,1,2,3,4,5,6,7,8,9,10,11], // year-round
-    peakMonth: 3, peakLabel: 'WrestleMania',
-    cost: 45, baseQ: 5.5, baseH: 8.5, peakBonus: 2.5,
-  },
-  {
-    id: 'tennis', label: 'Tennis Tour', icon: '🎾',
-    season: [0,1,2,3,4,5,6,7,8,9,10], // year-round (mostly)
-    peakMonth: 6, peakLabel: 'Wimbledon',
-    cost: 38, baseQ: 7.0, baseH: 6.0, peakBonus: 2.0,
-  },
-  {
-    id: 'golf', label: 'PGA Tour', icon: '⛳',
-    season: [0,1,2,3,4,5,6,7,8,9,10], // year-round
-    peakMonth: 3, peakLabel: 'The Masters',
-    cost: 32, baseQ: 6.8, baseH: 5.5, peakBonus: 1.8,
-  },
-  {
-    id: 'nhl', label: 'NHL Hockey', icon: '🏒',
-    season: [9, 10, 11, 0, 1, 2, 3, 4, 5], // Oct-Jun
+    id: 'nhl', label: 'NHL Hockey', icon: '🏒', tier: 'pro',
+    season: [9, 10, 11, 0, 1, 2, 3, 4, 5],
     peakMonth: 5, peakLabel: 'Stanley Cup',
-    cost: 55, baseQ: 7.0, baseH: 6.5, peakBonus: 1.8,
+    cost: 80, baseQ: 7.0, baseH: 6.5, peakBonus: 1.8,
   },
   {
-    id: 'soccer', label: 'Soccer League', icon: '⚽',
-    season: [7, 8, 9, 10, 11, 0, 1, 2, 3, 4], // Aug-May
+    id: 'soccer', label: 'Pro Soccer League', icon: '⚽', tier: 'pro',
+    season: [7, 8, 9, 10, 11, 0, 1, 2, 3, 4],
     peakMonth: 4, peakLabel: 'Championship',
-    cost: 48, baseQ: 7.2, baseH: 7.0, peakBonus: 1.8,
+    cost: 75, baseQ: 7.2, baseH: 7.0, peakBonus: 1.8,
+  },
+  {
+    id: 'wwe', label: 'WWE Wrestling', icon: '🤼', tier: 'pro',
+    season: [0,1,2,3,4,5,6,7,8,9,10,11],
+    peakMonth: 3, peakLabel: 'WrestleMania',
+    cost: 65, baseQ: 5.5, baseH: 8.5, peakBonus: 2.5,
+  },
+  {
+    id: 'tennis', label: 'Tennis Tour', icon: '🎾', tier: 'pro',
+    season: [0,1,2,3,4,5,6,7,8,9,10],
+    peakMonth: 6, peakLabel: 'Wimbledon',
+    cost: 55, baseQ: 7.0, baseH: 6.0, peakBonus: 2.0,
+  },
+  {
+    id: 'golf', label: 'PGA Tour', icon: '⛳', tier: 'pro',
+    season: [0,1,2,3,4,5,6,7,8,9,10],
+    peakMonth: 3, peakLabel: 'The Masters',
+    cost: 48, baseQ: 6.8, baseH: 5.5, peakBonus: 1.8,
+  },
+
+  // ── COLLEGE / REGIONAL (cheap, huge in local/metro, fades nationally) ──
+  // marketHypeMult inflates hype where the local audience is invested
+  // (alumni, regional pride) and discounts it nationally where pro sports
+  // dominate. These are the affordable on-ramp to sports broadcasting.
+  {
+    id: 'ncaa_fb', label: 'College Football', icon: '🏟', tier: 'college',
+    season: [7, 8, 9, 10, 11, 0],
+    peakMonth: 0, peakLabel: 'Bowl Season',
+    cost: 25, baseQ: 7.0, baseH: 7.5, peakBonus: 2.0,
+    marketHypeMult: { local: 1.4, metro: 1.25, national: 0.65 },
+  },
+  {
+    id: 'ncaa_bb', label: 'College Basketball', icon: '🎓', tier: 'college',
+    season: [10, 11, 0, 1, 2, 3],
+    peakMonth: 2, peakLabel: 'March Madness',
+    cost: 22, baseQ: 6.5, baseH: 7.2, peakBonus: 2.8,
+    marketHypeMult: { local: 1.35, metro: 1.2, national: 0.7 },
+  },
+  {
+    id: 'local_soccer', label: 'Local Soccer League', icon: '🥅', tier: 'regional',
+    season: [3, 4, 5, 6, 7, 8, 9, 10],
+    peakMonth: 9, peakLabel: 'Regional Cup',
+    cost: 8, baseQ: 5.8, baseH: 6.0, peakBonus: 1.2,
+    marketHypeMult: { local: 1.5, metro: 1.1, national: 0.45 },
+  },
+  {
+    id: 'track_field', label: 'Track & Field Events', icon: '🏃', tier: 'niche',
+    season: [3, 4, 5, 6, 7, 8],
+    peakMonth: 6, peakLabel: 'Championships',
+    cost: 6, baseQ: 6.2, baseH: 4.5, peakBonus: 1.5,
+    marketHypeMult: { local: 1.2, metro: 1.1, national: 0.85 },
+  },
+  {
+    id: 'high_school_fb', label: 'High School Football', icon: '🏈', tier: 'regional',
+    season: [7, 8, 9, 10, 11],
+    peakMonth: 11, peakLabel: 'State Finals',
+    cost: 3, baseQ: 5.0, baseH: 5.8, peakBonus: 1.2,
+    marketHypeMult: { local: 1.6, metro: 0.9, national: 0.3 },
   },
 ]
-// Cost multipliers by station market
+// Cost multipliers by station market — applied to license cost only.
 export const SPORTS_MARKET_COST_MULT = { local: 1.0, metro: 2.5, national: 6.0 }
 
 // ─── STAFF (Directors of …) ──────────────────────────────────────────────────

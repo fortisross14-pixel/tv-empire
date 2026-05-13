@@ -533,7 +533,7 @@ export function ProductionView({
             {MARKETING_TIERS
               .filter(m => !m.localOnly || station.market === 'local')
               .map(m => {
-                const lockedByDir = (m.id === 'medium' || m.id === 'big') && !hasDirector(station, 'marketing')
+                const lockedByDir = (m.id === 'medium' || m.id === 'big' || m.id === 'massive') && !hasDirector(station, 'marketing')
                 return (
                   <option key={m.id} value={m.id} disabled={lockedByDir}>
                     {m.label} {m.cost > 0 ? `· ${fmtM(m.cost)}` : '· free'}{lockedByDir ? ' 🔒 needs Dir. of Marketing' : ''}
