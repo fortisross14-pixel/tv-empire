@@ -601,10 +601,18 @@ export default function App() {
       // shelf) so we can log pack consumption.
       let stationForFinish = { ...g.station, programs: programsAfterAirings, moviePacks: g.station.moviePacks || [] }
       const finishLogs = []
+      // Apply runMonth's per-airing pack decrements (full-pack runs) BEFORE
+      // finishProgram so finishProgram sees the up-to-date pack state.
+      if (result.moviePacksAfter) {
+        stationForFinish = { ...stationForFinish, moviePacks: result.moviePacksAfter }
+      }
       result.expiredRunIds.forEach(rid => {
         const expiredRun = g.runs.find(r => r.id === rid)
         if (!expiredRun?.programId) return
-        const upd = finishProgram(stationForFinish, expiredRun.programId, null, g.year, g.monthIdx)
+        const upd = finishProgram(
+          stationForFinish, expiredRun.programId, null, g.year, g.monthIdx,
+          { moviePlayMode: expiredRun.moviePlayMode || 'single' },
+        )
         stationForFinish = upd.station
         if (upd.packExhausted) {
           finishLogs.push(`🎞 Pack exhausted: "${expiredRun.name}" — 12-month cooldown until full hype returns`)
@@ -1276,9 +1284,10 @@ export default function App() {
     })
   }
 
-  // Schedule a shelf program into a slot — creates a run
-  const onScheduleProgram = (programId, slotTypeId, runMonths) => {
-    const probe = scheduleProgram(game.station, programId, slotTypeId, runMonths)
+  // Schedule a shelf program into a slot — creates a run.
+  // opts: { moviePlayMode: 'full' | 'single' | null } — only relevant for movies.
+  const onScheduleProgram = (programId, slotTypeId, runMonths, opts = {}) => {
+    const probe = scheduleProgram(game.station, programId, slotTypeId, runMonths, opts)
     if (probe.error) {
       playSound('error')
       setGame((g) => ({ ...g, log: [...g.log, `⚠ Schedule: ${probe.error}`] }))
@@ -1286,7 +1295,7 @@ export default function App() {
     }
     playSound('confirm')
     setGame((g) => {
-      const result = scheduleProgram(g.station, programId, slotTypeId, runMonths)
+      const result = scheduleProgram(g.station, programId, slotTypeId, runMonths, opts)
       if (result.error) return { ...g, log: [...g.log, `⚠ Schedule: ${result.error}`] }
       return {
         ...g,
@@ -1719,8 +1728,8 @@ export default function App() {
           cycleIdx={game.monthIdx}
           year={game.year}
           station={game.station}
-          onSchedule={(programId, slotTypeId, runMonths) => {
-            onScheduleProgram(programId, slotTypeId, runMonths)
+          onSchedule={(programId, slotTypeId, runMonths, opts) => {
+            onScheduleProgram(programId, slotTypeId, runMonths, opts)
             setEditingSlotIdx(null)
           }}
           onClose={closeSlot}

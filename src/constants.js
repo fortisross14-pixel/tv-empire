@@ -886,44 +886,60 @@ export const IPS = [
 // re-buy a consumed pack within 12 months, its hype is reduced (overexposure).
 //
 // q/h are pack-level — the same numbers apply to every airing from the pack.
+// Movie pack catalog. Packs come in three sizes — 6, 9, or 12 airings —
+// chosen by tone and breadth of appeal: prestige and niche packs are small
+// (you don't binge-air an indie drama), while action/genre/filler packs are
+// large (cheap per-movie, lots of slot-filling potential).
+//
+// Pack cost scales non-linearly: a 12-movie pack costs more than a 6-movie
+// pack of the same tier, but the per-movie price drops by ~30% over that
+// range. Encourages players to buy bigger packs when they have the cash to
+// commit, while small packs stay accessible for variety.
+//
+// Cost formula reference (rough): Rare tier ~$1.50/movie at pack-6,
+// $1.20/movie at pack-9, $1.00/movie at pack-12. Halve for Uncommon, etc.
+//
+// Scheduling: when a movie program is sent to a slot, the player picks
+// "Full Pack" (commits to all remaining airings in one run, then the slot
+// frees) or "Just 1 Movie" (single-airing run; legacy behavior).
 export const MOVIES = [
   // ── LEGENDARY (premium tentpole movies) ──
-  { id: 'mv_titanic',    name: 'Titanic Returns Pack',    tier: 'Legendary', q: 9.0, h: 8.5, cost: 22,  packSize: 3 },
-  { id: 'mv_avatar',     name: 'Avatar Trilogy Pack',     tier: 'Legendary', q: 8.5, h: 9.0, cost: 24,  packSize: 3 },
-  { id: 'mv_dinos',      name: 'Dinosaur Park Pack',      tier: 'Legendary', q: 8.2, h: 9.2, cost: 23,  packSize: 3 },
-  { id: 'mv_bondish',    name: 'Spy Thriller Pack',       tier: 'Legendary', q: 8.5, h: 8.8, cost: 22,  packSize: 3 },
+  { id: 'mv_titanic',    name: 'Titanic Returns Pack',    tier: 'Legendary', q: 9.0, h: 8.5, cost: 36,  packSize: 6  },
+  { id: 'mv_avatar',     name: 'Avatar Trilogy Pack',     tier: 'Legendary', q: 8.5, h: 9.0, cost: 38,  packSize: 6  },
+  { id: 'mv_dinos',      name: 'Dinosaur Park Pack',      tier: 'Legendary', q: 8.2, h: 9.2, cost: 52,  packSize: 9  },
+  { id: 'mv_bondish',    name: 'Spy Thriller Pack',       tier: 'Legendary', q: 8.5, h: 8.8, cost: 36,  packSize: 6  },
 
   // ── EPIC (prestige + culturally large) ──
-  { id: 'mv_oppen',      name: 'Atomicore Pack',          tier: 'Epic',      q: 9.0, h: 7.0, cost: 12,  packSize: 3 },
-  { id: 'mv_barbie',     name: 'Doll House Pack',         tier: 'Epic',      q: 7.5, h: 8.5, cost: 11,  packSize: 3 },
-  { id: 'mv_inception',  name: 'Dream Layers Pack',       tier: 'Epic',      q: 8.5, h: 7.5, cost: 11,  packSize: 3 },
-  { id: 'mv_warEpic',    name: 'Battlefield Epics Pack',  tier: 'Epic',      q: 8.0, h: 7.2, cost: 11,  packSize: 3 },
-  { id: 'mv_disasterB',  name: 'Disaster Blockbuster Pack', tier: 'Epic',    q: 7.0, h: 8.2, cost: 10,  packSize: 3 },
+  { id: 'mv_oppen',      name: 'Atomicore Pack',          tier: 'Epic',      q: 9.0, h: 7.0, cost: 22,  packSize: 6  },
+  { id: 'mv_barbie',     name: 'Doll House Pack',         tier: 'Epic',      q: 7.5, h: 8.5, cost: 20,  packSize: 6  },
+  { id: 'mv_inception',  name: 'Dream Layers Pack',       tier: 'Epic',      q: 8.5, h: 7.5, cost: 20,  packSize: 6  },
+  { id: 'mv_warEpic',    name: 'Battlefield Epics Pack',  tier: 'Epic',      q: 8.0, h: 7.2, cost: 20,  packSize: 6  },
+  { id: 'mv_disasterB',  name: 'Disaster Blockbuster Pack', tier: 'Epic',    q: 7.0, h: 8.2, cost: 19,  packSize: 6  },
 
-  // ── RARE (genre crowd-pleasers) ──
-  { id: 'mv_marvel1',    name: 'Heroes Unite Pack',       tier: 'Rare',      q: 7.0, h: 7.5, cost: 5.5, packSize: 3 },
-  { id: 'mv_pixar',      name: 'Animated Adventure Pack', tier: 'Rare',      q: 8.0, h: 6.5, cost: 5,   packSize: 3 },
-  { id: 'mv_horror1',    name: 'Cabin Screams Pack',      tier: 'Rare',      q: 6.5, h: 7.0, cost: 4.5, packSize: 3 },
-  { id: 'mv_action1',    name: 'Fast & Loud Pack',        tier: 'Rare',      q: 6.0, h: 7.5, cost: 5,   packSize: 3 },
-  { id: 'mv_kungfu',     name: 'Martial Arts Cinema Pack',tier: 'Rare',      q: 7.2, h: 6.8, cost: 4.5, packSize: 3 },
-  { id: 'mv_heist',      name: 'Big Heist Pack',          tier: 'Rare',      q: 7.0, h: 7.0, cost: 5,   packSize: 3 },
-  { id: 'mv_holiday',    name: 'Holiday Classics Pack',   tier: 'Rare',      q: 6.8, h: 7.4, cost: 5,   packSize: 3 },
+  // ── RARE (genre crowd-pleasers — bigger packs for filler value) ──
+  { id: 'mv_marvel1',    name: 'Heroes Unite Pack',       tier: 'Rare',      q: 7.0, h: 7.5, cost: 12,  packSize: 12 },
+  { id: 'mv_pixar',      name: 'Animated Adventure Pack', tier: 'Rare',      q: 8.0, h: 6.5, cost: 11,  packSize: 9  },
+  { id: 'mv_horror1',    name: 'Cabin Screams Pack',      tier: 'Rare',      q: 6.5, h: 7.0, cost: 12,  packSize: 12 },
+  { id: 'mv_action1',    name: 'Fast & Loud Pack',        tier: 'Rare',      q: 6.0, h: 7.5, cost: 12,  packSize: 12 },
+  { id: 'mv_kungfu',     name: 'Martial Arts Cinema Pack',tier: 'Rare',      q: 7.2, h: 6.8, cost: 11,  packSize: 9  },
+  { id: 'mv_heist',      name: 'Big Heist Pack',          tier: 'Rare',      q: 7.0, h: 7.0, cost: 11,  packSize: 9  },
+  { id: 'mv_holiday',    name: 'Holiday Classics Pack',   tier: 'Rare',      q: 6.8, h: 7.4, cost: 12,  packSize: 12 },
 
-  // ── UNCOMMON (festival + niche) ──
-  { id: 'mv_indie1',     name: 'Sundance Darling Pack',   tier: 'Uncommon',  q: 7.5, h: 4.5, cost: 2,   packSize: 3 },
-  { id: 'mv_romcom1',    name: 'Coffee Shop Romance Pack',tier: 'Uncommon',  q: 6.0, h: 5.5, cost: 1.8, packSize: 3 },
-  { id: 'mv_90sromcom',  name: "90s Rom-Com Revival Pack",tier: 'Uncommon',  q: 6.2, h: 5.8, cost: 1.8, packSize: 3 },
-  { id: 'mv_indieDrama', name: 'Indie Drama Pack',        tier: 'Uncommon',  q: 7.8, h: 3.8, cost: 2,   packSize: 3 },
-  { id: 'mv_docfilm',    name: 'Documentary Pack',        tier: 'Uncommon',  q: 7.0, h: 4.0, cost: 1.6, packSize: 3 },
-  { id: 'mv_foreign',    name: 'Foreign Cinema Pack',     tier: 'Uncommon',  q: 7.5, h: 3.5, cost: 1.5, packSize: 3 },
+  // ── UNCOMMON (festival + niche — small packs by design) ──
+  { id: 'mv_indie1',     name: 'Sundance Darling Pack',   tier: 'Uncommon',  q: 7.5, h: 4.5, cost: 3.6, packSize: 6  },
+  { id: 'mv_romcom1',    name: 'Coffee Shop Romance Pack',tier: 'Uncommon',  q: 6.0, h: 5.5, cost: 3.6, packSize: 6  },
+  { id: 'mv_90sromcom',  name: "90s Rom-Com Revival Pack",tier: 'Uncommon',  q: 6.2, h: 5.8, cost: 3.6, packSize: 6  },
+  { id: 'mv_indieDrama', name: 'Indie Drama Pack',        tier: 'Uncommon',  q: 7.8, h: 3.8, cost: 3.6, packSize: 6  },
+  { id: 'mv_docfilm',    name: 'Documentary Pack',        tier: 'Uncommon',  q: 7.0, h: 4.0, cost: 3.2, packSize: 6  },
+  { id: 'mv_foreign',    name: 'Foreign Cinema Pack',     tier: 'Uncommon',  q: 7.5, h: 3.5, cost: 3.0, packSize: 6  },
 
-  // ── COMMON (filler / late-night) ──
-  { id: 'mv_oldclassic', name: 'Classic Hollywood Pack',  tier: 'Common',    q: 6.5, h: 4.0, cost: 1.0, packSize: 3 },
-  { id: 'mv_western',    name: 'Spaghetti Western Pack',  tier: 'Common',    q: 6.2, h: 4.2, cost: 1.0, packSize: 3 },
-  { id: 'mv_creature',   name: 'Creature Feature Pack',   tier: 'Common',    q: 4.8, h: 4.5, cost: 0.7, packSize: 3 },
-  { id: 'mv_btv1',       name: 'B-Movie Saturday Pack',   tier: 'Common',    q: 4.5, h: 4.0, cost: 0.6, packSize: 3 },
-  { id: 'mv_btv2',       name: 'Direct-to-Video Pack',    tier: 'Common',    q: 4.0, h: 3.5, cost: 0.5, packSize: 3 },
-  { id: 'mv_madeForTV',  name: 'Made-for-TV Movie Pack',  tier: 'Common',    q: 4.2, h: 3.8, cost: 0.5, packSize: 3 },
+  // ── COMMON (filler / late-night — large packs, cheap-per-airing) ──
+  { id: 'mv_oldclassic', name: 'Classic Hollywood Pack',  tier: 'Common',    q: 6.5, h: 4.0, cost: 2.2, packSize: 9  },
+  { id: 'mv_western',    name: 'Spaghetti Western Pack',  tier: 'Common',    q: 6.2, h: 4.2, cost: 2.2, packSize: 9  },
+  { id: 'mv_creature',   name: 'Creature Feature Pack',   tier: 'Common',    q: 4.8, h: 4.5, cost: 2.5, packSize: 12 },
+  { id: 'mv_btv1',       name: 'B-Movie Saturday Pack',   tier: 'Common',    q: 4.5, h: 4.0, cost: 2.5, packSize: 12 },
+  { id: 'mv_btv2',       name: 'Direct-to-Video Pack',    tier: 'Common',    q: 4.0, h: 3.5, cost: 2.4, packSize: 12 },
+  { id: 'mv_madeForTV',  name: 'Made-for-TV Movie Pack',  tier: 'Common',    q: 4.2, h: 3.8, cost: 2.5, packSize: 12 },
 ]
 
 // Hype penalty applied when a pack is re-bought within MOVIE_PACK_COOLDOWN_MONTHS

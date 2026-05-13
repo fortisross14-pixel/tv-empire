@@ -90,8 +90,26 @@ function TalentTab({ station, marketRoster, onHire, onFire, onHireWriter, onFire
   const dirs = (station.hiredDirectors || []).map(h => ({ ...h, talent: findDirector(h.talentId) }))
   const stars = (station.hiredStars || []).map(h => ({ ...h, talent: findStar(h.talentId) }))
 
+  // Unified talent room: writers + stars + creative directors share one cap.
+  // When full, the player can't hire anyone new — so we gray out Sign / Hire
+  // buttons across all three sub-sections and surface a single banner.
+  const cap = talentCapacity(station)
+  const cnt = talentCount(station)
+  const roomFull = cnt >= cap
+
   return (
     <div>
+      {/* Persistent banner when the office is full — explains why nothing's hireable. */}
+      {roomFull && (
+        <div style={{
+          background: T.red + '15', border: `1px solid ${T.red}55`,
+          borderRadius: 5, padding: '10px 12px', marginBottom: 12,
+          fontSize: 12, color: T.red, lineHeight: 1.5,
+        }}>
+          <strong>Office full ({cnt}/{cap}).</strong> Fire someone, hire a Director of Talent (National), or expand to a bigger market before signing anyone new.
+        </div>
+      )}
+
       {/* Sub-sub-tab bar */}
       <div style={{
         display: 'flex', gap: 0, marginBottom: 14,
@@ -110,6 +128,7 @@ function TalentTab({ station, marketRoster, onHire, onFire, onHireWriter, onFire
           pool={marketRoster.directors}
           role="director"
           station={station}
+          roomFull={roomFull}
           onHireOpen={(role, t) => setHireModal({ role, t })}
           onFireOpen={(role, id, t) => setFireModal({ role, id, t })}
         />
@@ -122,6 +141,7 @@ function TalentTab({ station, marketRoster, onHire, onFire, onHireWriter, onFire
           pool={marketRoster.stars}
           role="star"
           station={station}
+          roomFull={roomFull}
           onHireOpen={(role, t) => setHireModal({ role, t })}
           onFireOpen={(role, id, t) => setFireModal({ role, id, t })}
         />
@@ -130,6 +150,7 @@ function TalentTab({ station, marketRoster, onHire, onFire, onHireWriter, onFire
         <WritersTalentSection
           station={station}
           marketWriters={marketRoster.writers || []}
+          roomFull={roomFull}
           onHireWriter={onHireWriter}
           onFireWriter={onFireWriter}
         />
@@ -150,7 +171,7 @@ function TalentTab({ station, marketRoster, onHire, onFire, onHireWriter, onFire
   )
 }
 
-function TalentSubSection({ rosterTitle, marketTitle, items, pool, role, station, onHireOpen, onFireOpen }) {
+function TalentSubSection({ rosterTitle, marketTitle, items, pool, role, station, roomFull, onHireOpen, onFireOpen }) {
   return (
     <>
       <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
@@ -167,12 +188,12 @@ function TalentSubSection({ rosterTitle, marketTitle, items, pool, role, station
       <div style={{ marginTop: 22, fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
         {marketTitle.toUpperCase()}
       </div>
-      <MarketGroup title="" pool={pool || []} role={role} onHire={onHireOpen} />
+      <MarketGroup title="" pool={pool || []} role={role} roomFull={roomFull} onHire={onHireOpen} />
     </>
   )
 }
 
-function WritersTalentSection({ station, marketWriters, onHireWriter, onFireWriter }) {
+function WritersTalentSection({ station, marketWriters, roomFull, onHireWriter, onFireWriter }) {
   // Lightweight inline writer roster + hire — keeps the same engine plumbing
   // as Content used to, just lives in Operations now.
   const hired = station.hiredWriters || []
@@ -267,7 +288,15 @@ function WritersTalentSection({ station, marketWriters, onHireWriter, onFireWrit
       }}>
         {marketWriters.map(w => {
           const alreadyHired = hired.some(h => h.talentId === w.id)
-          const canHire = !alreadyHired && station.cash >= (w.cost || 0)
+          const tooExpensive = station.cash < (w.cost || 0)
+          const canHire = !alreadyHired && !tooExpensive && !roomFull
+          const label = alreadyHired
+            ? 'HIRED'
+            : roomFull
+            ? 'OFFICE FULL'
+            : tooExpensive
+            ? 'TOO EXPENSIVE'
+            : 'HIRE'
           return (
             <div key={w.id} style={{
               background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5,
@@ -297,6 +326,7 @@ function WritersTalentSection({ station, marketWriters, onHireWriter, onFireWrit
               <button
                 onClick={() => canHire && onHireWriter(w)}
                 disabled={!canHire}
+                title={roomFull ? 'Office full — fire someone or expand market first.' : undefined}
                 style={{
                   marginTop: 9, padding: '6px 10px', width: '100%',
                   background: canHire ? T.accent : T.card,
@@ -305,7 +335,7 @@ function WritersTalentSection({ station, marketWriters, onHireWriter, onFireWrit
                   fontSize: 11, fontWeight: 700, cursor: canHire ? 'pointer' : 'not-allowed',
                 }}
               >
-                {alreadyHired ? 'HIRED' : (canHire ? 'HIRE' : 'TOO EXPENSIVE')}
+                {label}
               </button>
             </div>
           )
@@ -392,18 +422,20 @@ function RosterGroup({ title, items, role, onFire }) {
   )
 }
 
-function MarketGroup({ title, pool, role, onHire }) {
+function MarketGroup({ title, pool, role, roomFull, onHire }) {
   if ((pool || []).length === 0) return null
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 11, color: T.text, fontWeight: 600, marginBottom: 6 }}>{title}</div>
       {pool.slice(0, 12).map(t => {
         const cat = CATEGORIES[t.specialty]
+        const canSign = !roomFull
         return (
           <div key={t.id} style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: 10, marginBottom: 5,
             background: T.card, border: `1px solid ${T.border}`, borderRadius: 5,
+            opacity: canSign ? 1 : 0.6,
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
@@ -412,11 +444,20 @@ function MarketGroup({ title, pool, role, onHire }) {
               </div>
             </div>
             <HTag tier={t.tier} />
-            <button onClick={() => onHire(role, t)} style={{
-              background: T.accent, color: T.bg, padding: '6px 12px',
-              border: 'none', borderRadius: 4,
-              fontSize: 11, fontWeight: 700, cursor: 'pointer',
-            }}>Sign</button>
+            <button
+              onClick={() => canSign && onHire(role, t)}
+              disabled={!canSign}
+              title={canSign ? undefined : 'Office full — fire someone or expand market first.'}
+              style={{
+                background: canSign ? T.accent : T.card,
+                color: canSign ? T.bg : T.muted,
+                padding: '6px 12px',
+                border: canSign ? 'none' : `1px solid ${T.border}`,
+                borderRadius: 4,
+                fontSize: 11, fontWeight: 700,
+                cursor: canSign ? 'pointer' : 'not-allowed',
+              }}
+            >{canSign ? 'Sign' : 'OFFICE FULL'}</button>
           </div>
         )
       })}

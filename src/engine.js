@@ -1116,22 +1116,40 @@ export function cancelProgram(station, programId) {
 }
 
 /** Schedule a shelf-program into a slot. Creates a run; updates program status.
- *  Returns { station, run, error }. */
-export function scheduleProgram(station, programId, slotTypeId, runMonths) {
+ *  Returns { station, run, error }.
+ *
+ *  opts (optional):
+ *    moviePlayMode: 'full' | 'single'   — for movie programs only.
+ *      'full'   → run length = remaining pack airings (slot frees when pack
+ *                 exhausts; one airing per month, pack decrements per airing)
+ *      'single' → run length = 1 month; airs one movie, consumes 1 from pack
+ *                 (legacy default — pack stays on shelf with airings remaining).
+ *      Default: 'single' (preserves existing call sites that didn't pass opts).
+ */
+export function scheduleProgram(station, programId, slotTypeId, runMonths, opts = {}) {
   const programs = station.programs || []
   const p = programs.find(x => x.id === programId)
   if (!p) return { station, error: 'Program not found' }
   if (p.status !== 'shelf') return { station, error: `Program not on shelf (status: ${p.status})` }
 
-  // Run length is LOCKED at production time via plannedRunMonths. The runMonths
-  // argument is only respected as a fallback for legacy programs that pre-date
-  // the planning step. Movies are always 1, sports always 12.
-  //   - movie               → 1 (one-off airing)
-  //   - sports              → 12 (calendar year; skips out-of-season months)
-  //   - has plannedRunMonths → use it (committed at production time)
-  //   - legacy fallback     → trust the caller's runMonths, else 1
+  // ── Movie packs: choose full-pack vs single ────────────────────────────
+  // For movies, look up how many airings remain in the active pack record.
+  // When the player picks 'full', commit the run to that many months so the
+  // slot stays locked for the entire pack. When 'single', keep 1 month.
+  // For non-movie programs, this entire block is bypassed.
+  let moviePlayMode = null
+  let movieAiringsLeft = 0
+  if (p.movieId) {
+    moviePlayMode = opts.moviePlayMode === 'full' ? 'full' : 'single'
+    const ownedPack = findOwnedActivePack(station, p.movieId)
+    movieAiringsLeft = ownedPack?.airingsLeft || 1
+    if (movieAiringsLeft < 1) return { station, error: 'Pack has no airings remaining' }
+  }
+
+  // Run length is LOCKED. Sports always 12 (skipping out-of-season months).
+  // Movies: 1 in single mode, airingsLeft in full mode. Scripted: planned.
   const forced = p.movieId
-    ? 1
+    ? (moviePlayMode === 'full' ? movieAiringsLeft : 1)
     : (p.sportsLeagueId
       ? 12
       : (p.plannedRunMonths || runMonths || 1))
@@ -1165,6 +1183,8 @@ export function scheduleProgram(station, programId, slotTypeId, runMonths) {
     // earns side revenue proportional to hype + quality.
     prepareMerch: !!p.prepareMerch,
     scriptTier: p.tier || 'normal',
+    // Movie pack play mode — drives per-airing pack decrement in runMonth.
+    moviePlayMode,
   }
 
   // Update program status to airing
@@ -1193,8 +1213,14 @@ export function revealProgramOnAir(station, programId) {
  *  one airing from the pack. If airings remain, the program flips back to
  *  'shelf' status (you can air it again). If the pack is exhausted, the
  *  program enters 'finished' and the pack consumption is stamped for the
- *  12-month cooldown. Returns { station, packConsumed, packExhausted }. */
-export function finishProgram(station, programId, finalStats, year, month) {
+ *  12-month cooldown. Returns { station, packConsumed, packExhausted }.
+ *
+ *  opts (optional):
+ *    moviePlayMode: 'full' | 'single' — only used for movies. When 'full',
+ *      pack has already been decremented per-airing during runMonth, so we
+ *      skip the decrement here and just inspect the current pack state.
+ */
+export function finishProgram(station, programId, finalStats, year, month, opts = {}) {
   const programs = station.programs || []
   const p = programs.find(pp => pp.id === programId)
   if (!p) return { station, packConsumed: false, packExhausted: false }
@@ -1202,6 +1228,35 @@ export function finishProgram(station, programId, finalStats, year, month) {
   // ── MOVIE PACK PATH ──────────────────────────────────────────────────
   if (p.movieId) {
     const owned = findOwnedActivePack(station, p.movieId)
+    const movieMode = opts.moviePlayMode || 'single'
+
+    // FULL-PACK PATH: pack has already been decremented per-airing in runMonth.
+    // The run completed naturally because runMonths == initial airingsLeft.
+    // So the pack should be at 0 by now; treat as exhausted.
+    if (movieMode === 'full') {
+      const newPrograms = programs.map(pp => pp.id === programId
+        ? { ...pp, status: 'finished',
+            airingsCount: finalStats?.airingsCount ?? pp.airingsCount,
+            totalAudience: finalStats?.totalAudience ?? pp.totalAudience,
+            totalRevenue: finalStats?.totalRevenue ?? pp.totalRevenue,
+            totalCost: finalStats?.totalCost ?? pp.totalCost,
+          }
+        : pp)
+      // Mark cooldown stamp if not already set
+      let newPacks = (station.moviePacks || []).map(mp => ({ ...mp }))
+      const idx = newPacks.findIndex(mp => mp.packId === p.movieId)
+      if (idx >= 0 && (newPacks[idx].airingsLeft || 0) === 0 && newPacks[idx].lastConsumedY == null) {
+        newPacks[idx].lastConsumedY = year
+        newPacks[idx].lastConsumedM = month
+      }
+      return {
+        station: { ...station, programs: newPrograms, moviePacks: newPacks },
+        packConsumed: true,
+        packExhausted: true,
+      }
+    }
+
+    // SINGLE-MODE PATH: legacy behavior — decrement by 1 here.
     if (!owned) {
       // No pack found (legacy or edge case) — just mark finished
       const newPrograms = programs.map(pp => pp.id === programId
@@ -2733,6 +2788,11 @@ export function runMonth(station, research, runs, monthIdx, year) {
   const expiredRunIds = []
   let totalCost = 0
   let fameDelta = 0
+  // Movie packs that get decremented per-airing for full-pack runs. We mirror
+  // them into a working copy and surface as `moviePacksAfter` so the caller
+  // can fold this back into station state. Single-mode movie runs continue
+  // to decrement via finishProgram (preserves the old end-of-run behavior).
+  let moviePacks = (station.moviePacks || []).map(p => ({ ...p }))
 
   // Air each active run
   for (const run of runs) {
@@ -2743,6 +2803,15 @@ export function runMonth(station, research, runs, monthIdx, year) {
     // Sports: skip if not in-season
     if (run.sportsRunLeagueId && !isSportsInSeason(run.sportsRunLeagueId, monthIdx)) {
       continue
+    }
+    // Full-pack movie runs: defensively skip if the pack ran out under us
+    // (e.g. some external cancellation logic mid-month). Mark expired.
+    if (run.movieId && run.moviePlayMode === 'full') {
+      const idx = moviePacks.findIndex(mp => mp.packId === run.movieId && (mp.airingsLeft || 0) > 0)
+      if (idx < 0) {
+        expiredRunIds.push(run.id)
+        continue
+      }
     }
 
     const cost = run.monthlyCost
@@ -2771,6 +2840,20 @@ export function runMonth(station, research, runs, monthIdx, year) {
     else if (aired.rating >= 7.0) fameDelta += market.famePerWin * 0.45
     else if (aired.rating >= 5.0) fameDelta += market.famePerWin * 0.12
     else if (aired.rating <  4.0) fameDelta -= 0.3
+
+    // ── Full-pack movie: consume one airing from the pack right now ────
+    // Single-mode movie runs decrement at finishProgram-time as before.
+    if (run.movieId && run.moviePlayMode === 'full') {
+      const idx = moviePacks.findIndex(mp => mp.packId === run.movieId && (mp.airingsLeft || 0) > 0)
+      if (idx >= 0) {
+        moviePacks[idx].airingsLeft -= 1
+        if (moviePacks[idx].airingsLeft <= 0) {
+          moviePacks[idx].airingsLeft = 0
+          moviePacks[idx].lastConsumedY = year
+          moviePacks[idx].lastConsumedM = monthIdx
+        }
+      }
+    }
 
     // Update run history — audience filled in after assignAudiences
     run._currentAired = aired
@@ -2859,6 +2942,11 @@ export function runMonth(station, research, runs, monthIdx, year) {
     expiredRunIds,
     totalProductionCost: r1(totalCost),
     fameDeltaFromRatings: r2(fameDelta),
+    // Surface mutated movie pack state for the caller (full-pack runs
+    // decrement per airing). Single-mode runs continue to decrement via
+    // finishProgram, so this only differs from station.moviePacks when at
+    // least one full-pack movie run aired this month.
+    moviePacksAfter: moviePacks,
   }
 }
 
@@ -2878,8 +2966,13 @@ export function finalizeMonthForRuns(runs, monthIdx, year) {
   }
 }
 
-/** Cancel a run mid-flight. Returns refund cost (50% of remaining months' cost). */
+/** Cancel a run mid-flight. Returns refund cost (50% of remaining months' cost).
+ *  Full-pack movie runs have NO cancellation penalty — the pack already
+ *  accurately reflects what was consumed (per-airing decrement during the
+ *  run), so the player gets a clean exit and keeps the unused airings.
+ */
 export function cancelRunCost(run) {
+  if (run?.movieId && run.moviePlayMode === 'full') return 0
   const remaining = Math.max(0, (run.runMonths || 1) - (run.monthsAired || 0))
   return r1(remaining * (run.monthlyCost || 0) * CANCEL_REFUND_MULT)
 }

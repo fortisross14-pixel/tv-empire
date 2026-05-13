@@ -8,6 +8,7 @@ import { Icon, SlotIcon, CategoryIcon } from '../icons.jsx'
 import {
   findDirector, findStar, findIP, findLeague,
   isSportsInSeason, getSeasonalPref, fmtM,
+  findOwnedActivePack,
 } from '../engine.js'
 
 /**
@@ -39,16 +40,28 @@ export function SlotScheduler({
   }, [shelf, slotTypeId])
 
   const [selectedId, setSelectedId] = useState(sorted[0]?.id || null)
+  // Movie play mode — chosen for movie packs only. Default 'single' (legacy
+  // behavior: one airing per scheduling). 'full' commits to all remaining
+  // pack airings in one multi-month run.
+  const [moviePlayMode, setMoviePlayMode] = useState('single')
 
   const selected = shelf.find(p => p.id === selectedId)
 
-  // Run length is committed at production time and CANNOT be changed here.
-  //   - Movies   → 1 month  (one-off airing)
-  //   - Sports   → 12 months (full calendar year, skipping out-of-season months)
-  //   - Scripted → whatever was planned at production (plannedRunMonths)
-  //   - Legacy (no plannedRunMonths) → defaults to 1 to be safe
+  // Movie pack info — only relevant when selected program is a movie.
+  // airingsLeft tells us how many months a Full Pack run would last.
+  const moviePack = selected?.movieId
+    ? findOwnedActivePack(station, selected.movieId)
+    : null
+  const movieAiringsLeft = moviePack?.airingsLeft || 0
+
+  // Run length depends on choice for movies:
+  //   - Movies (single) → 1 month
+  //   - Movies (full)   → airings remaining in pack
+  //   - Sports          → 12 months
+  //   - Scripted        → plannedRunMonths
+  //   - Legacy          → 1 month fallback
   const lockedRunMonths = selected?.movieId
-    ? 1
+    ? (moviePlayMode === 'full' ? Math.max(1, movieAiringsLeft) : 1)
     : (selected?.sportsLeagueId
       ? 12
       : (selected?.plannedRunMonths || 1))
@@ -185,8 +198,67 @@ export function SlotScheduler({
             })}
           </div>
 
-          {/* Run length is LOCKED at production time — no picker here */}
-          {selected && (
+          {/* Movie pack picker — when a movie is selected, the player chooses
+              between airing one movie or the full pack. */}
+          {selected?.movieId && (
+            <div style={{
+              padding: '10px 12px', marginBottom: 12,
+              background: T.bg, border: `1px solid ${T.border}`, borderRadius: 5,
+            }}>
+              <div style={{
+                fontSize: 10, color: T.muted, letterSpacing: '.1em',
+                marginBottom: 8, textTransform: 'uppercase',
+              }}>
+                Movie pack · {movieAiringsLeft} airing{movieAiringsLeft === 1 ? '' : 's'} left
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={() => setMoviePlayMode('single')}
+                  style={{
+                    flex: 1, padding: '8px 10px',
+                    background: moviePlayMode === 'single' ? T.accent + '33' : T.surface,
+                    border: `1.5px solid ${moviePlayMode === 'single' ? T.accent : T.border}`,
+                    color: moviePlayMode === 'single' ? T.accent : T.text,
+                    borderRadius: 4, cursor: 'pointer',
+                    fontSize: 12, fontWeight: 600, textAlign: 'left',
+                  }}
+                >
+                  <div style={{ marginBottom: 2 }}>Just 1 Movie</div>
+                  <div style={{ fontSize: 10, color: T.muted, fontWeight: 400 }}>
+                    1 month · use 1 airing
+                  </div>
+                </button>
+                <button
+                  onClick={() => setMoviePlayMode('full')}
+                  disabled={movieAiringsLeft < 2}
+                  style={{
+                    flex: 1, padding: '8px 10px',
+                    background: moviePlayMode === 'full' ? T.accent + '33' : T.surface,
+                    border: `1.5px solid ${moviePlayMode === 'full' ? T.accent : T.border}`,
+                    color: moviePlayMode === 'full' ? T.accent : (movieAiringsLeft < 2 ? T.muted : T.text),
+                    borderRadius: 4,
+                    cursor: movieAiringsLeft < 2 ? 'not-allowed' : 'pointer',
+                    fontSize: 12, fontWeight: 600, textAlign: 'left',
+                    opacity: movieAiringsLeft < 2 ? 0.5 : 1,
+                  }}
+                >
+                  <div style={{ marginBottom: 2 }}>Full Pack</div>
+                  <div style={{ fontSize: 10, color: T.muted, fontWeight: 400 }}>
+                    {movieAiringsLeft} months · use all airings
+                  </div>
+                </button>
+              </div>
+              <div style={{
+                fontSize: 10, color: T.muted, lineHeight: 1.5, marginTop: 8,
+              }}>
+                Full Pack locks the slot until the pack runs out. Cancelling
+                early returns unused airings to the pack — no penalty.
+              </div>
+            </div>
+          )}
+
+          {/* Run length info (non-movie programs) */}
+          {selected && !selected.movieId && (
             <div style={{
               padding: '8px 10px', marginBottom: 12, fontSize: 11,
               background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4,
@@ -195,13 +267,11 @@ export function SlotScheduler({
               <div style={{ color: T.text, fontWeight: 600, marginBottom: 2 }}>
                 Run length: {lockedRunMonths} {lockedRunMonths === 1 ? 'month' : 'months'}
               </div>
-              {selected.movieId
-                ? 'Movies air for a single month (one-off).'
-                : selected.sportsLeagueId
-                  ? 'Sports rights run the full calendar year — out-of-season months are skipped automatically.'
-                  : isLegacy
-                    ? 'Legacy program (no planned run committed at production). Defaulting to 1 month.'
-                    : `Locked in at production. Programs are built to run for a fixed length — they cannot be stretched or shortened at scheduling time.`}
+              {selected.sportsLeagueId
+                ? 'Sports rights run the full calendar year — out-of-season months are skipped automatically.'
+                : isLegacy
+                  ? 'Legacy program (no planned run committed at production). Defaulting to 1 month.'
+                  : `Locked in at production. Programs are built to run for a fixed length — they cannot be stretched or shortened at scheduling time.`}
             </div>
           )}
 
@@ -209,7 +279,9 @@ export function SlotScheduler({
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={onClose} style={btnSecondary}>Cancel</button>
             <button
-              onClick={() => canSchedule && onSchedule(selected.id, slotTypeId, lockedRunMonths)}
+              onClick={() => canSchedule && onSchedule(selected.id, slotTypeId, lockedRunMonths, {
+                moviePlayMode: selected.movieId ? moviePlayMode : null,
+              })}
               disabled={!canSchedule}
               style={{ ...btnPrimary, opacity: canSchedule ? 1 : 0.4, cursor: canSchedule ? 'pointer' : 'not-allowed' }}
             >

@@ -9,6 +9,7 @@ import {
   findWriter, findIP, findLeague, findMovie,
   activeWriters, activeIPLicenses, fmtM, r1,
   getUnlocks, availableScriptTiers,
+  talentCapacity, talentCount,
 } from '../engine.js'
 import { ProductionView } from './ProductionView.jsx'
 
@@ -292,6 +293,12 @@ function WritersTab({ station, marketWriters, onHireWriter, onFireWriter }) {
   const hired = station.hiredWriters || []
   const scripts = station.scripts || []
   const capReached = hired.length >= WRITERS_CAP
+  // The unified talent room counts writers + stars + creative directors. Even if
+  // the writer-specific cap isn't hit, you can't hire if the room is full.
+  const roomCap = talentCapacity(station)
+  const roomCnt = talentCount(station)
+  const roomFull = roomCnt >= roomCap
+  const blocked = capReached || roomFull
   const [confirmFire, setConfirmFire] = useState(null)
 
   return (
@@ -380,12 +387,14 @@ function WritersTab({ station, marketWriters, onHireWriter, onFireWriter }) {
         <div style={{ fontSize: 11, color: T.muted, letterSpacing: 1.5, marginBottom: 8 }}>
           HIRE NEW WRITER · MARKET
         </div>
-        {capReached && (
+        {(capReached || roomFull) && (
           <div style={{
             background: T.red + '15', border: `1px solid ${T.red}55`,
             borderRadius: 5, padding: 10, fontSize: 12, color: T.red, marginBottom: 10,
           }}>
-            Writer cap reached. Fire someone to make room.
+            {roomFull
+              ? <><strong>Office full ({roomCnt}/{roomCap}).</strong> Fire someone, hire a Director of Talent (National), or expand market before signing anyone new.</>
+              : <><strong>Writer cap reached.</strong> Fire someone to make room.</>}
           </div>
         )}
         {marketWriters.length === 0 ? (
@@ -402,7 +411,7 @@ function WritersTab({ station, marketWriters, onHireWriter, onFireWriter }) {
             {marketWriters.map(w => {
               const upfront = r1(w.cost)
               const affordable = station.cash >= upfront
-              const canHire = affordable && !capReached
+              const canHire = affordable && !blocked
               return (
                 <Card key={w.id} style={{ padding: 12 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{w.name}</div>
@@ -447,7 +456,13 @@ function WritersTab({ station, marketWriters, onHireWriter, onFireWriter }) {
                       cursor: canHire ? 'pointer' : 'not-allowed',
                     }}
                   >
-                    {!affordable ? 'Not enough cash' : capReached ? 'Cap reached' : 'HIRE — Permanent'}
+                    {!affordable
+                      ? 'Not enough cash'
+                      : roomFull
+                      ? 'Office full'
+                      : capReached
+                      ? 'Cap reached'
+                      : 'HIRE — Permanent'}
                   </button>
                 </Card>
               )
