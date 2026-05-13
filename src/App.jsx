@@ -1601,6 +1601,8 @@ export default function App() {
           onOpenSlot={openSlot}
           onCancelRun={cancelRun}
           onAdvanceMonth={advanceMonth}
+          onAssignSchedDirector={onAssignSchedDirector}
+          onCancelSchedDirector={onCancelSchedDirector}
         />
       )}
 
@@ -2001,6 +2003,7 @@ function Stat({ label, value, accent }) {
 function PlanView({
   game, runsBySlot, nextMonthCost, permanentCharge, cashBlocker,
   onOpenSlot, onCancelRun, onAdvanceMonth,
+  onAssignSchedDirector, onCancelSchedDirector,
 }) {
   const totalCost = nextMonthCost + permanentCharge
   const filledCount = game.station.slotIds.filter((_, i) => runsBySlot[i]).length
