@@ -929,9 +929,21 @@ export function beginProgram(station, research, year, opts) {
 
   const method = productionMethodFor(opts)
   const isMovie = method === 'instant'
+  // Sports rights coverage is a third production type — it has a license but
+  // no script, no director/star casting, and no production tiers to choose.
+  // The "production" is really just allocating airtime to broadcast a live
+  // event we already paid the rights for.
+  const isSportsRights = !!opts.sportsLeagueId
 
   // Validate inputs
-  if (!isMovie) {
+  if (isSportsRights) {
+    // Need an active license for the year we're producing in.
+    if (!ownsLicense(station, opts.sportsLeagueId, year)) {
+      return { station, error: 'No active license for that league' }
+    }
+    // Sports rights uses category 'sports' implicitly — make sure that's set.
+    // (ProductionView passes categoryId='sports' for the sports buildType.)
+  } else if (!isMovie) {
     if (!opts.scriptId) return { station, error: 'Script required (except movies)' }
     const script = (station.scripts || []).find(s => s.id === opts.scriptId)
     if (!script) return { station, error: 'Script not found' }
@@ -993,11 +1005,8 @@ export function beginProgram(station, research, year, opts) {
     if (!opts.movieId) return { station, error: 'Movie required' }
   }
 
-  if (opts.sportsLeagueId) {
-    if (!ownsLicense(station, opts.sportsLeagueId, year)) {
-      return { station, error: 'No active license for that league' }
-    }
-  }
+  // IP check applies to all paths if an IP is selected (rare for sports/movies
+  // but the option exists).
   if (opts.ipId && !ownsIP(station, opts.ipId, year)) {
     return { station, error: 'No active license for that IP' }
   }
