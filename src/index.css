@@ -407,4 +407,33 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   .plan-cols-2 {
     grid-template-columns: 1fr !important;
   }
+
+  /* ── Results screen (stage AK) mobile ──
+     The 88px Fraunces net number + 1.4fr/1fr net+rankings grid both
+     need to relax on phones. Drop the net to 56px and stack the
+     rankings block underneath. Also tighten the program-row grid
+     so the rating column doesn't shove everything off-screen. */
+  .results-net-block {
+    grid-template-columns: 1fr !important;
+    padding: 18px 0 22px !important;
+    gap: 20px !important;
+  }
+  .results-net-value {
+    font-size: 56px !important;
+  }
+  .results-program-row {
+    grid-template-columns: 1fr auto !important;
+    grid-template-areas:
+      "info rating"
+      "stats stats"
+      "meta meta" !important;
+    row-gap: 10px !important;
+  }
+  .results-program-row .rp-slot   { display: none; }
+  .results-program-row .rp-rank   { grid-area: meta; text-align: left; min-width: 0 !important; display: flex; align-items: center; gap: 8px; }
+  .results-program-row .rp-rank-num { font-size: 16px !important; }
+  .results-program-row .rp-rank-label { margin-top: 0 !important; }
+  .results-program-row .rp-info   { grid-area: info; }
+  .results-program-row .rp-rating { grid-area: rating; }
+  .results-program-row .rp-rating .score { font-size: 26px !important; }
 }
