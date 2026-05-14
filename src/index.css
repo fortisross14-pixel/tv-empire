@@ -131,6 +131,30 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
     transparent 100%);
 }
 
+/* Danger button — outline that fills on hover. Used for Cancel actions
+   on cards. Matches the sign-btn pattern from the v3 proposal but in red. */
+.danger-btn {
+  background: transparent;
+  border: 1px solid rgba(239, 69, 101, 0.4);
+  color: #ef4565;
+  padding: 5px 11px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  font-family: 'Inter Tight', sans-serif;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.danger-btn:hover {
+  background: rgba(239, 69, 101, 0.15);
+  border-color: #ef4565;
+  color: #ff7a8e;
+}
+.danger-btn:active {
+  transform: translateY(1px);
+}
+
 /* Legacy compat — old code references these */
 .bebas { font-family: 'Anton', sans-serif; letter-spacing: .04em; }
 
@@ -373,5 +397,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   /* Big page hero titles — drop from 32px to 24px so they don't overflow */
   .view-wrap h1.display {
     font-size: 24px !important;
+  }
+  /* Editorial hero on Programming — drop the big 52px serif title to 32px */
+  .view-wrap h1.editorial {
+    font-size: 32px !important;
+  }
+  /* Programming two-column layout — stack to single column on mobile.
+     Weekday slots come first, then their weekend pair below. */
+  .plan-cols-2 {
+    grid-template-columns: 1fr !important;
   }
 }

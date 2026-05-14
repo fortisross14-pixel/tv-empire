@@ -2224,77 +2224,213 @@ function PlanView({
         }} />
       </div>
 
-      {/* ─── SLOT GRID ─── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-        gap: 12,
-      }}>
-        {game.station.slotIds.map((slotTypeId, i) => {
-          const run = runsBySlot[i]
+      {/* ─── SLOT GRID ───
+          Two-column layout: Weekdays left, Weekends right, paired by daypart.
+          Each daypart row is a horizontal pair (or single card if the player
+          only has one side unlocked at that daypart). Empty placeholders show
+          when a daypart isn't unlocked yet on one side — gives the eye an
+          anchor so the column structure stays clear.
+
+          The DAYPART_PAIRS table defines the row order. Rows are omitted
+          entirely when neither side is unlocked. */}
+      {(() => {
+        // Build the row plan. Each row pairs a weekday slot id and a weekend
+        // slot id (one or both may be unlocked). We carry slotIndex inside
+        // station.slotIds so click handlers fire on the right slot.
+        const slotIds = game.station.slotIds
+        const indexOfSlot = (id) => slotIds.indexOf(id)
+
+        const DAYPART_PAIRS = [
+          { label: 'Morning',   weekday: 'morning',   weekend: 'weekend_morning' },
+          { label: 'Afternoon', weekday: 'afternoon', weekend: 'weekend_afternoon' },
+          { label: 'Evening',   weekday: 'evening',   weekend: null },
+          { label: 'Prime',     weekday: 'prime',     weekend: 'weekend_prime' },
+          { label: 'Prime 2',   weekday: 'prime2',    weekend: null },
+          { label: 'Late',      weekday: 'latenight', weekend: 'weekend_latenight' },
+        ]
+
+        // Filter to rows where at least one side is unlocked
+        const rows = DAYPART_PAIRS
+          .map(p => ({
+            ...p,
+            weekdayIdx: p.weekday ? indexOfSlot(p.weekday) : -1,
+            weekendIdx: p.weekend ? indexOfSlot(p.weekend) : -1,
+          }))
+          .filter(r => r.weekdayIdx >= 0 || r.weekendIdx >= 0)
+
+        const renderSlot = (idx) => {
+          if (idx < 0) return null
+          const run = runsBySlot[idx]
           return (
             <SlotCard
-              key={i}
-              plan={run || game.plans[i]}
+              plan={run || game.plans[idx]}
               run={run}
-              idx={i}
-              slotTypeId={slotTypeId}
+              idx={idx}
+              slotTypeId={slotIds[idx]}
               cycleIdx={game.monthIdx}
               station={game.station}
               research={game.research}
-              onClick={() => !run && onOpenSlot(i)}
+              onClick={() => !run && onOpenSlot(idx)}
               onCancel={run ? () => onCancelRun(run.id) : null}
               onAssignSchedDirector={onAssignSchedDirector}
               onCancelSchedDirector={onCancelSchedDirector}
             />
           )
-        })}
-      </div>
+        }
+
+        // Locked-side placeholder — shown when the corresponding daypart
+        // is unlocked on the other column but not this one yet. Gives the
+        // layout a visible "this exists but you don't own it yet" affordance.
+        const renderLocked = (label) => (
+          <div style={{
+            padding: '20px 18px',
+            background: 'transparent',
+            border: `1px dashed ${T.border}`,
+            borderRadius: 6,
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            gap: 6, minHeight: 100,
+          }}>
+            <div style={{
+              fontSize: 9.5, fontWeight: 600, letterSpacing: '.16em',
+              textTransform: 'uppercase', color: T.mutedDim,
+            }}>
+              {label}
+            </div>
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 14, 'wght' 400",
+              fontStyle: 'italic', fontSize: 11, color: T.mutedDim,
+            }}>
+              Not available
+            </div>
+          </div>
+        )
+
+        return (
+          <div>
+            {/* Column headers */}
+            <div className="plan-cols-2" style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr',
+              gap: 16, marginBottom: 12,
+            }}>
+              <div style={{
+                fontFamily: FONTS.serif,
+                fontVariationSettings: "'opsz' 36, 'wght' 600",
+                fontSize: 18, letterSpacing: '-.005em',
+                color: T.text,
+                display: 'flex', alignItems: 'baseline', gap: 10,
+              }}>
+                Weekdays
+                <span style={{
+                  fontFamily: FONTS.mono, fontSize: 10,
+                  color: T.muted, letterSpacing: '.1em',
+                  textTransform: 'uppercase', fontStyle: 'normal',
+                }}>Mon — Fri</span>
+              </div>
+              <div style={{
+                fontFamily: FONTS.serif,
+                fontVariationSettings: "'opsz' 36, 'wght' 600",
+                fontSize: 18, letterSpacing: '-.005em',
+                color: T.text,
+                display: 'flex', alignItems: 'baseline', gap: 10,
+              }}>
+                Weekends
+                <span style={{
+                  fontFamily: FONTS.mono, fontSize: 10,
+                  color: T.muted, letterSpacing: '.1em',
+                  textTransform: 'uppercase', fontStyle: 'normal',
+                }}>Sat — Sun</span>
+              </div>
+            </div>
+
+            {/* Daypart rows */}
+            <div style={{ display: 'grid', gap: 12 }}>
+              {rows.map((row, i) => (
+                <div key={row.label} className="plan-cols-2" style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1fr',
+                  gap: 16,
+                  position: 'relative',
+                }}>
+                  {/* Weekday side */}
+                  <div>
+                    {row.weekdayIdx >= 0 ? renderSlot(row.weekdayIdx) : renderLocked(row.label)}
+                  </div>
+                  {/* Weekend side */}
+                  <div>
+                    {row.weekendIdx >= 0
+                      ? renderSlot(row.weekendIdx)
+                      : (row.weekend === null
+                          ? <div /> // no weekend equivalent for this daypart (e.g. Evening) — leave blank
+                          : renderLocked(row.label))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ─── NEXT MONTH BAND ───
-          Two-card row at the bottom — budget on the left (with editorial
-          slugline), CTA reminder on the right. Cleaner than the inline strip. */}
-      <div style={{
-        marginTop: 32,
+          Two-card row at the bottom — budget on the left, CTA reminder
+          on the right. Both cards use the editorial card pattern:
+          gradient surface, accent eyebrow, serif display number, italic
+          serif slug. */}
+      <div className="plan-cols-2" style={{
+        marginTop: 40,
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
-        gap: 12,
+        gap: 16,
       }}>
         {/* Budget card */}
         <div style={{
-          padding: 18,
-          background: `linear-gradient(180deg, ${T.surface} 0%, rgba(15, 11, 22, 0.4) 100%)`,
+          padding: 24,
+          background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
           border: `1px solid ${cashBlocker ? T.red : T.border}`,
+          borderLeft: `3px solid ${cashBlocker ? T.red : T.accent}`,
           borderRadius: 6,
           transition: 'border-color .15s',
         }}>
           <div style={{
-            fontSize: 9.5, fontWeight: 600, letterSpacing: '.16em',
-            textTransform: 'uppercase', color: T.accent, marginBottom: 10,
+            fontSize: 9.5, fontWeight: 600, letterSpacing: '.18em',
+            textTransform: 'uppercase', color: T.accent, marginBottom: 14,
           }}>
             Next Month Budget
           </div>
+          {/* Big number — serif for editorial weight, not mono */}
           <div style={{
-            fontFamily: FONTS.mono, fontSize: 28, fontWeight: 700,
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 144, 'wght' 700",
+            fontSize: 44, lineHeight: 0.95,
             color: cashBlocker ? T.red : T.text,
-            letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6,
+            letterSpacing: '-.025em', marginBottom: 8,
           }}>
             {fmtM(totalCost)}
           </div>
           <div style={{
-            fontSize: 12, color: T.muted, fontStyle: 'italic',
-            fontFamily: FONTS.serif, fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 13, color: T.muted, lineHeight: 1.5,
           }}>
             {game.runs.length} active program{game.runs.length === 1 ? '' : 's'}
-            {permanentCharge > 0 && ` · ${fmtM(permanentCharge)} in permanent contracts`}
+            {permanentCharge > 0 && (
+              <>
+                {' · '}
+                <span style={{ fontFamily: FONTS.mono, fontStyle: 'normal' }}>
+                  {fmtM(permanentCharge)}
+                </span>
+                {' in permanent contracts'}
+              </>
+            )}
           </div>
           {cashBlocker && (
             <div style={{
-              marginTop: 12, padding: '8px 12px',
+              marginTop: 14, padding: '10px 14px',
               background: 'rgba(239, 69, 101, .08)',
               border: `1px solid rgba(239, 69, 101, .3)`,
               borderRadius: 4,
-              fontSize: 11.5, color: T.red, lineHeight: 1.4,
+              fontSize: 12, color: T.red, lineHeight: 1.5,
             }}>
               Not enough cash to advance. Cancel a run, fire someone, or check Financials.
             </div>
@@ -2303,40 +2439,44 @@ function PlanView({
 
         {/* Air-Month nudge card */}
         <div style={{
-          padding: 18,
-          background: `linear-gradient(180deg, ${T.surface} 0%, rgba(15, 11, 22, 0.4) 100%)`,
+          padding: 24,
+          background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
           border: `1px solid ${T.border}`,
+          borderLeft: `3px solid ${T.gold}`,
           borderRadius: 6,
-          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+          display: 'flex', flexDirection: 'column',
         }}>
-          <div>
-            <div style={{
-              fontSize: 9.5, fontWeight: 600, letterSpacing: '.16em',
-              textTransform: 'uppercase', color: T.accent, marginBottom: 10,
-            }}>
-              Ready to Air
-            </div>
-            <div style={{
-              fontFamily: FONTS.serif,
-              fontVariationSettings: "'opsz' 36, 'wght' 600",
-              fontSize: 22, lineHeight: 1.15, color: T.text,
-              marginBottom: 6,
-            }}>
-              {nextMonthLabel}, Y{game.year + ((game.monthIdx + 1) >= 12 ? 1 : 0)}
-            </div>
-            <div style={{
-              fontSize: 12, color: T.muted, lineHeight: 1.5,
-              fontStyle: 'italic',
-              fontFamily: FONTS.serif, fontVariationSettings: "'opsz' 14, 'wght' 400",
-            }}>
-              Tap{' '}
-              <span style={{
-                fontStyle: 'normal',
-                fontFamily: FONTS.sans, fontWeight: 700,
-                color: T.accent, letterSpacing: '.02em',
-              }}>Air Month ▸</span>{' '}
-              in the top bar to advance time.
-            </div>
+          <div style={{
+            fontSize: 9.5, fontWeight: 600, letterSpacing: '.18em',
+            textTransform: 'uppercase', color: T.accent, marginBottom: 14,
+          }}>
+            Ready to Air
+          </div>
+          {/* Month title — Fraunces serif, matches the budget figure visually */}
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 144, 'wght' 700",
+            fontSize: 44, lineHeight: 0.95,
+            color: T.text,
+            letterSpacing: '-.025em', marginBottom: 8,
+          }}>
+            {nextMonthLabel}, <span style={{
+              color: T.muted, fontVariationSettings: "'opsz' 144, 'wght' 400",
+            }}>Y{game.year + ((game.monthIdx + 1) >= 12 ? 1 : 0)}</span>
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 13, color: T.muted, lineHeight: 1.5,
+          }}>
+            Tap{' '}
+            <span style={{
+              fontStyle: 'normal',
+              fontFamily: FONTS.sans, fontWeight: 700,
+              color: T.accent, letterSpacing: '.02em',
+            }}>Air Month ▸</span>{' '}
+            in the top bar to advance time.
           </div>
         </div>
       </div>

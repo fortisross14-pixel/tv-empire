@@ -298,8 +298,12 @@ function ActiveRunCard({ run, slotType, cycleIdx, station, research, onCancel })
   const ip = findIP(run.ipId)
 
   const proj = projectShow(run, station, research, cycleIdx)
+  // Movies: prefer the user-renamed run.name (set at production time) over
+  // the underlying pack's default name. If the player renamed "Indie Movie Pack"
+  // to "Indie Mornings", that's what shows on the slot card. Falls back to
+  // pack name only if the run has no name (legacy saves, or never-renamed).
   const displayName = isMovie
-    ? movie?.name
+    ? (run.name || movie?.name || 'Untitled')
     : (isSports ? `${league?.label} Coverage` : (run.name || 'Untitled'))
 
   const monthsRemaining = run.runMonths - run.monthsAired
@@ -421,28 +425,36 @@ function ActiveRunCard({ run, slotType, cycleIdx, station, research, onCancel })
         </div>
       )}
 
-      {/* TALENT LINE */}
+      {/* TALENT LINE — editorial slugline. Italic serif gives the meta
+          a magazine-byline feel ("by Mike Patterson · Drew Halloway"). */}
       <div style={{
-        fontSize: 11, color: T.textDim, marginBottom: 10, lineHeight: 1.5,
-        display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 12.5, color: T.textDim,
+        marginBottom: 12, lineHeight: 1.5,
+        display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
       }}>
-        {isMovie ? <span style={{ color: T.muted, fontStyle: 'italic' }}>Licensed film</span> : (
+        {isMovie ? <span style={{ color: T.muted }}>Licensed film</span> : (
           <>
             {dir
-              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <Icon name="play" size={10} color={T.muted} /> {dir.name}
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <Icon name="play" size={10} color={T.muted} />
+                  <span>{dir.name}</span>
                 </span>
-              : <span style={{ color: T.mutedDim }}>— Director</span>}
-            <span style={{ color: T.mutedDim }}>·</span>
+              : <span style={{ color: T.mutedDim, fontStyle: 'normal' }}>— Director</span>}
+            <span style={{ color: T.mutedDim, fontStyle: 'normal' }}>·</span>
             {star
-              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <Icon name="star" size={10} color={T.gold} /> {star.name}
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <Icon name="star" size={10} color={T.gold} />
+                  <span>{star.name}</span>
                 </span>
-              : <span style={{ color: T.mutedDim }}>— Star</span>}
+              : <span style={{ color: T.mutedDim, fontStyle: 'normal' }}>— Star</span>}
             {ip && <>
-              <span style={{ color: T.mutedDim }}>·</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Icon name="ip" size={10} color={T.teal} /> {ip.name}
+              <span style={{ color: T.mutedDim, fontStyle: 'normal' }}>·</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Icon name="ip" size={10} color={T.teal} />
+                <span>{ip.name}</span>
               </span>
             </>}
           </>
@@ -457,32 +469,25 @@ function ActiveRunCard({ run, slotType, cycleIdx, station, research, onCancel })
         </div>
       )}
 
-      {/* Footer */}
+      {/* Footer — cost / months / cancel */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         paddingTop: 10, borderTop: `1px solid ${T.border}`, gap: 8,
       }}>
-        <span className="mono" style={{ fontSize: 11, color: T.muted }}>
+        <span style={{
+          fontFamily: FONTS.mono, fontSize: 11, color: T.muted,
+          letterSpacing: '.02em',
+        }}>
           ${run.monthlyCost.toFixed(1)}M / mo · {monthsRemaining} left
         </span>
         {onCancel && monthsRemaining > 0 && (
           <button
+            className="danger-btn"
             onClick={(e) => {
               e.stopPropagation()
               if (window.confirm(`Cancel "${displayName}"? Penalty: $${cancelCost.toFixed(1)}M (50% of remaining run).`)) {
                 onCancel()
               }
-            }}
-            style={{
-              background: 'transparent',
-              border: `1px solid rgba(239, 69, 101, .35)`,
-              color: T.red,
-              padding: '5px 11px',
-              borderRadius: 3,
-              fontSize: 10,
-              fontWeight: 600,
-              cursor: 'pointer',
-              letterSpacing: '.05em',
             }}
           >CANCEL · ${cancelCost.toFixed(1)}M</button>
         )}
@@ -496,14 +501,19 @@ function MetricBar({ label, value, color }) {
     <div>
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-        fontSize: 9, color: T.muted, marginBottom: 4, letterSpacing: '.08em',
+        fontSize: 9.5, color: T.muted, marginBottom: 4,
+        letterSpacing: '.1em', textTransform: 'uppercase',
+        fontWeight: 600,
       }}>
         <span>{label}</span>
-        <span className="mono" style={{ color, fontSize: 11, fontWeight: 500 }}>
+        <span style={{
+          fontFamily: FONTS.mono, color, fontSize: 11, fontWeight: 600,
+          letterSpacing: 0,
+        }}>
           {value.toFixed(1)}
         </span>
       </div>
-      <Bar value={value} color={color} h={4} />
+      <Bar value={value} color={color} h={3} />
     </div>
   )
 }
