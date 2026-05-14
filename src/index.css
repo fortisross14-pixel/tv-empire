@@ -1,9 +1,10 @@
 /* ─── FONTS ──────────────────────────────────────────────────────────────
-   Anton — broadcast/poster display
+   Anton — broadcast/poster display (legacy, still in use on un-migrated screens)
    Inter Tight — refined sans for body AND editorial-style hero titles
+   Fraunces — variable-axis serif for editorial display titles (v6 migration)
    JetBrains Mono — numerics & timecodes
 */
-@import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter+Tight:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,800&family=Inter+Tight:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 :root {
   --bg:       #0a0910;
@@ -102,15 +103,32 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   font-weight: 400;
 }
 .editorial {
-  /* Was Fraunces serif; now a strong sans treatment to keep the type system
-     coherent. Use for hero titles / program names where Anton is too tall. */
-  font-family: 'Inter Tight', sans-serif;
-  font-weight: 700;
+  /* v6 — Fraunces variable serif. Optical-size axis tuned for display.
+     Used by hero titles and program names on migrated screens. */
+  font-family: 'Fraunces', Georgia, serif;
+  font-variation-settings: 'opsz' 96, 'wght' 600;
+  font-weight: 600;
   letter-spacing: -.015em;
+}
+.serif {
+  /* Body-weight serif, italic-capable, for sluglines and pull-quotes */
+  font-family: 'Fraunces', Georgia, serif;
+  font-variation-settings: 'opsz' 14, 'wght' 400;
 }
 .mono {
   font-family: 'JetBrains Mono', monospace;
   letter-spacing: -.01em;
+}
+
+/* Editorial hairline — gradient rule fading from gold to transparent.
+   Apply as a background on a 1px-tall element. */
+.gradient-rule {
+  height: 1px;
+  background: linear-gradient(90deg,
+    rgba(240, 179, 94, 0.45) 0%,
+    rgba(240, 179, 94, 0.15) 20%,
+    var(--border) 40%,
+    transparent 100%);
 }
 
 /* Legacy compat — old code references these */

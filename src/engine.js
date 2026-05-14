@@ -22,7 +22,7 @@ import {
   AUTO_SCHED_Q_MULT, AUTO_SCHED_H_MULT,
   AUTO_SCHED_BASE_Q_MIN, AUTO_SCHED_BASE_Q_MAX,
   AUTO_SCHED_BASE_H_MIN, AUTO_SCHED_BASE_H_MAX,
-  IP_LICENSE_TERMS, NETWORK_CAMPAIGNS,
+  IP_LICENSE_TERMS, NETWORK_CAMPAIGNS, computeCampaignInputMultiplier,
   MOVIE_PACK_REBUY_HYPE_PENALTY, MOVIE_PACK_COOLDOWN_MONTHS,
   SCRIPT_TIERS, findScriptTier, SCRIPT_TIER_RANK, STAR_TIER_MAX_FOR_SCRIPT,
   WRITERS, WRITERS_CAP, SCRIPT_HYPE_DECAY, SCRIPT_HYPE_MIN, SCRIPT_HYPE_MAX,
@@ -2106,25 +2106,151 @@ export function tickResearch(research) {
 }
 
 // ─── NETWORK CAMPAIGNS ───────────────────────────────────────────────────────
-/** Run a network-wide marketing campaign. Costs upfront. Hype boost applies
- *  to all of THIS month's shows; fame gain applies immediately. */
-export function launchNetworkCampaign(station, campaignId, research) {
+/** Launch a network-wide marketing campaign.
+ *
+ *  Campaigns are stored on `station.activeCampaigns` (an array — multiple
+ *  campaigns can run concurrently). Each campaign carries its own monthly
+ *  hype boost and decrements its `monthsRemaining` each month tick.
+ *
+ *  opts (mega-campaigns only):
+ *    starId    — id of a hired star to feature
+ *    showProgramIds — array of up to 2 program ids from the station's catalog
+ *
+ *  The effectiveness of mega-campaigns scales with `computeCampaignInputMultiplier`
+ *  (star + 2 shows). For non-mega tiers, opts is ignored.
+ *
+ *  Returns { station, cost, label, campaign, error }.
+ */
+export function launchNetworkCampaign(station, campaignId, research, opts = {}) {
   const camp = NETWORK_CAMPAIGNS.find(c => c.id === campaignId)
   if (!camp) return { station, error: 'Bad campaign' }
+
+  // Market gating — mega-campaigns require larger markets
+  const marketOrder = ['local', 'metro', 'national']
+  const stationMarketRank = marketOrder.indexOf(station.market || 'local')
+  const minMarketRank = marketOrder.indexOf(camp.minMarket || 'local')
+  if (stationMarketRank < minMarketRank) {
+    return { station, error: `${camp.label} requires ${camp.minMarket} market` }
+  }
+
+  // Mega-campaigns need a star + 2 shows
+  let star = null, show1 = null, show2 = null, inputMult = 1.0
+  if (camp.needsInputs) {
+    star = opts.starId ? findStar(opts.starId) : null
+    // Verify star is actually hired
+    const hiredStarIds = new Set((station.hiredStars || []).map(h => h.talentId))
+    if (!star || !hiredStarIds.has(star.id)) {
+      return { station, error: 'Pick a star you have under contract' }
+    }
+    const showIds = (opts.showProgramIds || []).filter(Boolean)
+    if (showIds.length !== 2) {
+      return { station, error: 'Pick exactly two of your shows to feature' }
+    }
+    if (showIds[0] === showIds[1]) {
+      return { station, error: 'Pick two different shows' }
+    }
+    const showLookup = id => (station.programs || []).find(p => p.id === id)
+    show1 = showLookup(showIds[0])
+    show2 = showLookup(showIds[1])
+    if (!show1 || !show2) {
+      return { station, error: 'One of the chosen shows is no longer in your catalog' }
+    }
+    inputMult = computeCampaignInputMultiplier(star, show1, show2)
+  }
+
+  // Cost — marketing VP discount + research discount applied
   const mktgEff = staffEffect(station, 'marketing')
   const cost = r1(camp.cost * (research?.marketingDiscount || 1.0) * (mktgEff.mktgCost || 1.0))
   if (station.cash < cost) return { station, error: 'Not enough cash' }
-  const impactMult = mktgEff.mktgImpact || 1.0
+
+  const staffImpact = mktgEff.mktgImpact || 1.0
+  const finalHype = r2(camp.hypeBoost * inputMult * staffImpact)
+  const finalFame = r2(camp.fameGain * inputMult * staffImpact)
+
+  const campaign = {
+    id: uid(),
+    tierId: campaignId,
+    label: camp.label,
+    icon: camp.icon || '📣',
+    hypeBoost: finalHype,
+    fameGain: finalFame,                       // applied immediately, also recorded for UI
+    monthsRemaining: camp.monthsActive || 1,
+    monthsTotal: camp.monthsActive || 1,
+    inputMultiplier: r2(inputMult),
+    starId: star?.id || null,
+    starName: star?.name || null,
+    showProgramIds: camp.needsInputs ? [show1.id, show2.id] : [],
+    showNames: camp.needsInputs ? [show1.name, show2.name] : [],
+    launchedYear: null,                        // App fills in when persisting
+    launchedMonth: null,
+  }
+
   return {
     station: {
       ...station,
       cash: r1(station.cash - cost),
-      fame: r2(station.fame + camp.fameGain * impactMult),
-      activeCampaign: { tierId: campaignId, hypeBoost: camp.hypeBoost * impactMult },
+      fame: r2((station.fame || 0) + finalFame),
+      // Append to the campaigns array. Migration: if old `activeCampaign`
+      // exists (singular), it's already been migrated by `migrateStation`.
+      activeCampaigns: [...(station.activeCampaigns || []), campaign],
     },
     cost,
     label: camp.label,
+    campaign,
     error: null,
+  }
+}
+
+/** Tick all active campaigns at month end. Decrements monthsRemaining;
+ *  drops expired ones. Returns { campaigns, expired }. */
+export function tickCampaigns(activeCampaigns) {
+  const next = []
+  const expired = []
+  for (const c of (activeCampaigns || [])) {
+    if (c.monthsRemaining <= 1) {
+      expired.push(c)
+    } else {
+      next.push({ ...c, monthsRemaining: c.monthsRemaining - 1 })
+    }
+  }
+  return { campaigns: next, expired }
+}
+
+/** Sum the hype boost across all active campaigns. Used at airing time
+ *  so multi-campaign stacking works correctly. */
+export function totalCampaignHypeBoost(station) {
+  // Back-compat: if a save still has the singular `activeCampaign`, count it.
+  let total = 0
+  if (station?.activeCampaign?.hypeBoost) total += station.activeCampaign.hypeBoost
+  for (const c of (station?.activeCampaigns || [])) {
+    total += c.hypeBoost || 0
+  }
+  return total
+}
+
+/** One-time migration: if a station has the old singular `activeCampaign`
+ *  but no `activeCampaigns` array, fold it into the new array. Safe to
+ *  call repeatedly. */
+export function migrateCampaignState(station) {
+  if (!station) return station
+  if (Array.isArray(station.activeCampaigns)) return station   // already migrated
+  const carry = station.activeCampaign
+  return {
+    ...station,
+    activeCampaigns: carry ? [{
+      id: uid(),
+      tierId: carry.tierId || 'unknown',
+      label: carry.label || 'Active campaign',
+      icon: '📣',
+      hypeBoost: carry.hypeBoost || 0,
+      fameGain: carry.fameGain || 0,
+      monthsRemaining: 1,
+      monthsTotal: 1,
+      inputMultiplier: 1.0,
+      starId: null, starName: null,
+      showProgramIds: [], showNames: [],
+    }] : [],
+    activeCampaign: null,
   }
 }
 
@@ -2357,7 +2483,7 @@ export function projectShow(planned, station, research, monthIdx = 0) {
     // Staff + tech + campaign bonuses
     const contentQ = (staffEffect(station, 'content').qBonus) || 0
     const tech = techBonuses(planned)
-    const campHype = station.activeCampaign?.hypeBoost || 0
+    const campHype = totalCampaignHypeBoost(station)
 
     const rawQ = clamp(lg.baseQ + (dir?.q || 0) * dMatch + (star?.q || 0) * sMatch + focusQ + contentQ + tech.q, 1, 10)
     // Per-market hype multiplier — college/regional sports peak in local
@@ -2382,7 +2508,7 @@ export function projectShow(planned, station, research, monthIdx = 0) {
     const mktgImpact = mktgEff.mktgImpact || 1.0
     const contentQ = (staffEffect(station, 'content').qBonus) || 0
     const tech = techBonuses(planned)
-    const campHype = station.activeCampaign?.hypeBoost || 0
+    const campHype = totalCampaignHypeBoost(station)
     const rawQ = clamp(m.q + mktg.q + contentQ + tech.q, 1, 10)
     const rawH = clamp(m.h + mktg.h * mktgImpact + slotBonusH + seasonBonusH + tech.h + campHype, 1, 10)
     // Specialization bonus — movies use 'movie' genre
@@ -2426,7 +2552,7 @@ export function projectShow(planned, station, research, monthIdx = 0) {
   const mktgEff = staffEffect(station, 'marketing')
   const mktgImpact = mktgEff.mktgImpact || 1.0
   const tech = techBonuses(planned)
-  const campHype = station.activeCampaign?.hypeBoost || 0
+  const campHype = totalCampaignHypeBoost(station)
 
   const rawQuality = clamp(
     cat.base_q + topic.q
@@ -3481,7 +3607,8 @@ export function initGame(setup) {
     },
     directors: {},              // { roleId: { tier:'Common', count? } } — National-only
     openPositions: [],          // [{role, tierId, monthsLeft, monthsTotal, cost}]
-    activeCampaign: null,       // {tierId, hypeBoost}
+    activeCampaign: null,       // legacy field — kept null; new code uses activeCampaigns
+    activeCampaigns: [],        // array of active brand campaigns w/ monthsRemaining
     moviePacks: [],             // [{packId, airingsLeft, purchasedY/M, purchaseHype, ...}]
     specStars: SPEC_GENRES.reduce((acc, g) => {
       acc[g] = g === focusCat ? 1 : 0

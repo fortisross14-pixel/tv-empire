@@ -208,11 +208,6 @@ function ProgramRow({ airing: a }) {
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.08em', textTransform: 'uppercase' }}>
             {slot.icon} {slot.label}
-            {a.slotRank > 0 && (
-              <span style={{ color: a.slotRank === 1 ? T.gold : T.muted, marginLeft: 5 }}>
-                · #{a.slotRank}/{a.slotTotal} in slot
-              </span>
-            )}
           </div>
           <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginTop: 2, lineHeight: 1.2 }}>
             {a.name || 'Untitled'}
@@ -232,6 +227,39 @@ function ProgramRow({ airing: a }) {
             {isMovie ? '🎞 Movie' : isSports ? `${league?.icon || '🏆'} ${league?.label || 'Sports'}` : ((cat?.icon || '') + ' ' + (cat?.label || a.categoryId))}
           </div>
         </div>
+
+        {/* Slot rank badge — prominent so the player sees at a glance if they
+            won, lost, or middled the slot. The badge sits next to the rating
+            (right side) for symmetry. Hidden if no rank context. */}
+        {a.slotRank > 0 && a.slotTotal > 1 && (() => {
+          const rankColor = a.slotRank === 1 ? T.gold
+                          : a.slotRank === 2 ? T.text
+                          : a.slotRank <= Math.ceil(a.slotTotal / 2) ? T.muted
+                          : T.red
+          const trophy = a.slotRank === 1 ? '🏆 ' : ''
+          return (
+            <div style={{
+              background: rankColor + '14',
+              border: `1.5px solid ${rankColor}66`,
+              borderRadius: 6,
+              padding: '4px 10px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              minWidth: 60,
+            }}>
+              <div style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 22, fontWeight: 800, lineHeight: 1,
+                color: rankColor,
+                letterSpacing: '-.02em',
+              }}>{trophy}#{a.slotRank}</div>
+              <div style={{
+                fontSize: 9, color: T.muted, marginTop: 4,
+                letterSpacing: '.08em', textTransform: 'uppercase',
+              }}>of {a.slotTotal} in slot</div>
+            </div>
+          )
+        })()}
+
         <div style={{
           background: ratingColor + '22', border: `1px solid ${ratingColor}55`,
           color: ratingColor, padding: '4px 10px', borderRadius: 4,

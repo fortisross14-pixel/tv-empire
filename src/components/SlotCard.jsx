@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { T } from '../theme.js'
+import { T, FONTS } from '../theme.js'
 import { CATEGORIES, SLOT_TYPES, MONTHS } from '../constants.js'
 import { HTag, Bar } from './ui.jsx'
 import { Icon, SlotIcon, CategoryIcon } from '../icons.jsx'
@@ -49,91 +49,123 @@ export function SlotCard({
   />
 }
 
-// ─── EMPTY SLOT — visible but distinct from filled ────────────────────
+// ─── EMPTY SLOT — confident, inviting, with proper hover lift ─────────
 function EmptySlotCard({
   slotType, cycleIdx, seasonal, onClick,
   canAssignAuto, slotIdx, onAssignSchedDirector,
 }) {
   const [picking, setPicking] = useState(false)
+  const [hover, setHover] = useState(false)
+
   return (
-    <div style={{
-      position: 'relative',
-      background: T.surface,
-      border: `1px dashed ${T.borderHi}`,
-      borderRadius: 6,
-      transition: 'all .15s ease',
-    }}>
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        position: 'relative',
+        // Solid surface instead of dashed border — confident, not provisional.
+        // Subtle gradient gives depth without a heavy fill.
+        background: hover
+          ? `linear-gradient(180deg, ${T.cardHiGradTop || T.cardHi} 0%, ${T.cardHiGradBot || T.card} 100%)`
+          : `linear-gradient(180deg, ${T.surface} 0%, rgba(15, 11, 22, 0.4) 100%)`,
+        border: `1px solid ${hover ? T.borderHi : T.border}`,
+        borderRadius: 6,
+        transition: 'background .15s, border-color .15s, transform .05s',
+        boxShadow: hover ? '0 4px 16px rgba(0,0,0,.25)' : 'none',
+      }}
+    >
       <button
         onClick={() => { playSound('tick'); onClick() }}
         style={{
           display: 'block', width: '100%',
           background: 'transparent', border: 'none',
-          borderRadius: 6, padding: '16px 14px',
+          borderRadius: 6, padding: '16px 16px 14px',
           textAlign: 'left', cursor: 'pointer', color: T.text,
         }}
       >
-      {/* Top row: icon + slot label — full color, properly readable */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 9,
-        marginBottom: 6,
-      }}>
-        <SlotIcon slotTypeId={slotType.id} size={18} color={T.text} />
-        <div className="display" style={{
-          fontSize: 14,
-          color: T.text,
-          letterSpacing: '.06em',
-          textTransform: 'uppercase',
-        }}>
-          {slotType.label}
-        </div>
-      </div>
-
-      <div style={{
-        fontSize: 11.5, color: T.muted, marginBottom: 12, lineHeight: 1.5,
-      }}>
-        {slotType.desc}
-      </div>
-
-      {seasonal && (
+        {/* Slot type eyebrow — small caps with icon */}
         <div style={{
-          fontSize: 10.5,
-          padding: '6px 9px',
-          background: 'rgba(255, 209, 102, .1)',
-          border: `1px solid rgba(255, 209, 102, .35)`,
-          borderRadius: 3,
-          color: T.gold,
-          marginBottom: 10,
-          display: 'flex', alignItems: 'center', gap: 6,
+          display: 'flex', alignItems: 'center', gap: 8,
+          marginBottom: 8,
         }}>
-          <Icon name="star" size={11} color={T.gold} />
-          <span>{MONTHS[cycleIdx]} wants <strong>{seasonal.label}</strong></span>
-          <span style={{ opacity: .8, marginLeft: 'auto' }}>+{seasonal.bonusH?.toFixed(1)}H</span>
+          <SlotIcon slotTypeId={slotType.id} size={14} color={T.muted} />
+          <div style={{
+            fontSize: 10, fontWeight: 700,
+            color: T.muted, letterSpacing: '.14em',
+            textTransform: 'uppercase',
+          }}>
+            {slotType.label}
+          </div>
         </div>
-      )}
 
-      {/* CTA: proper button shape, accent-colored — clearly tappable */}
-      <div style={{
-        fontSize: 12,
-        color: T.accent,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        padding: '7px 12px',
-        background: T.accent + '14',
-        border: `1px solid ${T.accent}55`,
-        borderRadius: 4,
-        fontWeight: 600,
-        letterSpacing: '.02em',
-      }}>
-        <Icon name="plus" size={12} color={T.accent} />
-        <span>Plan a program</span>
-      </div>
+        {/* Editorial empty-state title — serif italic, suggests the void waiting to be filled */}
+        <div className="editorial" style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 36, 'wght' 500",
+          fontSize: 22, lineHeight: 1.1,
+          color: hover ? T.text : T.textDim,
+          fontStyle: 'italic',
+          marginBottom: 8,
+          transition: 'color .15s',
+        }}>
+          Awaiting program
+        </div>
+
+        {/* Slot description — kept brief */}
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontSize: 12, lineHeight: 1.5,
+          color: T.muted,
+          marginBottom: 14,
+        }}>
+          {slotType.desc}
+        </div>
+
+        {/* Seasonal hint — kept, but restyled to fit the new system */}
+        {seasonal && (
+          <div style={{
+            fontSize: 10.5,
+            padding: '7px 10px',
+            background: 'rgba(255, 209, 102, .08)',
+            border: `1px solid rgba(255, 209, 102, .3)`,
+            borderRadius: 3,
+            color: T.gold,
+            marginBottom: 12,
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <Icon name="star" size={11} color={T.gold} />
+            <span>{MONTHS[cycleIdx]} wants <strong>{seasonal.label}</strong></span>
+            <span style={{ opacity: .8, marginLeft: 'auto', fontFamily: FONTS.mono }}>
+              +{seasonal.bonusH?.toFixed(1)}H
+            </span>
+          </div>
+        )}
+
+        {/* CTA — outline button that fills in on card hover (parent-driven) */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '8px 14px',
+          background: hover ? T.accent : 'transparent',
+          color: hover ? T.bg : T.accent,
+          border: `1px solid ${T.accent}`,
+          borderRadius: 3,
+          fontSize: 11, fontWeight: 700,
+          letterSpacing: '.1em',
+          textTransform: 'uppercase',
+          transition: 'background .15s, color .15s',
+        }}>
+          <Icon name="plus" size={11} color={hover ? T.bg : T.accent} />
+          <span>Plan program</span>
+        </div>
       </button>
 
       {/* Auto-assign affordance — only shown if there's an idle scheduling director */}
       {canAssignAuto && !picking && (
         <div style={{
-          padding: '0 14px 12px',
+          padding: '0 16px 12px',
           display: 'flex', justifyContent: 'flex-end',
         }}>
           <button
@@ -141,11 +173,13 @@ function EmptySlotCard({
             style={{
               fontSize: 10, color: T.muted,
               background: 'transparent', border: `1px dashed ${T.border}`,
-              borderRadius: 3, padding: '4px 8px',
-              cursor: 'pointer', letterSpacing: '.05em',
+              borderRadius: 3, padding: '4px 9px',
+              cursor: 'pointer', letterSpacing: '.06em',
+              fontWeight: 500,
             }}
           >
-            🗓 Auto-assign director
+            <Icon name="calendar" size={10} color={T.muted} style={{ marginRight: 4 }} />
+            Auto-assign director
           </button>
         </div>
       )}
@@ -348,21 +382,29 @@ function ActiveRunCard({ run, slotType, cycleIdx, station, research, onCancel })
       {/* TITLE BLOCK */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{
-            fontSize: 10, color: T.muted, marginBottom: 3,
-            display: 'flex', alignItems: 'center', gap: 5,
-          }}>
-            {cat && <CategoryIcon categoryId={cat === CATEGORIES.movie ? 'movie' : cat === CATEGORIES.sports ? 'sports' : run.categoryId} size={12} color={catColor} />}
-            <span>{isMovie ? 'Movie' : isSports ? 'Sports Rights' : cat?.label}</span>
-            {run.seqSeason > 1 && (
-              <span style={{ color: T.purple, marginLeft: 4 }}>· S{run.seqSeason}</span>
-            )}
-          </div>
+          {/* Program name — Fraunces serif, prominent */}
           <div className="editorial" style={{
-            fontSize: 18, fontWeight: 600, color: T.text, lineHeight: 1.15,
-            letterSpacing: '-.005em',
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 600",
+            fontSize: 20, color: T.text, lineHeight: 1.15,
+            letterSpacing: '-.01em',
+            marginBottom: 4,
           }}>
             {displayName}
+          </div>
+          {/* Slugline — italic serif, category + season info */}
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 12, color: T.muted,
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            {cat && <CategoryIcon categoryId={cat === CATEGORIES.movie ? 'movie' : cat === CATEGORIES.sports ? 'sports' : run.categoryId} size={11} color={catColor} />}
+            <span>{isMovie ? 'Movie' : isSports ? 'Sports Rights' : cat?.label}</span>
+            {run.seqSeason > 1 && (
+              <span style={{ color: T.purple }}>· Season {run.seqSeason}</span>
+            )}
           </div>
         </div>
         {proj && <HTag tier={proj.tier} />}

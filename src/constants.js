@@ -161,19 +161,24 @@ export const MARKETS = {
   local: {
     id: 'local', label: 'Riverside Local',
     desc: 'A mid-size city of 2M. Friendly. Limited reach.',
-    pop: 2.0, audCap: 1.6, revPerViewer: 5.5,
+    // Local market econ: rebalanced down ~35% from earlier values. The
+    // previous numbers let players swim in cash by month 3 with mediocre
+    // play. New floor encourages reinvestment and slower compounding.
+    pop: 2.0, audCap: 1.6, revPerViewer: 3.5,
     fameThreshold: 0, nextFame: 25, famePerWin: 1.2, marketingMult: 0.6,
-    monthlyInfra: 0,
+    // Every station has overhead even at local scale — power, transmission,
+    // a skeleton crew. Local can't be free anymore.
+    monthlyInfra: 1.5,
     prodCostMult: 0.7,
     promoteCost: 0,
   },
   metro: {
     id: 'metro', label: 'Tri-State Metro',
     desc: '20M people across the Northeast corridor. Real competition.',
-    pop: 20, audCap: 12, revPerViewer: 6.5,
+    pop: 20, audCap: 12, revPerViewer: 5.0,
     fameThreshold: 25, nextFame: 60, famePerWin: 1.0, marketingMult: 1.0,
     // Operating at metro scale costs more. Studios, transmitters, bureaus.
-    monthlyInfra: 2.0,
+    monthlyInfra: 4.0,
     prodCostMult: 1.25,
     // One-time cost to ascend FROM local TO this tier
     promoteCost: 40,
@@ -181,9 +186,9 @@ export const MARKETS = {
   national: {
     id: 'national', label: 'National Network',
     desc: '380M Americans. The big leagues.',
-    pop: 380, audCap: 90, revPerViewer: 9.0,
+    pop: 380, audCap: 90, revPerViewer: 7.5,
     fameThreshold: 60, nextFame: null, famePerWin: 0.7, marketingMult: 1.6,
-    monthlyInfra: 5.0,
+    monthlyInfra: 9.0,
     prodCostMult: 1.6,
     promoteCost: 120,
   },
@@ -420,6 +425,47 @@ export const DIRECTORS = [
   { id: 'd_steveharvy',     name: 'Steve Harvy',        specialty: 'contest',  tier: 'Epic',      q: 1.4, h: 1.8, cost: 4.5  },
   { id: 'd_aliexttrebek',   name: 'Aliex Trebok',       specialty: 'contest',  tier: 'Rare',      q: 1.4, h: 0.9, cost: 2.5  },
   { id: 'd_localhost',      name: 'Jerry Donato',       specialty: 'contest',  tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
+  // ── Expanded pool (stage AE) ──────────────────────────
+  { id: 'd_maxinekerr_new', name: 'Maxine Kerr', specialty: 'news', tier: 'Common', q: 0.3, h: 0.2, cost: 0.3 },
+  { id: 'd_bensokolov_new', name: 'Ben Sokolov', specialty: 'news', tier: 'Uncommon', q: 0.7, h: 0.6, cost: 1.0 },
+  { id: 'd_patricemwangi_new', name: 'Patrice Mwangi', specialty: 'news', tier: 'Uncommon', q: 0.6, h: 0.6, cost: 1.0 },
+  { id: 'd_wolfblitzkin_new', name: 'Wolf Blitzkin', specialty: 'news', tier: 'Rare', q: 1.2, h: 0.9, cost: 2.5 },
+  { id: 'd_nailahashemi_new', name: 'Naila Hashemi', specialty: 'news', tier: 'Rare', q: 1.3, h: 0.9, cost: 2.3 },
+  { id: 'd_brianwilliamso_new', name: 'Brian Williamson', specialty: 'news', tier: 'Epic', q: 1.7, h: 1.5, cost: 5.0 },
+  { id: 'd_marcusakingbad_new', name: 'Marcus Akingbade', specialty: 'news', tier: 'Epic', q: 1.5, h: 1.4, cost: 4.8 },
+  { id: 'd_waltercrankrig_new', name: 'Walter Crankright', specialty: 'news', tier: 'Legendary', q: 2.1, h: 1.9, cost: 8.9 },
+  { id: 'd_kylebronson_rea', name: 'Kyle Bronson', specialty: 'reality', tier: 'Common', q: 0.3, h: 0.2, cost: 0.3 },
+  { id: 'd_jaxxonreed_rea', name: 'Jaxxon Reed', specialty: 'reality', tier: 'Uncommon', q: 0.7, h: 0.6, cost: 1.1 },
+  { id: 'd_adinapetrescu_rea', name: 'Adina Petrescu', specialty: 'reality', tier: 'Rare', q: 1.2, h: 0.9, cost: 2.3 },
+  { id: 'd_reggietatum_rea', name: 'Reggie Tatum', specialty: 'reality', tier: 'Epic', q: 1.6, h: 1.6, cost: 4.9 },
+  { id: 'd_miraantoniou_ser', name: 'Mira Antoniou', specialty: 'series', tier: 'Common', q: 0.3, h: 0.2, cost: 0.3 },
+  { id: 'd_ceciliamarchet_ser', name: 'Cecilia Marchetti', specialty: 'series', tier: 'Uncommon', q: 0.7, h: 0.6, cost: 1.0 },
+  { id: 'd_ezrabauerle_ser', name: 'Ezra Bauerle', specialty: 'series', tier: 'Rare', q: 1.2, h: 0.8, cost: 2.4 },
+  { id: 'd_damonlindelof_ser', name: 'Damon Lindelof', specialty: 'series', tier: 'Epic', q: 1.6, h: 1.4, cost: 5.3 },
+  { id: 'd_bibiokonkwo_lat', name: 'Bibi Okonkwo', specialty: 'latenight', tier: 'Common', q: 0.3, h: 0.2, cost: 0.3 },
+  { id: 'd_devonwhitaker_lat', name: 'Devon Whitaker', specialty: 'latenight', tier: 'Uncommon', q: 0.7, h: 0.6, cost: 1.1 },
+  { id: 'd_lilatan_lat', name: 'Lila Tan', specialty: 'latenight', tier: 'Uncommon', q: 0.7, h: 0.6, cost: 1.0 },
+  { id: 'd_conanobryant_lat', name: 'Conan O\'Bryant', specialty: 'latenight', tier: 'Rare', q: 1.2, h: 0.9, cost: 2.4 },
+  { id: 'd_trixiemathers_lat', name: 'Trixie Mathers', specialty: 'latenight', tier: 'Rare', q: 1.2, h: 0.9, cost: 2.5 },
+  { id: 'd_samanthabeeer_lat', name: 'Samantha Bee-er', specialty: 'latenight', tier: 'Epic', q: 1.5, h: 1.4, cost: 5.3 },
+  { id: 'd_lolaiyengar_spo', name: 'Lola Iyengar', specialty: 'sports', tier: 'Common', q: 0.3, h: 0.2, cost: 0.3 },
+  { id: 'd_hankcalloway_spo', name: 'Hank Calloway', specialty: 'sports', tier: 'Uncommon', q: 0.7, h: 0.6, cost: 1.0 },
+  { id: 'd_mercedesreyes_spo', name: 'Mercedes Reyes', specialty: 'sports', tier: 'Uncommon', q: 0.7, h: 0.6, cost: 1.0 },
+  { id: 'd_dextercheng_spo', name: 'Dexter Cheng', specialty: 'sports', tier: 'Rare', q: 1.1, h: 0.9, cost: 2.3 },
+  { id: 'd_jemelehills_spo', name: 'Jemele Hills', specialty: 'sports', tier: 'Epic', q: 1.6, h: 1.5, cost: 5.3 },
+  { id: 'd_pedromaldonado_fam', name: 'Pedro Maldonado', specialty: 'family', tier: 'Common', q: 0.3, h: 0.2, cost: 0.3 },
+  { id: 'd_olivierbertran_fam', name: 'Olivier Bertrand', specialty: 'family', tier: 'Uncommon', q: 0.6, h: 0.6, cost: 1.0 },
+  { id: 'd_natwexford_fam', name: 'Nat Wexford', specialty: 'family', tier: 'Rare', q: 1.2, h: 0.9, cost: 2.3 },
+  { id: 'd_toshiyamazaki_fam', name: 'Toshi Yamazaki', specialty: 'family', tier: 'Epic', q: 1.7, h: 1.5, cost: 4.8 },
+  { id: 'd_daisymcmillan_kid', name: 'Daisy McMillan', specialty: 'kids', tier: 'Common', q: 0.3, h: 0.2, cost: 0.3 },
+  { id: 'd_meilinchao_kid', name: 'Mei-Lin Chao', specialty: 'kids', tier: 'Uncommon', q: 0.7, h: 0.6, cost: 1.1 },
+  { id: 'd_yukaonishi_kid', name: 'Yuka Onishi', specialty: 'kids', tier: 'Rare', q: 1.3, h: 0.9, cost: 2.4 },
+  { id: 'd_wendellbrooks_kid', name: 'Wendell Brooks', specialty: 'kids', tier: 'Epic', q: 1.5, h: 1.4, cost: 4.8 },
+  { id: 'd_brocktempleton_con', name: 'Brock Templeton', specialty: 'contest', tier: 'Common', q: 0.3, h: 0.2, cost: 0.3 },
+  { id: 'd_quentinsato_con', name: 'Quentin Sato', specialty: 'contest', tier: 'Uncommon', q: 0.7, h: 0.6, cost: 1.0 },
+  { id: 'd_maxineotieno_con', name: 'Maxine Otieno', specialty: 'contest', tier: 'Rare', q: 1.2, h: 0.9, cost: 2.2 },
+  { id: 'd_padmalakshmin_con', name: 'Padma Lakshmin', specialty: 'contest', tier: 'Epic', q: 1.6, h: 1.5, cost: 5.0 },
+
 ]
 
 // ─── STARS POOL ──────────────────────────────────────────────────────────────
@@ -478,6 +524,42 @@ export const STARS = [
   { id: 's_ryanseaprest',  name: 'Ryan Seaprest',       specialty: 'contest',  tier: 'Epic',      q: 1.4, h: 2.2, cost: 5.5  },
   { id: 's_padmalakshmer', name: 'Padma Lakshmer',      specialty: 'contest',  tier: 'Rare',      q: 1.4, h: 1.4, cost: 2.6  },
   { id: 's_localhostess',  name: 'Theresa Gomez',       specialty: 'contest',  tier: 'Common',    q: 0.3, h: 0.3, cost: 0.3  },
+  // ── Expanded pool (stage AE) ──────────────────────────
+  { id: 's_sandyvance_new', name: 'Sandy Vance', specialty: 'news', tier: 'Common', q: 0.3, h: 0.4, cost: 0.3 },
+  { id: 's_renatacho_new', name: 'Renata Cho', specialty: 'news', tier: 'Uncommon', q: 0.6, h: 0.9, cost: 1.0 },
+  { id: 's_lianakarpov_new', name: 'Liana Karpov', specialty: 'news', tier: 'Rare', q: 1.0, h: 1.4, cost: 2.2 },
+  { id: 's_soledadreyes_new', name: 'Soledad Reyes', specialty: 'news', tier: 'Epic', q: 1.5, h: 2.2, cost: 5.8 },
+  { id: 's_ednamireles_new', name: 'Edna Mireles', specialty: 'news', tier: 'Legendary', q: 1.9, h: 3.1, cost: 10.8 },
+  { id: 's_trentbeauregar_rea', name: 'Trent Beauregard', specialty: 'reality', tier: 'Common', q: 0.3, h: 0.4, cost: 0.3 },
+  { id: 's_trevormcallist_rea', name: 'Trevor McAllister', specialty: 'reality', tier: 'Uncommon', q: 0.6, h: 0.9, cost: 1.0 },
+  { id: 's_veroniquelasal_rea', name: 'Veronique LaSalle', specialty: 'reality', tier: 'Rare', q: 1.0, h: 1.6, cost: 2.4 },
+  { id: 's_tylerdrake_rea', name: 'Tyler Drake', specialty: 'reality', tier: 'Epic', q: 1.5, h: 2.2, cost: 5.1 },
+  { id: 's_ronaldobachelo_rea', name: 'Ronaldo Bachelor', specialty: 'reality', tier: 'Legendary', q: 2.0, h: 3.2, cost: 11.6 },
+  { id: 's_reneewalsh_ser', name: 'Renee Walsh', specialty: 'series', tier: 'Common', q: 0.3, h: 0.4, cost: 0.3 },
+  { id: 's_beatricevu_ser', name: 'Beatrice Vu', specialty: 'series', tier: 'Uncommon', q: 0.6, h: 1.0, cost: 1.0 },
+  { id: 's_matilindqvist_ser', name: 'Mati Lindqvist', specialty: 'series', tier: 'Legendary', q: 2.1, h: 2.9, cost: 10.7 },
+  { id: 's_jennafrye_lat', name: 'Jenna Frye', specialty: 'latenight', tier: 'Common', q: 0.3, h: 0.4, cost: 0.3 },
+  { id: 's_sashapelletier_lat', name: 'Sasha Pelletier', specialty: 'latenight', tier: 'Uncommon', q: 0.6, h: 0.8, cost: 1.0 },
+  { id: 's_wandasykesbeck_lat', name: 'Wanda Sykes-Beckett', specialty: 'latenight', tier: 'Rare', q: 1.0, h: 1.4, cost: 2.4 },
+  { id: 's_amberruffinval_lat', name: 'Amber Ruffin-Vale', specialty: 'latenight', tier: 'Epic', q: 1.5, h: 2.1, cost: 5.2 },
+  { id: 's_carsontonight_lat', name: 'Carson Tonight', specialty: 'latenight', tier: 'Legendary', q: 1.9, h: 3.2, cost: 11.6 },
+  { id: 's_brendasallow_spo', name: 'Brenda Sallow', specialty: 'sports', tier: 'Common', q: 0.3, h: 0.4, cost: 0.3 },
+  { id: 's_pitasalesi_spo', name: 'Pita Salesi', specialty: 'sports', tier: 'Uncommon', q: 0.6, h: 1.0, cost: 1.0 },
+  { id: 's_lieslvanderber_spo', name: 'Liesl van der Berg', specialty: 'sports', tier: 'Rare', q: 1.0, h: 1.5, cost: 2.5 },
+  { id: 's_erinandrewski_spo', name: 'Erin Andrewski', specialty: 'sports', tier: 'Epic', q: 1.5, h: 2.1, cost: 5.6 },
+  { id: 's_vinscullys_spo', name: 'Vin Scullys', specialty: 'sports', tier: 'Legendary', q: 2.0, h: 3.1, cost: 10.6 },
+  { id: 's_briantanmurray_fam', name: 'Brian Tan-Murray', specialty: 'family', tier: 'Uncommon', q: 0.6, h: 0.9, cost: 1.0 },
+  { id: 's_elifriedlander_fam', name: 'Eli Friedlander', specialty: 'family', tier: 'Rare', q: 0.9, h: 1.4, cost: 2.4 },
+  { id: 's_rileyparksumne_kid', name: 'Riley Park-Sumner', specialty: 'kids', tier: 'Common', q: 0.3, h: 0.4, cost: 0.3 },
+  { id: 's_tesslockhart_kid', name: 'Tess Lockhart', specialty: 'kids', tier: 'Uncommon', q: 0.6, h: 1.0, cost: 1.0 },
+  { id: 's_hazelwhitechap_kid', name: 'Hazel Whitechapel', specialty: 'kids', tier: 'Rare', q: 1.0, h: 1.5, cost: 2.6 },
+  { id: 's_normhartling_kid', name: 'Norm Hartling', specialty: 'kids', tier: 'Epic', q: 1.3, h: 2.3, cost: 5.5 },
+  { id: 's_henriettaspark_kid', name: 'Henrietta Sparkles', specialty: 'kids', tier: 'Legendary', q: 1.9, h: 3.1, cost: 10.8 },
+  { id: 's_patsajaklite_con', name: 'Pat Sajak-Lite', specialty: 'contest', tier: 'Common', q: 0.3, h: 0.4, cost: 0.3 },
+  { id: 's_dorisvandergri_con', name: 'Doris Vandergriff', specialty: 'contest', tier: 'Uncommon', q: 0.6, h: 0.9, cost: 1.0 },
+  { id: 's_fridavespertin_con', name: 'Frida Vespertine', specialty: 'contest', tier: 'Rare', q: 0.9, h: 1.5, cost: 2.3 },
+  { id: 's_alextrebung_con', name: 'Alex Trebung', specialty: 'contest', tier: 'Legendary', q: 2.0, h: 3.1, cost: 10.9 },
+
 ]
 
 // ─── WRITERS POOL ────────────────────────────────────────────────────────────
@@ -538,6 +620,40 @@ export const WRITERS = [
   { id: 'w_contestlead',  name: 'Heidi Klamm',         specialty: 'contest',  tier: 'Epic',      skill: 0.68, cost: 1.2 },
   { id: 'w_contestrare',  name: 'Wally Tendulkar',     specialty: 'contest',  tier: 'Rare',      skill: 0.50, cost: 0.6 },
   { id: 'w_contestcomm',  name: 'Game-Show Hack',      specialty: 'contest',  tier: 'Common',    skill: 0.22, cost: 0.3 },
+  // ── Expanded pool (stage AE) ──────────────────────────
+  { id: 'w_victrillo_new', name: 'Vic Trillo', specialty: 'news', tier: 'Common', skill: 0.30, cost: 0.3 },
+  { id: 'w_diegovelasco_new', name: 'Diego Velasco', specialty: 'news', tier: 'Uncommon', skill: 0.40, cost: 0.6 },
+  { id: 'w_jorgeramosvega_new', name: 'Jorge Ramos-Vega', specialty: 'news', tier: 'Rare', skill: 0.60, cost: 0.6 },
+  { id: 'w_gretalindgren_new', name: 'Greta Lindgren', specialty: 'news', tier: 'Epic', skill: 0.70, cost: 1.2 },
+  { id: 'w_heathervesper_rea', name: 'Heather Vesper', specialty: 'reality', tier: 'Common', skill: 0.20, cost: 0.3 },
+  { id: 'w_indigosands_rea', name: 'Indigo Sands', specialty: 'reality', tier: 'Uncommon', skill: 0.40, cost: 0.6 },
+  { id: 'w_crispinvale_rea', name: 'Crispin Vale', specialty: 'reality', tier: 'Rare', skill: 0.50, cost: 0.6 },
+  { id: 'w_astridvolkov_rea', name: 'Astrid Volkov', specialty: 'reality', tier: 'Epic', skill: 0.60, cost: 1.1 },
+  { id: 'w_ottovogel_ser', name: 'Otto Vogel', specialty: 'series', tier: 'Common', skill: 0.20, cost: 0.3 },
+  { id: 'w_henrikdahl_ser', name: 'Henrik Dahl', specialty: 'series', tier: 'Uncommon', skill: 0.40, cost: 0.6 },
+  { id: 'w_imaniolatunji_ser', name: 'Imani Olatunji', specialty: 'series', tier: 'Rare', skill: 0.60, cost: 0.6 },
+  { id: 'w_phoebewallercr_ser', name: 'Phoebe Waller-Cross', specialty: 'series', tier: 'Epic', skill: 0.70, cost: 1.2 },
+  { id: 'w_charliemarin_lat', name: 'Charlie Marin', specialty: 'latenight', tier: 'Common', skill: 0.20, cost: 0.3 },
+  { id: 'w_karimboudjema_lat', name: 'Karim Boudjema', specialty: 'latenight', tier: 'Uncommon', skill: 0.40, cost: 0.6 },
+  { id: 'w_hasanminhajan_lat', name: 'Hasan Minhajan', specialty: 'latenight', tier: 'Rare', skill: 0.50, cost: 0.6 },
+  { id: 'w_trevornoahz_lat', name: 'Trevor Noahz', specialty: 'latenight', tier: 'Epic', skill: 0.70, cost: 1.2 },
+  { id: 'w_damontritt_spo', name: 'Damon Tritt', specialty: 'sports', tier: 'Common', skill: 0.20, cost: 0.3 },
+  { id: 'w_dontayhenson_spo', name: 'Dontay Henson', specialty: 'sports', tier: 'Uncommon', skill: 0.40, cost: 0.6 },
+  { id: 'w_kobiwatanabe_spo', name: 'Kobi Watanabe', specialty: 'sports', tier: 'Rare', skill: 0.50, cost: 0.6 },
+  { id: 'w_ianeaglesong_spo', name: 'Ian Eaglesong', specialty: 'sports', tier: 'Epic', skill: 0.70, cost: 1.2 },
+  { id: 'w_karenwei_fam', name: 'Karen Wei', specialty: 'family', tier: 'Common', skill: 0.20, cost: 0.3 },
+  { id: 'w_sagehopkins_fam', name: 'Sage Hopkins', specialty: 'family', tier: 'Uncommon', skill: 0.40, cost: 0.6 },
+  { id: 'w_mayaokafor_fam', name: 'Maya Okafor', specialty: 'family', tier: 'Rare', skill: 0.50, cost: 0.6 },
+  { id: 'w_lindakavanagh_fam', name: 'Linda Kavanagh', specialty: 'family', tier: 'Epic', skill: 0.70, cost: 1.1 },
+  { id: 'w_bingovasquez_kid', name: 'Bingo Vasquez', specialty: 'kids', tier: 'Common', skill: 0.20, cost: 0.3 },
+  { id: 'w_wesleyakingbad_kid', name: 'Wesley Akingbade', specialty: 'kids', tier: 'Uncommon', skill: 0.40, cost: 0.6 },
+  { id: 'w_theoschreiber_kid', name: 'Theo Schreiber', specialty: 'kids', tier: 'Rare', skill: 0.60, cost: 0.6 },
+  { id: 'w_sunnykapoor_kid', name: 'Sunny Kapoor', specialty: 'kids', tier: 'Epic', skill: 0.70, cost: 1.3 },
+  { id: 'w_hattieyoon_con', name: 'Hattie Yoon', specialty: 'contest', tier: 'Common', skill: 0.30, cost: 0.3 },
+  { id: 'w_julesmarceau_con', name: 'Jules Marceau', specialty: 'contest', tier: 'Uncommon', skill: 0.40, cost: 0.6 },
+  { id: 'w_raybonaventura_con', name: 'Ray Bonaventura', specialty: 'contest', tier: 'Rare', skill: 0.50, cost: 0.6 },
+  { id: 'w_drewcareylane_con', name: 'Drew Carey-Lane', specialty: 'contest', tier: 'Epic', skill: 0.70, cost: 1.3 },
+
 ]
 
 // Cap on simultaneously-employed writers. New game starts with 1 free writer.
@@ -1022,30 +1138,33 @@ export const STAR_TIER_MAX_FOR_SCRIPT = {
 // Niche channels (NatGeo etc.) only do one type of content.
 export const COMPETITORS = {
   local: [
-    // Local versions of the Big 4
+    // Local versions of the Big 4. Each fills ALL of the player's default
+    // slots so slot-leader achievements can fire from day 1 and the player
+    // never sees a "ghost slot" where no one is airing. New slots the player
+    // opens later (beyond DEFAULT_SLOT_IDS) only have 1-2 competitors in them.
     {
       id: 'local_kbc',    name: 'KBC Riverside',     tier: 'big4',
       strength: 0.85,     startCash: 50, startFame: 22,
       focusCats: ['news', 'series', 'reality'],
-      slotTypeIds: ['morning', 'prime', 'weekend_prime'],
+      slotTypeIds: ['morning', 'evening', 'prime', 'weekend_morning', 'weekend_prime'],
     },
     {
       id: 'local_kfb',    name: 'KFB Channel 4',     tier: 'big4',
       strength: 0.80,     startCash: 45, startFame: 18,
       focusCats: ['series', 'reality', 'movie'],
-      slotTypeIds: ['morning', 'prime', 'weekend_prime'],
+      slotTypeIds: ['morning', 'evening', 'prime', 'weekend_morning', 'weekend_prime'],
     },
     {
       id: 'local_kab',    name: 'KAB News 7',        tier: 'big4',
       strength: 0.75,     startCash: 40, startFame: 16,
       focusCats: ['news', 'family', 'movie'],
-      slotTypeIds: ['morning', 'prime', 'weekend_prime'],
+      slotTypeIds: ['morning', 'evening', 'prime', 'weekend_morning', 'weekend_prime'],
     },
     {
       id: 'local_kcb',    name: 'KCB Network',       tier: 'big4',
       strength: 0.70,     startCash: 38, startFame: 14,
       focusCats: ['reality', 'sports', 'series'],
-      slotTypeIds: ['morning', 'prime', 'weekend_prime'],
+      slotTypeIds: ['morning', 'evening', 'prime', 'weekend_morning', 'weekend_prime'],
     },
   ],
   metro: [
@@ -2173,14 +2292,133 @@ export const IP_LICENSE_TERMS = [
 ]
 
 // ─── NETWORK MARKETING CAMPAIGNS ─────────────────────────────────────────────
-// Brand-level campaigns (not tied to a single show). Raise station fame
-// AND give a small hype bump to every show airing this month.
+// Brand-level campaigns. The tiers form a ladder:
+//
+//   Local Buzz       — cheap, one-month, modest reach
+//   Regional Push    — medium, one-month, regional reach
+//   National Campaign — expensive, one-month, full reach
+//   Sponsor Event    — partner an industry event (Oscars-style). Multi-month.
+//   Sponsor Team     — official partner of a sports team. Long-running.
+//   Super Bowl Ad    — one-shot. Massive. But you only get to swing once.
+//
+// The bottom three (Sponsor Event, Sponsor Team, Super Bowl Ad) are
+// "input-driven" campaigns: the player picks a STAR they've hired plus
+// TWO of their shows. The campaign's effectiveness scales with the
+// quality + hype of those shows and the star's tier — i.e. a Super
+// Bowl ad featuring a Legendary star and two blockbuster shows is
+// devastating; the same ad with a Common nobody and middling shows is
+// money wasted.
+//
+// Effect fields:
+//   cost        — base cash cost (modified by marketing-VP staff effect)
+//   fameGain    — fame applied once at launch (also multiplied by inputs)
+//   hypeBoost   — added to every player airing each month the campaign is active
+//   monthsActive — how many months the campaign sustains its hype boost
+//   needsInputs — true if the campaign requires a star + 2 shows
+//   minMarket   — minimum station market to be eligible to launch
+//
+// Multi-campaign stacking is allowed (you can have a Sponsor Team running
+// while you also fire off a Super Bowl Ad in a clutch month). Effects add.
 export const NETWORK_CAMPAIGNS = [
-  { id: 'small',   label: 'Local Buzz',         cost: 3,   fameGain: 0.6, hypeBoost: 0.1, desc: 'Local radio + billboards. Modest reach.' },
-  { id: 'medium',  label: 'Regional Push',      cost: 9,   fameGain: 1.4, hypeBoost: 0.25, desc: 'Regional ads + media tour.' },
-  { id: 'big',     label: 'National Campaign',  cost: 22,  fameGain: 2.8, hypeBoost: 0.5, desc: 'TV + print + digital across the country.' },
-  { id: 'huge',    label: 'Brand Takeover',     cost: 50,  fameGain: 5.5, hypeBoost: 0.9, desc: 'Multi-channel saturation. Station-defining.' },
+  {
+    id: 'small',
+    label: 'Local Buzz', icon: '📻',
+    cost: 3,
+    fameGain: 0.6,
+    hypeBoost: 0.1,
+    monthsActive: 1,
+    needsInputs: false,
+    minMarket: 'local',
+    desc: 'Local radio + billboards. Modest reach.',
+  },
+  {
+    id: 'medium',
+    label: 'Regional Push', icon: '📰',
+    cost: 9,
+    fameGain: 1.4,
+    hypeBoost: 0.25,
+    monthsActive: 1,
+    needsInputs: false,
+    minMarket: 'local',
+    desc: 'Regional ads + media tour.',
+  },
+  {
+    id: 'big',
+    label: 'National Campaign', icon: '📺',
+    // National was previously $22M — re-tuned up since this is now genuinely
+    // the prestige "broad" tier between regional and the mega-campaigns.
+    cost: 45,
+    fameGain: 3.0,
+    hypeBoost: 0.55,
+    monthsActive: 1,
+    needsInputs: false,
+    minMarket: 'metro',
+    desc: 'TV + print + digital across the country. One-month saturation.',
+  },
+
+  // ── MEGA-CAMPAIGNS (input-driven, star + 2 shows) ─────────────────────
+  {
+    id: 'sponsor_event',
+    label: 'Sponsor Event', icon: '🎭',
+    cost: 80,
+    fameGain: 4.0,
+    hypeBoost: 0.65,
+    monthsActive: 3,
+    needsInputs: true,
+    minMarket: 'metro',
+    desc: 'Become the official sponsor of a major industry event (awards show, festival). 3 months of brand integration with a featured star and your tentpole shows.',
+  },
+  {
+    id: 'sponsor_team',
+    label: 'Sponsor Sports Team', icon: '🏟',
+    cost: 110,
+    fameGain: 5.0,
+    hypeBoost: 0.45,
+    monthsActive: 6,
+    needsInputs: true,
+    minMarket: 'metro',
+    desc: 'Official partner of a pro sports franchise — jersey patches, in-stadium ads, halftime spots. Sustained 6-month presence. Quieter per-month but it adds up.',
+  },
+  {
+    id: 'superbowl',
+    label: 'Super Bowl Ad', icon: '🏈',
+    cost: 200,
+    fameGain: 8.0,
+    hypeBoost: 2.0,
+    monthsActive: 1,
+    needsInputs: true,
+    minMarket: 'national',
+    desc: 'The biggest stage in advertising. One 60-second spot reaching 100M+ viewers. One month, but the burst is massive.',
+  },
 ]
+
+/** Compute the input-driven multiplier for a mega-campaign.
+ *  Takes the chosen star (or null) and the two chosen show programs
+ *  (each may be null if the player hasn't selected). Returns a number in
+ *  roughly [0.4, 1.7] — multiplied against the base hype/fame effect.
+ *
+ *  Bad inputs (no star, weak shows) cap the campaign near its floor.
+ *  Stacked inputs (Legendary star + two blockbusters) push it toward
+ *  the ceiling. The math:
+ *
+ *     showQ = avg(show1.trueQ, show2.trueQ) / 10        // 0..1
+ *     showH = avg(show1.trueH, show2.trueH) / 10        // 0..1
+ *     starP = (star.q + star.h) / 6                     // ~0..1 (capped at 1)
+ *     mult  = 0.4 + 0.5 * showQ + 0.3 * showH + 0.3 * starP
+ *
+ *  The 0.4 floor prevents a misfired campaign from being completely worthless
+ *  (you still got the ad slot). The coefficients add to 1.5 above the floor
+ *  so the ceiling is roughly 1.9.
+ */
+export function computeCampaignInputMultiplier(star, show1, show2) {
+  let qSum = 0, qN = 0, hSum = 0, hN = 0
+  if (show1) { qSum += show1.trueQ || 0; hSum += show1.trueH || 0; qN++; hN++ }
+  if (show2) { qSum += show2.trueQ || 0; hSum += show2.trueH || 0; qN++; hN++ }
+  const showQ = qN > 0 ? (qSum / qN) / 10 : 0
+  const showH = hN > 0 ? (hSum / hN) / 10 : 0
+  const starP = star ? Math.min(1, ((star.q || 0) + (star.h || 0)) / 6) : 0
+  return 0.4 + 0.5 * showQ + 0.3 * showH + 0.3 * starP
+}
 
 // ─── COMPETITOR SHOW NAME POOL ───────────────────────────────────────────────
 // Used by the AI competitor sim to generate show names per category.

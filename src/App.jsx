@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react'
-import { T, findBrand } from './theme'
+import { T, FONTS, findBrand } from './theme'
 import {
   MARKETS, RESEARCH, MOVIES, SLOT_TYPES, MONTHS,
   SPORTS_LEAGUES, IPS, IPS as IPS_FOR_NAMES,
@@ -54,6 +54,8 @@ import {
   buyIPLicense,
   activeIPLicenses,
   launchNetworkCampaign,
+  tickCampaigns,
+  migrateCampaignState,
   // 5a — writers + scripts
   hireWriter,
   fireWriter,
@@ -207,6 +209,10 @@ function hydrateLoadedGame(g) {
   }
   if (!g.station.specXP) g.station.specXP = { news: 0, reality: 0, series: 0, latenight: 0, sports: 0, movie: 0, family: 0, kids: 0 }
   if (!g.station.achievements) g.station.achievements = { unlocked: {} }
+  // Migrate the old singular activeCampaign into the new activeCampaigns array.
+  // This is a one-way migration — once a save has the array, the legacy field
+  // stays at null. Safe to call on already-migrated saves.
+  g.station = migrateCampaignState(g.station)
   if (!g.research.inProgress) g.research.inProgress = []
   if (!g.research.scriptTiersUnlocked) g.research.scriptTiersUnlocked = []
   if (!g.pendingHires) g.pendingHires = []
@@ -799,6 +805,12 @@ export default function App() {
         }))
       }
 
+      // Tick any active campaigns — decrement remaining months, drop expired ones.
+      // Multi-month mega-campaigns survive across months; single-month tiers
+      // (Local Buzz, Regional Push, National, Super Bowl Ad) expire after one tick.
+      const campaignTick = tickCampaigns(stationAfterStaff.activeCampaigns)
+      campaignTick.expired.forEach(c => logLines.push(`📣 Campaign ended: ${c.label}`))
+
       const baseStation = {
         ...stationAfterStaff,
         cash: r1(newCash),
@@ -809,7 +821,8 @@ export default function App() {
         scripts: tickedScripts.scripts,
         programs: programsAfterAirings,
         moviePacks: moviePacksAfterAirings,
-        activeCampaign: null,  // campaigns last only the month they're launched
+        activeCampaigns: campaignTick.campaigns,
+        activeCampaign: null,   // legacy field — keep at null going forward
         // v7: carry forward this month's specialization XP and any star-ups
         specStars: stationWithSpec.specStars,
         specXP:    stationWithSpec.specXP,
@@ -1177,7 +1190,11 @@ export default function App() {
     setGame((g) => {
       const result = hireTalent(g.station, role, talent, contractTypeId)
       if (result.error) return { ...g, log: [...g.log, `⚠ ${result.error}`] }
+      // Preserve `writers` — only filter the role-specific list. Without
+      // spreading the old roster, writers would silently disappear after
+      // the player hires their first director or star.
       const marketRoster = {
+        ...g.marketRoster,
         directors: g.marketRoster.directors.filter(d => !(role === 'director' && d.id === talent.id)),
         stars:     g.marketRoster.stars.filter(s => !(role === 'star' && s.id === talent.id)),
       }
@@ -1607,8 +1624,10 @@ export default function App() {
   }
 
   // ─── NETWORK CAMPAIGNS ──────────────────────────────────────────────
-  const onLaunchCampaign = (campaignId) => {
-    const probe = launchNetworkCampaign(game.station, campaignId, game.research)
+  // opts: { starId, showProgramIds: [a, b] } — required for mega-campaigns,
+  // ignored for the basic three (Local Buzz / Regional Push / National).
+  const onLaunchCampaign = (campaignId, opts = {}) => {
+    const probe = launchNetworkCampaign(game.station, campaignId, game.research, opts)
     if (probe.error) {
       playSound('error')
       setGame((g) => ({ ...g, log: [...g.log, `⚠ Campaign: ${probe.error}`] }))
@@ -1616,7 +1635,7 @@ export default function App() {
     }
     playSound('confirm')
     setGame((g) => {
-      const result = launchNetworkCampaign(g.station, campaignId, g.research)
+      const result = launchNetworkCampaign(g.station, campaignId, g.research, opts)
       if (result.error) return { ...g, log: [...g.log, `⚠ Campaign: ${result.error}`] }
       const entry = ledgerEntry({
         year: g.year, month: g.monthIdx,
@@ -1624,11 +1643,20 @@ export default function App() {
         label: `Network campaign: ${result.label}`,
         amount: -(result.cost || 0),
       })
+      // Stamp the year/month on the campaign so the UI can show how long it's been running
+      const station = {
+        ...result.station,
+        activeCampaigns: (result.station.activeCampaigns || []).map(c =>
+          c.id === result.campaign.id
+            ? { ...c, launchedYear: g.year, launchedMonth: g.monthIdx }
+            : c
+        ),
+      }
       return {
         ...g,
-        station: result.station,
+        station,
         ledger: [...(g.ledger || []), entry],
-        log: [...g.log, `📣 Network campaign launched: ${result.label}`],
+        log: [...g.log, `📣 Network campaign launched: ${result.label}${result.campaign.monthsTotal > 1 ? ` (${result.campaign.monthsTotal} months)` : ''}`],
       }
     })
   }
@@ -2132,46 +2160,71 @@ function PlanView({
   const filledCount = game.station.slotIds.filter((_, i) => runsBySlot[i]).length
   const totalSlots = game.station.slotIds.length
 
+  // Next month label — informative subtitle for the "Air Month" CTA reminder
+  const nextMonthLabel = MONTHS[(game.monthIdx + 1) % 12]
+
   return (
-    <div className="view-wrap" style={{ maxWidth: 1100, margin: '0 auto', padding: 18 }}>
-      {/* Broadcast schedule header */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
-        marginBottom: 18, gap: 16, flexWrap: 'wrap',
-      }}>
-        <div>
-          <div className="mono" style={{
-            fontSize: 11, color: T.muted, letterSpacing: '.15em', marginBottom: 4,
-          }}>
-            BROADCAST SCHEDULE · {MONTHS[game.monthIdx].toUpperCase()} Y{game.year}
-          </div>
-          <h1 className="display" style={{
-            fontSize: 32, color: T.text, letterSpacing: '.04em',
-            textTransform: 'uppercase', lineHeight: 1,
-          }}>
-            Programming
-          </h1>
-          <div style={{ fontSize: 12, color: T.muted, marginTop: 8, lineHeight: 1.5, maxWidth: 520 }}>
-            Fill empty slots with programs (1, 3, 6, or 12-month commitments) or sports rights.
-            Active programs auto-air each month.
-          </div>
-        </div>
+    <div className="view-wrap" style={{ maxWidth: 1280, margin: '0 auto', padding: '0 32px 48px' }}>
+
+      {/* ─── HERO ───
+          Editorial masthead — eyebrow with gold rule, Fraunces serif title,
+          summary subhead. Replaces the old centered Anton page-title block. */}
+      <div style={{ position: 'relative', padding: '48px 0 24px' }}>
         <div style={{
-          display: 'flex', alignItems: 'baseline', gap: 8,
-          padding: '10px 16px',
-          background: T.surface, border: `1px solid ${T.border}`,
-          borderRadius: 5,
+          width: 36, height: 2,
+          background: `linear-gradient(90deg, ${T.accent} 0%, transparent 100%)`,
+          marginBottom: 14,
+        }} />
+        <div style={{
+          fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+          textTransform: 'uppercase', color: T.accent, marginBottom: 14,
         }}>
-          <div className="mono" style={{ fontSize: 28, color: T.text, fontWeight: 700, letterSpacing: '-.02em' }}>
-            {filledCount}
-            <span style={{ color: T.muted, fontSize: 18, fontWeight: 400 }}> / {totalSlots}</span>
-          </div>
-          <div className="mono" style={{ fontSize: 10, color: T.muted, letterSpacing: '.1em' }}>
-            SLOTS<br/>FILLED
-          </div>
+          Broadcast Schedule · {MONTHS[game.monthIdx]} Y{game.year}
+        </div>
+        <h1 className="editorial" style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 144, 'wght' 600",
+          fontSize: 52, lineHeight: 0.95, letterSpacing: '-.025em',
+          color: T.text, marginBottom: 12,
+        }}>
+          Programming
+        </h1>
+        <div style={{
+          fontSize: 14, color: T.muted, lineHeight: 1.55, maxWidth: 540,
+        }}>
+          Fill empty slots with programs (1, 3, 6, or 12-month commitments) or sports rights.
+          Active programs auto-air each month.
         </div>
       </div>
 
+      {/* ─── SECTION HEAD ───
+          "Slot Lineup" + slot-counter to the right, with a gradient hairline below.
+          Replaces the right-aligned counter card. */}
+      <div style={{
+        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+        marginBottom: 22, paddingBottom: 12, position: 'relative',
+      }}>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 144, 'wght' 500",
+          fontSize: 28, letterSpacing: '-.01em', color: T.text,
+        }}>
+          Slot Lineup
+        </div>
+        <div style={{
+          fontFamily: FONTS.mono, fontSize: 11, letterSpacing: '.08em',
+          textTransform: 'uppercase', color: T.muted,
+        }}>
+          <span style={{ color: T.text, fontWeight: 600 }}>{filledCount}</span>
+          <span style={{ color: T.muted }}> / {totalSlots} </span>
+          <span style={{ color: T.accent }}>·</span> Slots filled
+        </div>
+        <div className="gradient-rule" style={{
+          position: 'absolute', left: 0, right: 0, bottom: 0,
+        }} />
+      </div>
+
+      {/* ─── SLOT GRID ─── */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
@@ -2198,51 +2251,103 @@ function PlanView({
         })}
       </div>
 
-      {/* Next month preview — Continue button is now in the top bar */}
+      {/* ─── NEXT MONTH BAND ───
+          Two-card row at the bottom — budget on the left (with editorial
+          slugline), CTA reminder on the right. Cleaner than the inline strip. */}
       <div style={{
-        marginTop: 22, padding: 16,
-        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
+        marginTop: 32,
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 12,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 140 }}>
-            <div className="mono" style={{ fontSize: 10, color: T.muted, letterSpacing: '.15em' }}>
-              NEXT MONTH BUDGET
-            </div>
-            <div className="mono" style={{
-              fontSize: 22, fontWeight: 700,
-              color: cashBlocker ? T.red : T.text,
-              marginTop: 4,
-              letterSpacing: '-.02em',
-            }}>{fmtM(totalCost)}</div>
-            <div style={{ fontSize: 11.5, color: T.muted, marginTop: 3 }}>
-              {game.runs.length} active program{game.runs.length === 1 ? '' : 's'}
-              {permanentCharge > 0 && ` · ${fmtM(permanentCharge)} contracts`}
-            </div>
+        {/* Budget card */}
+        <div style={{
+          padding: 18,
+          background: `linear-gradient(180deg, ${T.surface} 0%, rgba(15, 11, 22, 0.4) 100%)`,
+          border: `1px solid ${cashBlocker ? T.red : T.border}`,
+          borderRadius: 6,
+          transition: 'border-color .15s',
+        }}>
+          <div style={{
+            fontSize: 9.5, fontWeight: 600, letterSpacing: '.16em',
+            textTransform: 'uppercase', color: T.accent, marginBottom: 10,
+          }}>
+            Next Month Budget
           </div>
-          <div style={{ fontSize: 11.5, color: T.muted, fontStyle: 'italic', maxWidth: 220, textAlign: 'right' }}>
-            Tap <strong style={{ color: T.accent }}>Air Month ▸</strong> at the top to advance to {MONTHS[(game.monthIdx + 1) % 12]}.
+          <div style={{
+            fontFamily: FONTS.mono, fontSize: 28, fontWeight: 700,
+            color: cashBlocker ? T.red : T.text,
+            letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6,
+          }}>
+            {fmtM(totalCost)}
+          </div>
+          <div style={{
+            fontSize: 12, color: T.muted, fontStyle: 'italic',
+            fontFamily: FONTS.serif, fontVariationSettings: "'opsz' 14, 'wght' 400",
+          }}>
+            {game.runs.length} active program{game.runs.length === 1 ? '' : 's'}
+            {permanentCharge > 0 && ` · ${fmtM(permanentCharge)} in permanent contracts`}
+          </div>
+          {cashBlocker && (
+            <div style={{
+              marginTop: 12, padding: '8px 12px',
+              background: 'rgba(239, 69, 101, .08)',
+              border: `1px solid rgba(239, 69, 101, .3)`,
+              borderRadius: 4,
+              fontSize: 11.5, color: T.red, lineHeight: 1.4,
+            }}>
+              Not enough cash to advance. Cancel a run, fire someone, or check Financials.
+            </div>
+          )}
+        </div>
+
+        {/* Air-Month nudge card */}
+        <div style={{
+          padding: 18,
+          background: `linear-gradient(180deg, ${T.surface} 0%, rgba(15, 11, 22, 0.4) 100%)`,
+          border: `1px solid ${T.border}`,
+          borderRadius: 6,
+          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+        }}>
+          <div>
+            <div style={{
+              fontSize: 9.5, fontWeight: 600, letterSpacing: '.16em',
+              textTransform: 'uppercase', color: T.accent, marginBottom: 10,
+            }}>
+              Ready to Air
+            </div>
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 36, 'wght' 600",
+              fontSize: 22, lineHeight: 1.15, color: T.text,
+              marginBottom: 6,
+            }}>
+              {nextMonthLabel}, Y{game.year + ((game.monthIdx + 1) >= 12 ? 1 : 0)}
+            </div>
+            <div style={{
+              fontSize: 12, color: T.muted, lineHeight: 1.5,
+              fontStyle: 'italic',
+              fontFamily: FONTS.serif, fontVariationSettings: "'opsz' 14, 'wght' 400",
+            }}>
+              Tap{' '}
+              <span style={{
+                fontStyle: 'normal',
+                fontFamily: FONTS.sans, fontWeight: 700,
+                color: T.accent, letterSpacing: '.02em',
+              }}>Air Month ▸</span>{' '}
+              in the top bar to advance time.
+            </div>
           </div>
         </div>
-        {cashBlocker && (
-          <div style={{
-            marginTop: 12, padding: '8px 12px',
-            background: 'rgba(239, 69, 101, .08)',
-            border: `1px solid rgba(239, 69, 101, .3)`,
-            borderRadius: 4,
-            fontSize: 11.5, color: T.red,
-          }}>
-            Not enough cash to advance — cancel a run, fire someone, or check Financials.
-          </div>
-        )}
       </div>
 
       <ActivityLog log={game.log} />
 
       <div style={{
-        marginTop: 16, padding: '10px 14px',
-        fontSize: 10.5, color: T.muted, textAlign: 'center',
+        marginTop: 24, fontSize: 10.5, color: T.muted, textAlign: 'center',
+        letterSpacing: '.06em',
       }}>
-        Auto-saved. Use the settings menu (top-right) to switch slots or reset.
+        Auto-saved · Settings (top-right) to switch slots or reset.
       </div>
     </div>
   )
@@ -2253,19 +2358,30 @@ function PlanView({
 
 function ActivityLog({ log }) {
   const tail = log.slice(-6).reverse()
+  if (tail.length === 0) return null
   return (
     <div style={{
-      marginTop: 18, padding: 14,
-      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
+      marginTop: 32, padding: 20,
+      background: `linear-gradient(180deg, ${T.surface} 0%, rgba(15, 11, 22, 0.4) 100%)`,
+      border: `1px solid ${T.border}`,
+      borderRadius: 6,
     }}>
-      <div className="mono" style={{
-        fontSize: 10, letterSpacing: '.15em', color: T.muted, marginBottom: 10,
-      }}>ACTIVITY</div>
+      <div style={{
+        fontSize: 9.5, fontWeight: 600, letterSpacing: '.16em',
+        textTransform: 'uppercase', color: T.accent, marginBottom: 12,
+      }}>
+        Activity
+      </div>
       {tail.map((line, i) => (
-        <div key={i} className="mono" style={{
-          fontSize: 11.5,
-          color: i === 0 ? T.text : T.muted, padding: '3px 0',
-        }}>{line}</div>
+        <div key={i} style={{
+          fontFamily: FONTS.mono,
+          fontSize: 11.5, padding: '4px 0',
+          color: i === 0 ? T.text : T.muted,
+          opacity: i === 0 ? 1 : Math.max(0.4, 1 - i * 0.12),
+          transition: 'opacity .15s',
+        }}>
+          {line}
+        </div>
       ))}
     </div>
   )

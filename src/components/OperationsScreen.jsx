@@ -6,7 +6,7 @@ import {
   STAFF_ROLES, STAFF_SEARCHES, STAFF_SALARY_BY_TIER, STAFF_EFFECTS,
   STAFF_FIRE_PENALTY_MULT,
   DIRECTOR_ROLES, DIRECTOR_SALARY, DIRECTOR_HIRE_COST,
-  IP_LICENSE_TERMS, NETWORK_CAMPAIGNS,
+  IP_LICENSE_TERMS, NETWORK_CAMPAIGNS, computeCampaignInputMultiplier,
   CONTRACT_TYPES, TIERS, MARKET_ORDER,
   MOVIES, MOVIE_PACK_REBUY_HYPE_PENALTY, MOVIE_PACK_COOLDOWN_MONTHS,
   FIRE_PENALTY_MULT,
@@ -424,44 +424,114 @@ function RosterGroup({ title, items, role, onFire }) {
 }
 
 function MarketGroup({ title, pool, role, roomFull, onHire }) {
+  // Filters live in component state so the player can narrow a large pool.
+  // Default = "all" for both. With ~100 candidates per role at full game,
+  // the filters are how you find the specialist you want without scrolling.
+  const [specialtyFilter, setSpecialtyFilter] = useState('all')
+  const [tierFilter, setTierFilter] = useState('all')
+
   if ((pool || []).length === 0) return null
+
+  // Build the set of specialties that actually appear in the pool, so the
+  // dropdown doesn't list options that would return nothing.
+  const specialtiesInPool = [...new Set(pool.map(t => t.specialty))]
+  const filteredPool = pool.filter(t => {
+    if (specialtyFilter !== 'all' && t.specialty !== specialtyFilter) return false
+    if (tierFilter !== 'all' && t.tier !== tierFilter) return false
+    return true
+  })
+
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 11, color: T.text, fontWeight: 600, marginBottom: 6 }}>{title}</div>
-      {pool.slice(0, 12).map(t => {
-        const cat = CATEGORIES[t.specialty]
-        const canSign = !roomFull
-        return (
-          <div key={t.id} style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: 10, marginBottom: 5,
-            background: T.card, border: `1px solid ${T.border}`, borderRadius: 5,
-            opacity: canSign ? 1 : 0.6,
-          }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
-              <div style={{ fontSize: 10, color: T.muted }}>
-                {cat?.icon} {cat?.label} · Q +{t.q.toFixed(1)} H +{t.h.toFixed(1)} · ${t.cost.toFixed(1)}M/mo
+
+      {/* Filter row */}
+      <div style={{
+        display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10,
+        flexWrap: 'wrap',
+      }}>
+        <select
+          value={specialtyFilter}
+          onChange={e => setSpecialtyFilter(e.target.value)}
+          style={{
+            background: T.bg, color: T.text,
+            border: `1px solid ${T.border}`, borderRadius: 4,
+            padding: '5px 8px', fontSize: 11,
+          }}
+        >
+          <option value="all">All specialties</option>
+          {specialtiesInPool.map(s => (
+            <option key={s} value={s}>
+              {CATEGORIES[s]?.icon || ''} {CATEGORIES[s]?.label || s}
+            </option>
+          ))}
+        </select>
+        <select
+          value={tierFilter}
+          onChange={e => setTierFilter(e.target.value)}
+          style={{
+            background: T.bg, color: T.text,
+            border: `1px solid ${T.border}`, borderRadius: 4,
+            padding: '5px 8px', fontSize: 11,
+          }}
+        >
+          <option value="all">All tiers</option>
+          <option value="Common">Common</option>
+          <option value="Uncommon">Uncommon</option>
+          <option value="Rare">Rare</option>
+          <option value="Epic">Epic</option>
+          <option value="Legendary">Legendary</option>
+        </select>
+        <div style={{ fontSize: 10, color: T.muted, marginLeft: 'auto' }}>
+          {filteredPool.length} of {pool.length} shown
+        </div>
+      </div>
+
+      {filteredPool.length === 0 ? (
+        <div style={{
+          padding: 12, fontSize: 11, color: T.muted, fontStyle: 'italic',
+          textAlign: 'center',
+          background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 4,
+        }}>
+          No one matches those filters. Try widening them, or come back next month — new talent surfaces over time.
+        </div>
+      ) : (
+        // Show up to 30 (was 12 unfiltered); filter is the primary control now.
+        filteredPool.slice(0, 30).map(t => {
+          const cat = CATEGORIES[t.specialty]
+          const canSign = !roomFull
+          return (
+            <div key={t.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: 10, marginBottom: 5,
+              background: T.card, border: `1px solid ${T.border}`, borderRadius: 5,
+              opacity: canSign ? 1 : 0.6,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
+                <div style={{ fontSize: 10, color: T.muted }}>
+                  {cat?.icon} {cat?.label} · Q +{t.q.toFixed(1)} H +{t.h.toFixed(1)} · ${t.cost.toFixed(1)}M/mo
+                </div>
               </div>
+              <HTag tier={t.tier} />
+              <button
+                onClick={() => canSign && onHire(role, t)}
+                disabled={!canSign}
+                title={canSign ? undefined : 'Office full — fire someone or expand market first.'}
+                style={{
+                  background: canSign ? T.accent : T.card,
+                  color: canSign ? T.bg : T.muted,
+                  padding: '6px 12px',
+                  border: canSign ? 'none' : `1px solid ${T.border}`,
+                  borderRadius: 4,
+                  fontSize: 11, fontWeight: 700,
+                  cursor: canSign ? 'pointer' : 'not-allowed',
+                }}
+              >{canSign ? 'Sign' : 'OFFICE FULL'}</button>
             </div>
-            <HTag tier={t.tier} />
-            <button
-              onClick={() => canSign && onHire(role, t)}
-              disabled={!canSign}
-              title={canSign ? undefined : 'Office full — fire someone or expand market first.'}
-              style={{
-                background: canSign ? T.accent : T.card,
-                color: canSign ? T.bg : T.muted,
-                padding: '6px 12px',
-                border: canSign ? 'none' : `1px solid ${T.border}`,
-                borderRadius: 4,
-                fontSize: 11, fontWeight: 700,
-                cursor: canSign ? 'pointer' : 'not-allowed',
-              }}
-            >{canSign ? 'Sign' : 'OFFICE FULL'}</button>
-          </div>
-        )
-      })}
+          )
+        })
+      )}
     </div>
   )
 }
@@ -1126,63 +1196,392 @@ function effectSummary(role, tier) {
 }
 
 // ─── 4. MARKETING TAB ────────────────────────────────────────────────────
+//
+// Marketing campaigns are station-wide brand initiatives. The catalog is in
+// NETWORK_CAMPAIGNS in constants.js. Two flavors:
+//
+//   1. Quick campaigns (Local Buzz, Regional Push, National) — one click,
+//      no inputs needed. Effect lasts 1 month except where noted.
+//
+//   2. Mega campaigns (Sponsor Event, Sponsor Team, Super Bowl Ad) — open
+//      the CampaignLauncher modal where you pick a star + 2 shows. The
+//      effect scales with the chosen inputs' quality + hype + star tier.
+//
+// Multiple campaigns can stack. Active ones list at top with month counter.
 function MarketingTab({ station, research, onLaunchCampaign }) {
-  const active = station.activeCampaign
+  // Modal state: which mega-tier the player is configuring, null = closed
+  const [launcherTier, setLauncherTier] = useState(null)
+  const active = station.activeCampaigns || []
+
+  // Marketing-VP staff bonus — same logic the engine uses, but we recompute
+  // it here so the catalog shows accurate prices/effects.
+  const mktgEff = STAFF_EFFECTS.marketing?.[station.staff?.marketing?.tier]
+  const costMult = mktgEff?.mktgCostMult || 1.0
+  const impactMult = mktgEff?.mktgImpactMult || 1.0
+
+  // Market gating — check which tiers the player is allowed to launch
+  const marketRank = MARKET_ORDER.indexOf(station.market || 'local')
+
   return (
     <div>
       <div style={{ fontSize: 12, color: T.muted, marginBottom: 14, lineHeight: 1.5 }}>
-        Network-wide campaigns boost the station's fame and add a hype bonus to <strong>every show</strong> airing
-        the month they launch. Bigger campaigns hit harder. Effects last one month.
+        Station-wide campaigns boost <strong>every show</strong>'s hype while active and
+        grant a one-time fame bump on launch. Sponsorships run multiple months;
+        Super Bowl ads burn bright for one. Campaigns can stack.
       </div>
 
-      {active && (
-        <div style={{
-          marginBottom: 14, padding: 12,
-          background: T.gold + '14', border: `1px solid ${T.gold}55`, borderRadius: 6,
-        }}>
-          <div style={{ fontSize: 12, color: T.gold, fontWeight: 700 }}>
-            📣 Active this month: {active.label}
-          </div>
-          <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
-            +{active.fameGain.toFixed(1)} fame · +{active.hypeBoost.toFixed(2)} hype on all this month's shows
+      {active.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{
+            fontSize: 10, color: T.muted, letterSpacing: '.12em',
+            textTransform: 'uppercase', marginBottom: 6,
+          }}>Active ({active.length})</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {active.map(c => (
+              <ActiveCampaignCard key={c.id} c={c} />
+            ))}
           </div>
         </div>
       )}
 
+      <div style={{
+        fontSize: 10, color: T.muted, letterSpacing: '.12em',
+        textTransform: 'uppercase', marginBottom: 6,
+      }}>Launch a new campaign</div>
+
       <div style={{ display: 'grid', gap: 8 }}>
         {NETWORK_CAMPAIGNS.map(c => {
-          const eff = STAFF_EFFECTS.marketing?.[station.staff?.marketing?.tier]
-          const adjustedCost = c.cost * (eff?.mktgCostMult || 1.0)
-          const adjustedHype = c.hypeBoost * (eff?.mktgImpactMult || 1.0)
-          const adjustedFame = c.fameGain * (eff?.mktgImpactMult || 1.0)
-          const affordable = station.cash >= adjustedCost && !active
+          const adjustedCost = c.cost * costMult
+          const adjustedHype = c.hypeBoost * impactMult
+          const adjustedFame = c.fameGain * impactMult
+          const minRank = MARKET_ORDER.indexOf(c.minMarket || 'local')
+          const marketOk = marketRank >= minRank
+          const affordable = station.cash >= adjustedCost
+          const canLaunch = affordable && marketOk
+
+          // Mega campaigns open the modal; basic campaigns launch directly.
+          const handleClick = () => {
+            if (!canLaunch) return
+            if (c.needsInputs) setLauncherTier(c)
+            else onLaunchCampaign(c.id)
+          }
+
           return (
             <button
               key={c.id}
-              disabled={!affordable}
-              onClick={() => onLaunchCampaign(c.id)}
+              disabled={!canLaunch}
+              onClick={handleClick}
               style={{
                 padding: '12px 14px', textAlign: 'left',
-                background: affordable ? T.card : T.surface,
-                border: `1px solid ${T.border}`,
-                borderRadius: 5, cursor: affordable ? 'pointer' : 'not-allowed',
-                opacity: affordable ? 1 : 0.5, color: T.text,
+                background: canLaunch ? T.card : T.surface,
+                border: `1px solid ${c.needsInputs ? T.gold + '55' : T.border}`,
+                borderRadius: 5, cursor: canLaunch ? 'pointer' : 'not-allowed',
+                opacity: canLaunch ? 1 : 0.55, color: T.text,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontSize: 14, fontWeight: 700 }}>{c.icon} {c.label}</span>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>
+                  {c.icon || '📣'} {c.label}
+                  {c.needsInputs && (
+                    <span style={{
+                      marginLeft: 8, fontSize: 9, color: T.gold,
+                      background: T.gold + '22', border: `1px solid ${T.gold}66`,
+                      padding: '1px 6px', borderRadius: 3,
+                      letterSpacing: '.1em', fontWeight: 700,
+                    }}>MEGA</span>
+                  )}
+                </span>
                 <span style={{ fontFamily: 'JetBrains Mono', fontSize: 12, color: T.red, fontWeight: 700 }}>
                   ${adjustedCost.toFixed(1)}M
                 </span>
               </div>
-              <div style={{ fontSize: 11, color: T.muted }}>
-                +{adjustedFame.toFixed(1)} fame · +{adjustedHype.toFixed(2)} hype boost (one month)
+              <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4 }}>
+                {c.desc}
+              </div>
+              <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
+                +{adjustedFame.toFixed(1)} fame · +{adjustedHype.toFixed(2)} hype/mo · {c.monthsActive || 1} mo
+                {!marketOk && <span style={{ color: T.red, marginLeft: 6 }}>· Requires {c.minMarket} market</span>}
+                {marketOk && !affordable && <span style={{ color: T.red, marginLeft: 6 }}>· Not enough cash</span>}
+                {c.needsInputs && marketOk && affordable && (
+                  <span style={{ color: T.gold, marginLeft: 6 }}>· Tap to configure ▸</span>
+                )}
               </div>
             </button>
           )
         })}
       </div>
+
+      {launcherTier && (
+        <CampaignLauncher
+          tier={launcherTier}
+          station={station}
+          costMult={costMult}
+          impactMult={impactMult}
+          onCancel={() => setLauncherTier(null)}
+          onLaunch={(opts) => {
+            setLauncherTier(null)
+            onLaunchCampaign(launcherTier.id, opts)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/** Pinned card showing one active campaign, with a months-remaining badge. */
+function ActiveCampaignCard({ c }) {
+  // Multi-month campaigns show progress; one-month campaigns just show "1 mo".
+  const totalMonths = c.monthsTotal || 1
+  const remaining = c.monthsRemaining || 1
+  return (
+    <div style={{
+      padding: 10,
+      background: T.gold + '12',
+      border: `1px solid ${T.gold}55`, borderRadius: 5,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+        <span style={{ fontSize: 13, color: T.gold, fontWeight: 700 }}>
+          {c.icon || '📣'} {c.label}
+        </span>
+        <span style={{
+          fontSize: 10, fontFamily: 'JetBrains Mono', color: T.gold,
+          background: T.gold + '22', padding: '2px 8px', borderRadius: 3,
+        }}>
+          {remaining}/{totalMonths} mo left
+        </span>
+      </div>
+      <div style={{ fontSize: 10, color: T.muted, lineHeight: 1.4 }}>
+        +{(c.hypeBoost || 0).toFixed(2)} hype on every airing
+        {c.starName && ` · featuring ${c.starName}`}
+        {c.showNames?.length === 2 && ` · ${c.showNames[0]} + ${c.showNames[1]}`}
+      </div>
+      {c.inputMultiplier && c.inputMultiplier !== 1.0 && (
+        <div style={{ fontSize: 9, color: T.muted, marginTop: 3, fontStyle: 'italic' }}>
+          Input multiplier: ×{c.inputMultiplier.toFixed(2)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Modal for configuring a mega-campaign: pick star + 2 shows.
+ *  Shows live preview of effect strength as inputs change. */
+function CampaignLauncher({ tier, station, costMult, impactMult, onCancel, onLaunch }) {
+  // Eligible stars — only those the player has under contract
+  const hiredStars = (station.hiredStars || [])
+    .map(h => ({ contract: h, star: findStar(h.talentId) }))
+    .filter(({ star }) => star !== null)
+
+  // Eligible shows — any program the player owns. Includes producing,
+  // shelved, and currently-airing. We DON'T filter to airing-only because
+  // the campaign markets your tentpole catalog, not just what's on this
+  // week — Game of Thrones can be the face of an HBO ad even between
+  // seasons.
+  const programs = (station.programs || []).filter(p => p.status !== 'cancelled')
+
+  const [starId, setStarId] = useState(hiredStars[0]?.star?.id || '')
+  const [show1Id, setShow1Id] = useState(programs[0]?.id || '')
+  const [show2Id, setShow2Id] = useState(programs[1]?.id || '')
+
+  const star = starId ? findStar(starId) : null
+  const show1 = programs.find(p => p.id === show1Id) || null
+  const show2 = programs.find(p => p.id === show2Id) || null
+
+  // Live preview math — same formula the engine uses.
+  const inputMult = computeCampaignInputMultiplier(star, show1, show2)
+  const adjustedCost = tier.cost * costMult
+  const adjustedHype = tier.hypeBoost * inputMult * impactMult
+  const adjustedFame = tier.fameGain * inputMult * impactMult
+
+  // Validation
+  const hasEnoughStars = hiredStars.length >= 1
+  const hasEnoughShows = programs.length >= 2
+  const distinctShows = show1Id && show2Id && show1Id !== show2Id
+  const affordable = station.cash >= adjustedCost
+  const canLaunch = !!star && !!show1 && !!show2 && distinctShows && affordable
+
+  return (
+    <ModalOverlay onClose={onCancel}>
+      <div style={{ padding: 18, maxWidth: 540, width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+          <div>
+            <div className="bebas" style={{ fontSize: 22, color: T.gold, letterSpacing: '.02em' }}>
+              {tier.icon} {tier.label}
+            </div>
+            <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
+              {tier.monthsActive} month{tier.monthsActive > 1 ? 's' : ''} · {tier.minMarket} market minimum
+            </div>
+          </div>
+          <button onClick={onCancel} style={{
+            background: 'transparent', border: 'none', color: T.muted,
+            fontSize: 20, cursor: 'pointer', padding: 4,
+          }}>×</button>
+        </div>
+
+        <div style={{ fontSize: 12, color: T.textDim, marginBottom: 14, lineHeight: 1.5 }}>
+          {tier.desc}
+        </div>
+
+        {/* Star picker */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 10, color: T.muted, letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 5 }}>
+            Featured Star
+          </div>
+          {!hasEnoughStars ? (
+            <div style={{
+              padding: 10, background: T.bg, border: `1px solid ${T.red}55`,
+              borderRadius: 4, fontSize: 11, color: T.red,
+            }}>
+              You don't have any stars under contract. Sign one before launching this campaign.
+            </div>
+          ) : (
+            <select
+              value={starId}
+              onChange={e => setStarId(e.target.value)}
+              style={{
+                width: '100%', padding: '8px 10px',
+                background: T.bg, color: T.text,
+                border: `1px solid ${T.border}`, borderRadius: 4,
+                fontSize: 12,
+              }}
+            >
+              {hiredStars.map(({ star: s }) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} — {s.tier} {s.specialty} (Q+{s.q.toFixed(1)} H+{s.h.toFixed(1)})
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Show pickers */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 10, color: T.muted, letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 5 }}>
+            Tentpole Shows (choose 2)
+          </div>
+          {!hasEnoughShows ? (
+            <div style={{
+              padding: 10, background: T.bg, border: `1px solid ${T.red}55`,
+              borderRadius: 4, fontSize: 11, color: T.red,
+            }}>
+              You need at least two programs in your catalog before launching this campaign.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 6 }}>
+              <select
+                value={show1Id}
+                onChange={e => setShow1Id(e.target.value)}
+                style={{
+                  width: '100%', padding: '8px 10px',
+                  background: T.bg, color: T.text,
+                  border: `1px solid ${T.border}`, borderRadius: 4,
+                  fontSize: 12,
+                }}
+              >
+                <option value="">— Pick first show —</option>
+                {programs.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} (Q{p.trueQ?.toFixed(1) || '?'} H{p.trueH?.toFixed(1) || '?'})
+                  </option>
+                ))}
+              </select>
+              <select
+                value={show2Id}
+                onChange={e => setShow2Id(e.target.value)}
+                style={{
+                  width: '100%', padding: '8px 10px',
+                  background: T.bg, color: T.text,
+                  border: `1px solid ${T.border}`, borderRadius: 4,
+                  fontSize: 12,
+                }}
+              >
+                <option value="">— Pick second show —</option>
+                {programs.filter(p => p.id !== show1Id).map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} (Q{p.trueQ?.toFixed(1) || '?'} H{p.trueH?.toFixed(1) || '?'})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* Live preview */}
+        <div style={{
+          padding: 12, marginBottom: 14,
+          background: T.bg, border: `1px solid ${T.border}`, borderRadius: 5,
+        }}>
+          <div style={{
+            fontSize: 10, color: T.muted, letterSpacing: '.12em',
+            textTransform: 'uppercase', marginBottom: 6,
+          }}>Preview</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
+            <div>
+              <div style={{ color: T.muted, fontSize: 10 }}>Hype per airing</div>
+              <div style={{ color: T.gold, fontSize: 16, fontWeight: 700 }}>
+                +{adjustedHype.toFixed(2)}
+              </div>
+              <div style={{ color: T.muted, fontSize: 9 }}>
+                for {tier.monthsActive} month{tier.monthsActive > 1 ? 's' : ''}
+              </div>
+            </div>
+            <div>
+              <div style={{ color: T.muted, fontSize: 10 }}>Fame on launch</div>
+              <div style={{ color: T.gold, fontSize: 16, fontWeight: 700 }}>
+                +{adjustedFame.toFixed(1)}
+              </div>
+              <div style={{ color: T.muted, fontSize: 9 }}>
+                input multiplier ×{inputMult.toFixed(2)}
+              </div>
+            </div>
+          </div>
+          <div style={{
+            marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}`,
+            fontSize: 11, color: T.textDim, fontStyle: 'italic', lineHeight: 1.4,
+          }}>
+            {inputMult >= 1.5 ? `Excellent inputs — a stacked star and strong shows make this campaign roar.`
+              : inputMult >= 1.2 ? `Solid inputs — your campaign lands well.`
+              : inputMult >= 0.9 ? `Average inputs — the campaign does its job, no fireworks.`
+              : `Weak inputs — most of this spend won't translate. Consider stronger shows or a bigger star.`}
+          </div>
+        </div>
+
+        {/* Cost + launch */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <span style={{ fontSize: 11, color: T.muted }}>Cost</span>
+          <span style={{ fontFamily: 'JetBrains Mono', fontSize: 16, color: T.red, fontWeight: 700 }}>
+            ${adjustedCost.toFixed(1)}M
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onCancel} style={{
+            flex: 1, padding: '10px 14px',
+            background: T.card, color: T.text,
+            border: `1px solid ${T.border}`, borderRadius: 4,
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          }}>Cancel</button>
+          <button
+            onClick={() => canLaunch && onLaunch({ starId, showProgramIds: [show1Id, show2Id] })}
+            disabled={!canLaunch}
+            style={{
+              flex: 2, padding: '10px 14px',
+              background: canLaunch ? T.gold : T.border,
+              color: canLaunch ? T.bg : T.muted,
+              border: 'none', borderRadius: 4,
+              fontSize: 13, fontWeight: 700, cursor: canLaunch ? 'pointer' : 'not-allowed',
+              letterSpacing: '.05em',
+            }}
+          >
+            {!affordable ? 'NOT ENOUGH CASH'
+              : !star ? 'PICK A STAR'
+              : !show1 || !show2 ? 'PICK TWO SHOWS'
+              : !distinctShows ? 'PICK TWO DIFFERENT SHOWS'
+              : `LAUNCH · $${adjustedCost.toFixed(1)}M`}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
   )
 }
 

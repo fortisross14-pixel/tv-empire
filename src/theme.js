@@ -1,6 +1,11 @@
 // ─── PRESTIGE BROADCAST PALETTE ────────────────────────────────────────────
 // Deeper, more cinematic than v5. Warm amber stays as the system accent but
 // the canvas is darker and richer, with proper tonal separation between layers.
+//
+// v6: editorial polish pass. Added Fraunces serif tokens, finer accent shades,
+// gradient stops for stat bars, and tier color set used by talent + program
+// cards. Everything below `accentSoft` is new — old tokens kept stable so
+// screens not yet migrated stay rendering correctly.
 
 export const T = {
   // canvas layers (darkest → lightest)
@@ -32,6 +37,56 @@ export const T = {
   textDim:  '#bbb1c4',
   muted:    '#7a7389',
   mutedDim: '#4d4659',
+
+  // ─── v6 EDITORIAL TOKENS (added by stage AG) ─────────────────────────────
+  // These don't replace anything — they fill out the palette for the new
+  // editorial card language. Migrated screens (Programming first) use these.
+
+  // Finer accent shades for hover halos and faint backgrounds
+  accentSoft:    'rgba(240, 163, 71, 0.15)',   // 15% accent — hover halos, soft fills
+  accentFaint:   'rgba(240, 163, 71, 0.06)',   // 6% accent — barely-there glow
+  accentHi:      '#f0b35e',                     // slightly cooler amber for hover states
+
+  // Gradient stops — used as backgrounds via inline style for cards
+  cardGradTop:   '#221a30',
+  cardGradBot:   '#1c1428',
+  cardHiGradTop: '#2e2542',
+  cardHiGradBot: '#261c38',
+
+  // Stat bar gradients (Q teal→green, H amber→red)
+  qStart: '#45d9d9',
+  qEnd:   '#5fd68a',
+  hStart: '#ff9d4d',
+  hEnd:   '#ef4a6b',
+
+  // Tier color set — used on talent cards, program tier badges, etc.
+  // Each tier has a primary color + a 40% alpha border + 8% alpha background.
+  tier: {
+    legendary: { c: '#ffd166', b: 'rgba(255, 209, 102, 0.4)', bg: 'rgba(255, 209, 102, 0.08)' },
+    epic:      { c: '#c9a3ff', b: 'rgba(180, 117, 255, 0.4)', bg: 'rgba(180, 117, 255, 0.08)' },
+    rare:      { c: '#6ee8e8', b: 'rgba(69, 217, 217, 0.4)',  bg: 'rgba(69, 217, 217, 0.08)' },
+    uncommon:  { c: '#7ce0a3', b: 'rgba(95, 214, 138, 0.4)',  bg: 'rgba(95, 214, 138, 0.08)' },
+    common:    { c: '#bbb1c4', b: '#3d3552',                  bg: 'transparent' },
+  },
+
+  // Hairlines — gradient divider rule (gold→border→transparent)
+  // Use as: `background: T.ruleGold`
+  ruleGold: 'linear-gradient(90deg, rgba(240, 179, 94, 0.45) 0%, rgba(240, 179, 94, 0.15) 20%, #2a2438 40%, transparent 100%)',
+}
+
+// Font stacks — Fraunces for editorial display + Inter for UI + JetBrains for numbers.
+// CSS injection (in App entrypoint) loads these from Google Fonts.
+export const FONTS = {
+  serif: "'Fraunces', Georgia, serif",
+  sans:  "'Inter', -apple-system, system-ui, sans-serif",
+  mono:  "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+}
+
+// Tier name → tier token lookup. Centralizes the mapping so cards don't each
+// re-implement it.
+export function tierStyle(tierName) {
+  const k = (tierName || '').toLowerCase()
+  return T.tier[k] || T.tier.common
 }
 
 // Corporate brand presets — user picks ONE pair at setup.
