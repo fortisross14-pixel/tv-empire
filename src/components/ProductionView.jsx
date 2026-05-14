@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
-import { T } from '../theme.js'
+import { T, FONTS } from '../theme.js'
 import {
   CATEGORIES, MARKETING_TIERS, RUN_LENGTHS, MOVIES, MONTHS,
   PROD_DESIGN_TIERS, SFX_TIERS, MUSIC_TIERS, AUDIO_TIERS, SUBTITLE_TIERS, VIDEO_TIERS,
   SPORTS_LEAGUES,
   SCRIPT_TIER_RANK, STAR_TIER_MAX_FOR_SCRIPT,
 } from '../constants.js'
-import { HTag, SectionTitle, Card } from './ui.jsx'
+// Note: HTag/SectionTitle/Card from ./ui.jsx removed in stage AN — replaced
+// with inline editorial form vocabulary.
 import {
   findDirector, findStar, findIP, findLeague, findMovie,
   activeRoster, activeIPLicenses, ownsLicense,
@@ -33,30 +34,30 @@ import {
  * Estimated Q/H range stays visible at the bottom and re-rolls every time the
  * player toggles a meaningful field. They're not told *why* their pick raised
  * or lowered it — they have to read the numbers.
+ *
+ * Stage AN: full editorial migration. ALL state/effects/opts assembly is
+ * preserved verbatim — only the render layer is editorialized.
  */
 export function ProductionView({
   station, research, year, monthIdx,
   onBegin, onClose,
 }) {
-  // ── BUILD TYPE: script | movie | sports ─────────────────────────────────
+  // ── BUILD TYPE: script | movie | sports ─────────────────────────────
   const readyScripts = (station.scripts || []).filter(s => s.status === 'ready')
   const [buildType, setBuildType] = useState(readyScripts.length > 0 ? 'script' : 'movie')
 
-  // ── PRIMARY SELECTION ────────────────────────────────────────────────────
+  // ── PRIMARY SELECTION ──────────────────────────────────────────────
   const [scriptId, setScriptId] = useState(readyScripts[0]?.id || null)
   const [movieId, setMovieId] = useState(null)
   const [sportsLeagueId, setSportsLeagueId] = useState(null)
 
-  // ── NAME ─────────────────────────────────────────────────────────────────
+  // ── NAME ───────────────────────────────────────────────────────────
   const [name, setName] = useState('')
   const [nameTouched, setNameTouched] = useState(false)
   const script = scriptId ? readyScripts.find(s => s.id === scriptId) : null
   const movie = movieId ? findMovie(movieId) : null
   const league = sportsLeagueId ? findLeague(sportsLeagueId) : null
 
-  // Auto-fill name from the currently selected source — but only as long as
-  // the user hasn't manually typed in the field. Switching sources should
-  // always update the suggested title.
   useEffect(() => {
     if (nameTouched) return
     if (buildType === 'script' && script) setName(script.name)
@@ -65,10 +66,7 @@ export function ProductionView({
     else setName('')
   }, [buildType, scriptId, movieId, sportsLeagueId, script?.name, movie?.name, league?.label])
 
-  // ── DERIVED CATEGORY/TOPIC/IP ─────────────────────────────────────────────
-  // For script-based: category/topic/ip come from the script.
-  // For movie: category = 'movie' — no affinity applies, no crew needed.
-  // For sports: category = 'sports', topic = 'live'
+  // ── DERIVED CATEGORY/TOPIC/IP ──────────────────────────────────────
   const categoryId =
     buildType === 'script' ? script?.categoryId
     : buildType === 'movie' ? 'movie'
@@ -79,25 +77,20 @@ export function ProductionView({
     : 'live'
   const ipId = buildType === 'script' ? (script?.ipId || null) : null
 
-  // ── CREW (skipped for movies) ────────────────────────────────────────────
+  // ── CREW ───────────────────────────────────────────────────────────
   const roster = useMemo(() => activeRoster(station), [station.hiredDirectors, station.hiredStars])
   const needsCrew = buildType !== 'movie'
 
-  // Pre-filter to talent specialized in category (allowed to pick any; just sorted)
   const dirsSorted = useMemo(() => sortBySpecialty(roster.directors, categoryId), [roster.directors, categoryId])
   const starsSorted = useMemo(() => sortBySpecialty(roster.stars, categoryId), [roster.stars, categoryId])
   const [directorId, setDirectorId] = useState(dirsSorted[0]?.id || null)
   const [starId, setStarId] = useState(starsSorted[0]?.id || null)
-  // Second star is super-only.
   const [starId2, setStarId2] = useState(null)
 
-  // The script's tier drives a bunch of restrictions (which stars are allowed,
-  // which prod tiers, whether starId2 is available).
   const scriptTier = script?.tier || 'normal'
   const scriptTierRank = SCRIPT_TIER_RANK[scriptTier] ?? 0
   const allowedStarTiers = STAR_TIER_MAX_FOR_SCRIPT[scriptTier] || []
 
-  // Reset crew when category changes
   useEffect(() => {
     if (!needsCrew) return
     if (!directorId || !roster.directors.find(d => d.id === directorId)) {
@@ -108,8 +101,6 @@ export function ProductionView({
     }
   }, [categoryId, needsCrew])
 
-  // If the script tier no longer allows the currently selected star, switch to
-  // the first allowed star. If we drop below 'super', clear the second star.
   useEffect(() => {
     if (!needsCrew) return
     if (scriptTier !== 'super') setStarId2(null)
@@ -120,8 +111,6 @@ export function ProductionView({
     }
   }, [scriptTier, needsCrew])
 
-  // Same idea for the production tier picks — reset any that now exceed the
-  // script tier when the user switches scripts to a lower-tier draft.
   useEffect(() => {
     const isLocked = (id, list) => {
       const o = list.find(x => x.id === id)
@@ -134,12 +123,12 @@ export function ProductionView({
     if (isLocked(videoId, VIDEO_TIERS))            setVideoId('video_sd')
   }, [scriptTierRank])
 
-  // ── TIERS (blind — no good/bad badges) ───────────────────────────────────
+  // ── TIERS (blind — no good/bad badges) ─────────────────────────────
   const [prodDesignId, setProdDesignId] = useState('pd_realnormal')
   const [sfxId, setSfxId] = useState('sfx_none')
   const [musicId, setMusicId] = useState('mus_basic')
 
-  // ── TECH ─────────────────────────────────────────────────────────────────
+  // ── TECH ───────────────────────────────────────────────────────────
   const audioOpts = unlockedTechFor('audio', research)
   const subsOpts  = unlockedTechFor('subtitles', research)
   const videoOpts = unlockedTechFor('video', research)
@@ -147,27 +136,24 @@ export function ProductionView({
   const [subsId,  setSubsId]  = useState(subsOpts[0]?.id  || 'subs_none')
   const [videoId, setVideoId] = useState(videoOpts[0]?.id || 'video_sd')
 
-  // ── MARKETING ────────────────────────────────────────────────────────────
+  // ── MARKETING ──────────────────────────────────────────────────────
   const [marketingId, setMarketingId] = useState('none')
   const [prepareMerch, setPrepareMerch] = useState(false)
   const merchAvailable = canPrepareMerch(station, scriptTier)
-  // If user toggled merch but later swaps to a script tier that doesn't qualify,
-  // clear the flag so cost estimates don't show ghost merch dollars.
   useEffect(() => {
     if (!merchAvailable && prepareMerch) setPrepareMerch(false)
   }, [merchAvailable, prepareMerch])
 
-  // ── PLANNED RUN LENGTH (cosmetic for build; drives prod time) ────────────
+  // ── PLANNED RUN LENGTH ─────────────────────────────────────────────
   const [plannedRunMonths, setPlannedRunMonths] = useState(
     buildType === 'movie' ? 1 : (buildType === 'sports' ? 12 : 1)
   )
-  // Force valid lengths
   useEffect(() => {
     if (buildType === 'movie') setPlannedRunMonths(1)
     else if (buildType === 'sports') setPlannedRunMonths(12)
   }, [buildType])
 
-  // ── BUILD OPTS ASSEMBLY ──────────────────────────────────────────────────
+  // ── BUILD OPTS ASSEMBLY ────────────────────────────────────────────
   const opts = useMemo(() => ({
     name: name.trim(),
     scriptId: buildType === 'script' ? scriptId : null,
@@ -188,10 +174,7 @@ export function ProductionView({
        audioId, subsId, videoId, marketingId, plannedRunMonths,
        merchAvailable, prepareMerch])
 
-  // ── LIVE ESTIMATE (re-rolls slightly each toggle due to noise; that's OK) ──
-  // Use a deterministic seed-ish display: estimate once per change, but we'll
-  // refresh on tier toggles. Keep noise minimal by recalc-ing only on relevant
-  // option changes (useMemo handles it).
+  // ── LIVE ESTIMATE ──────────────────────────────────────────────────
   const [estVersion, setEstVersion] = useState(0)
   const estimate = useMemo(() => {
     if (buildType === 'script' && !scriptId) return null
@@ -204,7 +187,7 @@ export function ProductionView({
     }
   }, [opts, station, research, estVersion])
 
-  // ── COST ─────────────────────────────────────────────────────────────────
+  // ── COST ───────────────────────────────────────────────────────────
   const totalCost = useMemo(() => {
     if (buildType === 'script' && !scriptId) return 0
     if (buildType === 'movie' && !movieId) return 0
@@ -213,11 +196,10 @@ export function ProductionView({
     catch (e) { return 0 }
   }, [opts, station, research, year])
 
-  // ── PRODUCTION TIMING ────────────────────────────────────────────────────
+  // ── PRODUCTION TIMING ──────────────────────────────────────────────
   const method = useMemo(() => productionMethodFor(opts), [opts])
   const prodMonths = useMemo(() => productionMonthsFor(method, plannedRunMonths), [method, plannedRunMonths])
 
-  // Cost split (mirrors engine math, for display)
   const { prepCost, perAiring } = useMemo(() => {
     if (totalCost <= 0) return { prepCost: 0, perAiring: 0 }
     if (method === 'instant') return { prepCost: totalCost, perAiring: 0 }
@@ -226,13 +208,12 @@ export function ProductionView({
       const remain = totalCost - prep
       return { prepCost: prep, perAiring: Math.round((remain / Math.max(1, plannedRunMonths)) * 100) / 100 }
     }
-    // preproduced
     const prep = Math.round(totalCost * 0.9 * 10) / 10
     const remain = totalCost - prep
     return { prepCost: prep, perAiring: Math.round((remain / Math.max(1, plannedRunMonths)) * 100) / 100 }
   }, [totalCost, method, plannedRunMonths])
 
-  // ── VALIDATION ───────────────────────────────────────────────────────────
+  // ── VALIDATION ─────────────────────────────────────────────────────
   const canBegin = useMemo(() => {
     if (!name.trim() || name.trim().length < 2) return false
     if (buildType === 'script' && !scriptId) return false
@@ -248,18 +229,15 @@ export function ProductionView({
 
   const insufficient = station.cash < prepCost
 
-  // Sports-availability messaging (need 2-month lead: script+1mo prep)
   const sportsLeadMsg = useMemo(() => {
     if (buildType !== 'sports' || !sportsLeagueId) return null
     const lg = findLeague(sportsLeagueId)
     if (!lg) return null
-    // Next month they can air = monthIdx + 1 (after prep)
     const nextAir = (monthIdx + 1) % 12
     const inSeason = lg.season.includes(nextAir)
     if (inSeason) {
       return { ok: true, msg: `Production ready by ${MONTHS[nextAir]} — ${lg.label} is in-season then.` }
     }
-    // Find first in-season month after prep
     let m = nextAir
     let count = 0
     while (count < 12 && !lg.season.includes(m)) { m = (m + 1) % 12; count++ }
@@ -269,50 +247,70 @@ export function ProductionView({
     }
   }, [buildType, sportsLeagueId, monthIdx])
 
-  // ── RENDER ───────────────────────────────────────────────────────────────
+  // ── RENDER ─────────────────────────────────────────────────────────
   return (
-    <Modal onClose={onClose}>
+    <EditorialModal onClose={onClose}>
+      {/* ─── STICKY HEADER ─── */}
       <div style={{
-        position: 'sticky', top: -18, marginTop: -18, marginLeft: -18, marginRight: -18,
-        padding: '14px 18px', background: T.surface, borderBottom: `1px solid ${T.border}`,
+        position: 'sticky', top: -26, marginTop: -26, marginLeft: -26, marginRight: -26,
+        padding: '16px 26px',
+        background: T.surface,
+        borderBottom: `1px solid ${T.border}`,
         zIndex: 5,
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="bebas" style={{ fontSize: 18, color: T.accent, letterSpacing: '.08em' }}>
-            🎬 NEW PRODUCTION
+          <div>
+            <div style={{
+              fontSize: 9.5, fontWeight: 600, letterSpacing: '.2em',
+              textTransform: 'uppercase', color: T.accent,
+            }}>
+              Production
+            </div>
+            <h2 style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 144, 'wght' 600",
+              fontSize: 22, lineHeight: 1.05, letterSpacing: '-.015em',
+              color: T.text, marginTop: 2,
+            }}>
+              New production
+            </h2>
           </div>
           <button onClick={onClose} style={{
             background: 'transparent', border: 'none', color: T.muted,
-            fontSize: 18, cursor: 'pointer', padding: 4, lineHeight: 1,
-          }}>✕</button>
+            fontSize: 22, cursor: 'pointer', padding: 4, lineHeight: 1,
+            transition: 'color .15s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = T.text}
+          onMouseLeave={e => e.currentTarget.style.color = T.muted}
+          >✕</button>
         </div>
       </div>
 
-      <div style={{ paddingTop: 12 }}>
+      <div style={{ paddingTop: 18 }}>
 
-        {/* ── BUILD TYPE ─────────────────────────────────────────────── */}
-        <Field label="Source">
+        {/* ── BUILD TYPE ─── */}
+        <EditorialField label="Source">
           <div style={{ display: 'flex', gap: 6 }}>
-            <TypeChip label="📝 From Script" active={buildType === 'script'}
+            <TypeChip label="📝 From script" active={buildType === 'script'}
               disabled={readyScripts.length === 0}
               onClick={() => { setBuildType('script'); setEstVersion(v => v+1) }} />
             <TypeChip label="🎞 Movie" active={buildType === 'movie'}
               onClick={() => { setBuildType('movie'); setEstVersion(v => v+1) }} />
-            <TypeChip label="🏆 Sports Rights" active={buildType === 'sports'}
+            <TypeChip label="🏆 Sports rights" active={buildType === 'sports'}
               disabled={(station.sportsLicenses || []).filter(l => l.year === year).length === 0}
               onClick={() => { setBuildType('sports'); setEstVersion(v => v+1) }} />
           </div>
           {readyScripts.length === 0 && buildType === 'script' && (
-            <div style={{ fontSize: 11, color: T.gold, marginTop: 6 }}>
+            <FieldNote tone="gold">
               No ready scripts. Commission one in Content → Scripts first.
-            </div>
+            </FieldNote>
           )}
-        </Field>
+        </EditorialField>
 
-        {/* ── PRIMARY SELECTION ──────────────────────────────────────── */}
+        {/* ── PRIMARY SELECTION ─── */}
         {buildType === 'script' && readyScripts.length > 0 && (
-          <Field label="Script">
-            <select value={scriptId || ''} onChange={e => { setScriptId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
+          <EditorialField label="Script">
+            <EditorialSelect value={scriptId || ''} onChange={e => { setScriptId(e.target.value); setEstVersion(v => v+1) }}>
               {readyScripts.map(s => {
                 const cat = CATEGORIES[s.categoryId]
                 const tierLabel = (s.tier && s.tier !== 'normal') ? ` [${s.tier.toUpperCase()}]` : ''
@@ -323,30 +321,25 @@ export function ProductionView({
                   </option>
                 )
               })}
-            </select>
+            </EditorialSelect>
             {script && (
-              <div style={{
-                fontSize: 10.5, color: scriptTier === 'super' ? T.gold : (scriptTier === 'large' ? T.teal : T.muted),
-                marginTop: 4,
-                fontWeight: scriptTier !== 'normal' ? 600 : 400,
-              }}>
+              <FieldNote tone={scriptTier === 'super' ? 'gold' : scriptTier === 'large' ? 'teal' : 'muted'}>
                 {scriptTier === 'super' ? '★ Super script — top-tier production unlocked, cast 2 stars'
                   : scriptTier === 'large' ? '★ Large script — top-tier production unlocked'
                   : 'Normal script — Common/Uncommon/Rare stars only, mid-tier production max'}
-              </div>
+              </FieldNote>
             )}
             {script && script.timesUsed > 0 && (
-              <div style={{ fontSize: 10, color: T.gold, marginTop: 4 }}>
-                ⚠ Already used {script.timesUsed} time(s). Each use decays hype 20%.
-              </div>
+              <FieldNote tone="gold">
+                Already used {script.timesUsed} time{script.timesUsed > 1 ? 's' : ''} — each use decays hype 20%.
+              </FieldNote>
             )}
-          </Field>
+          </EditorialField>
         )}
 
         {buildType === 'movie' && (
-          <Field label="Movie Pack">
+          <EditorialField label="Movie pack">
             {(() => {
-              // Only packs the player currently owns and that still have airings left.
               const ownedActivePacks = (station.moviePacks || [])
                 .filter(p => (p.airingsLeft || 0) > 0)
                 .map(p => {
@@ -358,22 +351,28 @@ export function ProductionView({
               if (ownedActivePacks.length === 0) {
                 return (
                   <div style={{
-                    padding: '10px 12px',
-                    background: 'rgba(239, 69, 101, .06)',
-                    border: '1px dashed rgba(239, 69, 101, .4)',
+                    padding: '12px 14px',
+                    background: T.surface,
+                    border: `1px dashed ${T.red}55`,
+                    borderLeft: `2px solid ${T.red}`,
                     borderRadius: 4,
-                    fontSize: 12, color: '#ef4565', lineHeight: 1.5,
                   }}>
-                    No movie packs on shelf. Buy one in <strong>Operations → Purchase Rights</strong> first.
+                    <div style={{
+                      fontFamily: FONTS.serif,
+                      fontVariationSettings: "'opsz' 14, 'wght' 400",
+                      fontStyle: 'italic',
+                      fontSize: 13, color: T.text, lineHeight: 1.5,
+                    }}>
+                      No movie packs on shelf. Buy one in <span className="mono" style={{ fontStyle: 'normal', fontSize: 11.5, color: T.text }}>Operations → Rights</span> first.
+                    </div>
                   </div>
                 )
               }
 
               return (
-                <select
+                <EditorialSelect
                   value={movieId || ''}
                   onChange={e => { setMovieId(e.target.value); setEstVersion(v => v+1) }}
-                  style={inputStyle}
                 >
                   <option value="">— pick a pack —</option>
                   {ownedActivePacks.map(p => (
@@ -381,15 +380,15 @@ export function ProductionView({
                       {p.pack.name} · {p.pack.tier} · {p.airingsLeft}/{p.pack.packSize || 3} airings left
                     </option>
                   ))}
-                </select>
+                </EditorialSelect>
               )
             })()}
-          </Field>
+          </EditorialField>
         )}
 
         {buildType === 'sports' && (
-          <Field label="Sports Rights">
-            <select value={sportsLeagueId || ''} onChange={e => { setSportsLeagueId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
+          <EditorialField label="Sports rights">
+            <EditorialSelect value={sportsLeagueId || ''} onChange={e => { setSportsLeagueId(e.target.value); setEstVersion(v => v+1) }}>
               <option value="">— pick a league —</option>
               {(station.sportsLicenses || [])
                 .filter(l => l.year === year)
@@ -397,45 +396,64 @@ export function ProductionView({
                   const lg = findLeague(l.leagueId)
                   return <option key={l.leagueId} value={l.leagueId}>{lg?.icon} {lg?.label}</option>
                 })}
-            </select>
+            </EditorialSelect>
             {sportsLeadMsg && (
               <div style={{
-                fontSize: 11, marginTop: 6, padding: '6px 8px', borderRadius: 4,
-                background: sportsLeadMsg.ok ? T.green + '15' : T.gold + '15',
-                color: sportsLeadMsg.ok ? T.green : T.gold,
-                border: `1px solid ${sportsLeadMsg.ok ? T.green : T.gold}44`,
-              }}>{sportsLeadMsg.msg}</div>
+                marginTop: 8, padding: '10px 12px',
+                background: sportsLeadMsg.ok
+                  ? `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`
+                  : T.surface,
+                border: `1px solid ${sportsLeadMsg.ok ? T.green + '55' : T.gold + '55'}`,
+                borderLeft: `2px solid ${sportsLeadMsg.ok ? T.green : T.gold}`,
+                borderRadius: 3,
+              }}>
+                <div className="mono" style={{
+                  fontSize: 9, fontWeight: 700,
+                  letterSpacing: '.14em', textTransform: 'uppercase',
+                  color: sportsLeadMsg.ok ? T.green : T.gold,
+                  marginBottom: 3,
+                }}>
+                  {sportsLeadMsg.ok ? 'In season' : 'Out of season'}
+                </div>
+                <div style={{
+                  fontFamily: FONTS.serif,
+                  fontVariationSettings: "'opsz' 14, 'wght' 400",
+                  fontStyle: 'italic',
+                  fontSize: 12.5, color: T.textDim, lineHeight: 1.5,
+                }}>
+                  {sportsLeadMsg.msg}
+                </div>
+              </div>
             )}
-          </Field>
+          </EditorialField>
         )}
 
-        {/* ── NAME ───────────────────────────────────────────────────── */}
-        <Field label="Program Title">
-          <input
+        {/* ── NAME ─── */}
+        <EditorialField label="Program title">
+          <EditorialInput
             value={name}
             onChange={e => { setName(e.target.value); setNameTouched(true) }}
             placeholder="e.g. The Last Frontier"
-            style={inputStyle}
             maxLength={48}
           />
-        </Field>
+        </EditorialField>
 
-        {/* ── CREW ───────────────────────────────────────────────────── */}
+        {/* ── CREW ─── */}
         {needsCrew && (
           <>
-            <Field label="Director">
-              <select value={directorId || ''} onChange={e => { setDirectorId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
+            <EditorialField label="Director">
+              <EditorialSelect value={directorId || ''} onChange={e => { setDirectorId(e.target.value); setEstVersion(v => v+1) }}>
                 {dirsSorted.length === 0 && <option value="">— no directors on roster —</option>}
                 {dirsSorted.map(d => (
                   <option key={d.id} value={d.id}>
                     {d.name} · {d.tier} · best at {d.specialty}{d.specialty === categoryId ? ' ✓' : ''}
                   </option>
                 ))}
-              </select>
-            </Field>
+              </EditorialSelect>
+            </EditorialField>
 
-            <Field label={scriptTier === 'super' ? 'Lead Star' : 'Star'}>
-              <select value={starId || ''} onChange={e => { setStarId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
+            <EditorialField label={scriptTier === 'super' ? 'Lead star' : 'Star'}>
+              <EditorialSelect value={starId || ''} onChange={e => { setStarId(e.target.value); setEstVersion(v => v+1) }}>
                 {starsSorted.length === 0 && <option value="">— no stars on roster —</option>}
                 {starsSorted.map(s => {
                   const allowed = allowedStarTiers.includes(s.tier)
@@ -445,17 +463,17 @@ export function ProductionView({
                     </option>
                   )
                 })}
-              </select>
+              </EditorialSelect>
               {scriptTier !== 'super' && scriptTier !== 'large' && (
-                <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
+                <FieldNote tone="muted">
                   Epic/Legendary stars need Large/Super scripts.
-                </div>
+                </FieldNote>
               )}
-            </Field>
+            </EditorialField>
 
             {scriptTier === 'super' && (
-              <Field label="Co-Star (Super scripts only)">
-                <select value={starId2 || ''} onChange={e => { setStarId2(e.target.value || null); setEstVersion(v => v+1) }} style={inputStyle}>
+              <EditorialField label="Co-star · Super scripts only">
+                <EditorialSelect value={starId2 || ''} onChange={e => { setStarId2(e.target.value || null); setEstVersion(v => v+1) }}>
                   <option value="">— none —</option>
                   {starsSorted.filter(s => s.id !== starId).map(s => {
                     const allowed = allowedStarTiers.includes(s.tier)
@@ -465,28 +483,28 @@ export function ProductionView({
                       </option>
                     )
                   })}
-                </select>
-                <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
+                </EditorialSelect>
+                <FieldNote tone="muted">
                   Adds a second lead at 75% weight — meaningful Q + H boost.
-                </div>
-              </Field>
+                </FieldNote>
+              </EditorialField>
             )}
           </>
         )}
 
-        {/* ── TIERS (BLIND) ─────────────────────────────────────────── */}
+        {/* ── TIERS (BLIND) ─── */}
         {buildType !== 'movie' ? (
           <>
-            <Field label="Production Design">
+            <EditorialField label="Production design">
               <TierPicker
                 tiers={PROD_DESIGN_TIERS}
                 selectedId={prodDesignId}
                 onPick={(id) => { setProdDesignId(id); setEstVersion(v => v+1) }}
                 scriptTierRank={scriptTierRank}
               />
-            </Field>
+            </EditorialField>
 
-            <Field label="Special Effects">
+            <EditorialField label="Special effects">
               <TierPicker
                 tiers={SFX_TIERS}
                 selectedId={sfxId}
@@ -494,42 +512,55 @@ export function ProductionView({
                 scriptTierRank={scriptTierRank}
                 research={research}
               />
-            </Field>
+            </EditorialField>
 
-            <Field label="Music">
+            <EditorialField label="Music">
               <TierPicker
                 tiers={MUSIC_TIERS}
                 selectedId={musicId}
                 onPick={(id) => { setMusicId(id); setEstVersion(v => v+1) }}
                 scriptTierRank={scriptTierRank}
               />
-            </Field>
+            </EditorialField>
           </>
         ) : (
           <div style={{
-            padding: '10px 12px', marginBottom: 12, fontSize: 11,
-            background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4,
-            color: T.muted, lineHeight: 1.4,
+            padding: '12px 14px', marginBottom: 14,
+            background: T.surface,
+            border: `1px solid ${T.border}`,
+            borderLeft: `2px solid ${T.accent}`,
+            borderRadius: 3,
           }}>
-            Movies arrive already finished. You're just licensing the film and packaging it for air — pick marketing &amp; tech below.
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 14, 'wght' 400",
+              fontStyle: 'italic',
+              fontSize: 13, color: T.textDim, lineHeight: 1.55,
+            }}>
+              Movies arrive already finished. You're just licensing the film and packaging it for air — pick marketing & tech below.
+            </div>
           </div>
         )}
 
-        {/* ── TECH ───────────────────────────────────────────────────── */}
-        <details style={{ marginBottom: 10 }}>
-          <summary style={{
-            fontSize: 10, color: T.muted, letterSpacing: '.1em',
-            textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none',
-            marginBottom: 4,
-          }}>Technical Quality (tap to expand)</summary>
-          <TechRow label="Audio"     options={audioOpts}  selectedId={audioId} onPick={(id) => { setAudioId(id); setEstVersion(v => v+1) }} scriptTierRank={scriptTierRank} />
-          <TechRow label="Subtitles" options={subsOpts}   selectedId={subsId}  onPick={(id) => { setSubsId(id);  setEstVersion(v => v+1) }} scriptTierRank={scriptTierRank} />
-          <TechRow label="Video"     options={videoOpts}  selectedId={videoId} onPick={(id) => { setVideoId(id); setEstVersion(v => v+1) }} scriptTierRank={scriptTierRank} />
+        {/* ── TECH (collapsed by default) ─── */}
+        <details style={{ marginBottom: 14 }}>
+          <summary className="mono" style={{
+            fontSize: 9.5, color: T.muted, fontWeight: 700,
+            letterSpacing: '.16em', textTransform: 'uppercase',
+            cursor: 'pointer', userSelect: 'none', padding: '6px 0',
+          }}>
+            Technical quality · expand
+          </summary>
+          <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+            <TechRow label="Audio"     options={audioOpts}  selectedId={audioId} onPick={(id) => { setAudioId(id); setEstVersion(v => v+1) }} scriptTierRank={scriptTierRank} />
+            <TechRow label="Subtitles" options={subsOpts}   selectedId={subsId}  onPick={(id) => { setSubsId(id);  setEstVersion(v => v+1) }} scriptTierRank={scriptTierRank} />
+            <TechRow label="Video"     options={videoOpts}  selectedId={videoId} onPick={(id) => { setVideoId(id); setEstVersion(v => v+1) }} scriptTierRank={scriptTierRank} />
+          </div>
         </details>
 
-        {/* ── MARKETING ──────────────────────────────────────────────── */}
-        <Field label="Launch Marketing">
-          <select value={marketingId} onChange={e => { setMarketingId(e.target.value); setEstVersion(v => v+1) }} style={inputStyle}>
+        {/* ── MARKETING ─── */}
+        <EditorialField label="Launch marketing">
+          <EditorialSelect value={marketingId} onChange={e => { setMarketingId(e.target.value); setEstVersion(v => v+1) }}>
             {MARKETING_TIERS
               .filter(m => !m.localOnly || station.market === 'local')
               .map(m => {
@@ -540,152 +571,88 @@ export function ProductionView({
                   </option>
                 )
               })}
-          </select>
-        </Field>
+          </EditorialSelect>
+        </EditorialField>
 
-        {/* ── MERCHANDISING (Large/Super + Director of Merch only) ──── */}
+        {/* ── MERCHANDISING ─── */}
         {merchAvailable && (
-          <Field label="Merchandising">
-            <button
-              onClick={() => { setPrepareMerch(v => !v); setEstVersion(v => v+1) }}
-              style={{
-                width: '100%', textAlign: 'left',
-                background: prepareMerch ? T.accent + '22' : T.card,
-                border: `1.5px solid ${prepareMerch ? T.accent : T.border}`,
-                color: T.text, borderRadius: 5,
-                padding: '10px 12px', cursor: 'pointer',
-              }}
-            >
-              <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                marginBottom: 4,
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: prepareMerch ? T.accent : T.text }}>
-                  {prepareMerch ? '✓ ' : ''}Prepare Merchandising
-                </span>
-                <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono', color: T.red, fontWeight: 700 }}>
-                  +{fmtM(merchPrepareCost(scriptTier))} upfront
-                </span>
-              </div>
-              <div style={{ fontSize: 10.5, color: T.muted, lineHeight: 1.4 }}>
-                Heavy upfront bet. Per-airing revenue scales with hype<sup>1.8</sup> × quality —
-                mid-range performance loses money, but a hit returns it many times over.
-              </div>
-            </button>
-          </Field>
+          <EditorialField label="Merchandising">
+            <MerchToggle
+              active={prepareMerch}
+              cost={merchPrepareCost(scriptTier)}
+              onToggle={() => { setPrepareMerch(v => !v); setEstVersion(v => v+1) }}
+            />
+          </EditorialField>
         )}
 
-        {/* ── RUN LENGTH (preproduced/live only) ─────────────────────── */}
+        {/* ── RUN LENGTH ─── */}
         {buildType === 'script' && (
-          <Field label="Planned Airing Length">
+          <EditorialField label="Planned airing length">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {RUN_LENGTHS.map(rl => (
-                <button key={rl.id}
-                  onClick={() => { setPlannedRunMonths(rl.months); setEstVersion(v => v+1) }}
-                  style={{
-                    background: plannedRunMonths === rl.months ? T.accent + '33' : 'transparent',
-                    border: `1px solid ${plannedRunMonths === rl.months ? T.accent : T.border}`,
-                    color: plannedRunMonths === rl.months ? T.accent : T.muted,
-                    borderRadius: 4, padding: '6px 12px',
-                    fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  }}>{rl.label}</button>
+                <Chip key={rl.id}
+                  label={rl.label}
+                  active={plannedRunMonths === rl.months}
+                  onClick={() => { setPlannedRunMonths(rl.months); setEstVersion(v => v+1) }} />
               ))}
             </div>
-          </Field>
+          </EditorialField>
         )}
 
-        {/* ── ESTIMATE (live, sticky-ish) ────────────────────────────── */}
-        <div style={{
-          marginTop: 14, padding: 12,
-          background: T.bg, border: `1px solid ${T.accent}55`, borderRadius: 6,
-        }}>
-          <div style={{ fontSize: 10, color: T.muted, letterSpacing: '.1em', marginBottom: 6 }}>
-            ESTIMATE
-          </div>
-          {!estimate ? (
-            <div style={{ fontSize: 11, color: T.muted, fontStyle: 'italic' }}>
-              Pick a source to see estimate.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 100 }}>
-                <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.07em', textTransform: 'uppercase' }}>Quality</div>
-                <div style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: T.text, fontWeight: 700,
-                }}>{estimate.qRange[0]}–{estimate.qRange[1]}</div>
-              </div>
-              <div style={{ flex: 1, minWidth: 100 }}>
-                <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.07em', textTransform: 'uppercase' }}>Hype</div>
-                <div style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: T.gold, fontWeight: 700,
-                }}>{estimate.hRange[0]}–{estimate.hRange[1]}</div>
-              </div>
-              <div style={{ flex: 1, minWidth: 100 }}>
-                <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.07em', textTransform: 'uppercase' }}>Production</div>
-                <div style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: T.text, fontWeight: 600,
-                }}>
-                  {method === 'instant' ? 'Instant' : `${prodMonths} mo`}
-                </div>
-                <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>
-                  {method === 'instant' ? 'Movie' : method === 'live' ? 'Live (per-airing cost)' : 'Pre-produced'}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div style={{
-            marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.border}`,
-            display: 'flex', gap: 14, fontSize: 11,
-          }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Upfront</div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: insufficient ? T.red : T.text, fontWeight: 700 }}>
-                {fmtM(prepCost)}
-              </div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Per Airing</div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: T.text, fontWeight: 700 }}>
-                {perAiring > 0 ? fmtM(perAiring) : '—'}
-              </div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Total Cost</div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: T.text, fontWeight: 700 }}>
-                {fmtM(totalCost)}
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* ── ESTIMATE ─── */}
+        <EstimateCard
+          estimate={estimate}
+          method={method}
+          prodMonths={prodMonths}
+          prepCost={prepCost}
+          perAiring={perAiring}
+          totalCost={totalCost}
+          insufficient={insufficient}
+        />
 
         {insufficient && (
           <div style={{
-            marginTop: 8, padding: '6px 10px', fontSize: 11,
-            background: T.red + '15', border: `1px solid ${T.red}55`, color: T.red, borderRadius: 4,
-          }}>Not enough cash — you have {fmtM(station.cash)} but need {fmtM(prepCost)} upfront.</div>
+            marginTop: 10, padding: '10px 12px',
+            background: T.surface,
+            border: `1px dashed ${T.red}55`,
+            borderLeft: `2px solid ${T.red}`,
+            borderRadius: 3,
+          }}>
+            <div className="mono" style={{
+              fontSize: 10, color: T.red, fontWeight: 700,
+              letterSpacing: '.14em', textTransform: 'uppercase',
+            }}>
+              Need {fmtM(prepCost)} upfront · have {fmtM(station.cash)}
+            </div>
+          </div>
         )}
 
-        {/* ── BUTTONS ────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <button onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button
+        {/* ── BUTTONS ─── */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
+          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
+          <PrimaryButton
             onClick={() => canBegin && onBegin(opts)}
             disabled={!canBegin}
-            style={{ ...btnPrimary, opacity: canBegin ? 1 : 0.4, cursor: canBegin ? 'pointer' : 'not-allowed' }}
           >
-            Begin Production {prodMonths > 0 && `(${prodMonths} mo)`}
-          </button>
+            Begin production {prodMonths > 0 && `· ${prodMonths} mo`}
+          </PrimaryButton>
         </div>
       </div>
-    </Modal>
+    </EditorialModal>
   )
 }
 
-// ─── SUBCOMPONENTS ──────────────────────────────────────────────────────────
+// ─── SUBCOMPONENTS ──────────────────────────────────────────────────
+
+/** Tier picker for prod-design/SFX/music — gradient surface, locked = dashed.
+ *  Blind picker (no good/bad labels — player has to read the cost). */
 function TierPicker({ tiers, selectedId, onPick, scriptTierRank = 0, research = {} }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+      gap: 6,
+    }}>
       {tiers.map(t => {
         const isSel = t.id === selectedId
         const needRank = SCRIPT_TIER_RANK[t.minScriptTier] ?? 0
@@ -693,54 +660,99 @@ function TierPicker({ tiers, selectedId, onPick, scriptTierRank = 0, research = 
         const needsResearch = t.requires && !(research?.unlocked || []).includes(t.requires)
         const locked = lockedScript || needsResearch
         return (
-          <button
+          <TierPickerCard
             key={t.id}
+            tier={t}
+            isSel={isSel}
+            locked={locked}
+            lockedScript={lockedScript}
+            needsResearch={needsResearch}
             onClick={() => !locked && onPick(t.id)}
-            disabled={locked}
-            style={{
-              background: isSel ? T.accent + '22' : T.card,
-              border: `1.5px solid ${isSel ? T.accent : T.border}`,
-              borderRadius: 5, padding: '8px 10px',
-              textAlign: 'left',
-              cursor: locked ? 'not-allowed' : 'pointer',
-              opacity: locked ? 0.45 : 1,
-              color: T.text,
-            }}
-          >
-            <div style={{
-              fontSize: 12, fontWeight: 700,
-              color: isSel ? T.accent : T.text,
-              marginBottom: 3, lineHeight: 1.2,
-            }}>{t.label}{locked && ' 🔒'}</div>
-            <div style={{ fontSize: 10, color: T.muted, lineHeight: 1.3 }}>{t.desc}</div>
-            <div style={{
-              fontSize: 10, color: T.text, marginTop: 5,
-              fontFamily: "'JetBrains Mono', monospace", fontWeight: 600,
-            }}>
-              {t.cost > 0 ? fmtM(t.cost) : 'free'}
-            </div>
-            {lockedScript && (
-              <div style={{ fontSize: 9, color: T.red, marginTop: 3 }}>
-                Requires {t.minScriptTier} script
-              </div>
-            )}
-            {!lockedScript && needsResearch && (
-              <div style={{ fontSize: 9, color: T.red, marginTop: 3 }}>
-                Needs research unlock
-              </div>
-            )}
-          </button>
+          />
         )
       })}
     </div>
   )
 }
 
+function TierPickerCard({ tier, isSel, locked, lockedScript, needsResearch, onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      disabled={locked}
+      style={{
+        background: isSel
+          ? T.accent + '18'
+          : (hover && !locked
+              ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+              : T.surface),
+        border: isSel
+          ? `1px solid ${T.accent}`
+          : `1px ${locked ? 'dashed' : 'solid'} ${locked ? T.border : (hover ? T.borderHi : T.border)}`,
+        borderRadius: 5,
+        padding: '9px 11px',
+        textAlign: 'left',
+        cursor: locked ? 'not-allowed' : 'pointer',
+        opacity: locked ? 0.55 : 1,
+        color: T.text,
+        fontFamily: FONTS.sans,
+        transition: 'background .15s, border-color .15s',
+      }}
+    >
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 24, 'wght' 600",
+        fontSize: 13, letterSpacing: '-.005em',
+        color: isSel ? T.accent : T.text,
+        marginBottom: 4, lineHeight: 1.2,
+      }}>
+        {tier.label}{locked && ' 🔒'}
+      </div>
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 11, color: T.muted, lineHeight: 1.4, marginBottom: 6,
+      }}>
+        {tier.desc}
+      </div>
+      <div className="mono" style={{
+        fontSize: 10.5, color: T.text, fontWeight: 700, letterSpacing: '-.005em',
+      }}>
+        {tier.cost > 0 ? fmtM(tier.cost) : 'free'}
+      </div>
+      {lockedScript && (
+        <div className="mono" style={{
+          fontSize: 9, color: T.red, fontWeight: 700,
+          letterSpacing: '.12em', textTransform: 'uppercase', marginTop: 5,
+        }}>
+          Needs {tier.minScriptTier} script
+        </div>
+      )}
+      {!lockedScript && needsResearch && (
+        <div className="mono" style={{
+          fontSize: 9, color: T.red, fontWeight: 700,
+          letterSpacing: '.12em', textTransform: 'uppercase', marginTop: 5,
+        }}>
+          Needs research
+        </div>
+      )}
+    </button>
+  )
+}
+
+/** Tech row (audio / subs / video) — small mono label + editorial select. */
 function TechRow({ label, options, selectedId, onPick, scriptTierRank = 0 }) {
   return (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{ fontSize: 10, color: T.muted, marginBottom: 3 }}>{label}</div>
-      <select value={selectedId} onChange={e => onPick(e.target.value)} style={inputStyle}>
+    <div>
+      <div className="mono" style={{
+        fontSize: 9, color: T.muted, fontWeight: 700,
+        letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 4,
+      }}>{label}</div>
+      <EditorialSelect value={selectedId} onChange={e => onPick(e.target.value)}>
         {options.map(o => {
           const needRank = SCRIPT_TIER_RANK[o.minScriptTier] ?? 0
           const locked = needRank > scriptTierRank
@@ -750,34 +762,185 @@ function TechRow({ label, options, selectedId, onPick, scriptTierRank = 0 }) {
             </option>
           )
         })}
-      </select>
+      </EditorialSelect>
     </div>
   )
 }
 
+/** Type chip — used for the source picker (script/movie/sports). */
 function TypeChip({ label, active, disabled, onClick }) {
+  const [hover, setHover] = useState(false)
   return (
-    <button onClick={onClick} disabled={disabled} style={{
-      flex: 1, padding: '8px 6px',
-      background: active ? T.accent + '33' : T.card,
-      border: `1.5px solid ${active ? T.accent : T.border}`,
-      borderRadius: 5,
-      color: active ? T.accent : (disabled ? T.muted : T.text),
-      fontSize: 11, fontWeight: active ? 700 : 500,
-      cursor: disabled ? 'not-allowed' : 'pointer',
-      opacity: disabled ? 0.45 : 1,
-    }}>{label}</button>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flex: 1, padding: '10px 8px',
+        background: active
+          ? T.accent + '18'
+          : (hover && !disabled
+              ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+              : T.surface),
+        border: active
+          ? `1px solid ${T.accent}`
+          : `1px ${disabled ? 'dashed' : 'solid'} ${disabled ? T.border : (hover ? T.borderHi : T.border)}`,
+        borderRadius: 5,
+        color: active ? T.accent : (disabled ? T.muted : T.text),
+        fontFamily: FONTS.sans,
+        fontSize: 11, fontWeight: active ? 700 : 600,
+        letterSpacing: '.06em',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'background .15s, border-color .15s, color .15s',
+      }}
+    >
+      {label}
+    </button>
   )
 }
 
-function Field({ label, children }) {
+/** Merchandising toggle — large editorial button with cost callout. */
+function MerchToggle({ active, cost, onToggle }) {
+  const [hover, setHover] = useState(false)
   return (
-    <div style={{ marginBottom: 10 }}>
-      <label style={{
-        fontSize: 10, color: T.muted, letterSpacing: '.1em',
-        textTransform: 'uppercase', display: 'block', marginBottom: 4,
-      }}>{label}</label>
-      {children}
+    <button
+      onClick={onToggle}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: '100%', textAlign: 'left',
+        padding: '14px 16px',
+        background: active
+          ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+          : (hover
+              ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+              : T.surface),
+        border: `1px solid ${active ? T.accent : (hover ? T.borderHi : T.border)}`,
+        borderLeft: `3px solid ${active ? T.accent : T.borderHi}`,
+        borderRadius: 5,
+        color: T.text,
+        cursor: 'pointer',
+        fontFamily: FONTS.sans,
+        transition: 'background .15s, border-color .15s',
+      }}
+    >
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+        marginBottom: 6, gap: 12,
+      }}>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 24, 'wght' 600",
+          fontSize: 15, letterSpacing: '-.005em',
+          color: active ? T.accent : T.text,
+        }}>
+          {active ? '✓ ' : ''}Prepare merchandising
+        </div>
+        <div className="mono" style={{
+          fontSize: 11, color: T.red, fontWeight: 700, letterSpacing: '-.005em',
+        }}>
+          +{fmtM(cost)} upfront
+        </div>
+      </div>
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 12, color: T.muted, lineHeight: 1.5,
+      }}>
+        Heavy upfront bet. Per-airing revenue scales with hype<sup>1.8</sup> × quality — mid-range performance loses money, but a hit returns it many times over.
+      </div>
+    </button>
+  )
+}
+
+/** The Q/H + cost estimate panel — accent-stripe gradient card. */
+function EstimateCard({ estimate, method, prodMonths, prepCost, perAiring, totalCost, insufficient }) {
+  return (
+    <div style={{
+      marginTop: 16, padding: '16px 18px',
+      background: `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`,
+      border: `1px solid ${T.accent}55`,
+      borderLeft: `3px solid ${T.accent}`,
+      borderRadius: 5,
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+        textTransform: 'uppercase', color: T.accent, marginBottom: 12,
+      }}>
+        Estimate
+      </div>
+
+      {!estimate ? (
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 13, color: T.muted,
+        }}>
+          Pick a source to see the estimate.
+        </div>
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+          gap: 1, background: T.border,
+          borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}`,
+        }}>
+          <EstStat label="Quality range"
+            value={`${estimate.qRange[0]}–${estimate.qRange[1]}`}
+            color={T.text} />
+          <EstStat label="Hype range"
+            value={`${estimate.hRange[0]}–${estimate.hRange[1]}`}
+            color={T.gold} />
+          <EstStat label="Production"
+            value={method === 'instant' ? 'Instant' : `${prodMonths} mo`}
+            sub={method === 'instant' ? 'Movie' : method === 'live' ? 'Live · per-airing' : 'Pre-produced'} />
+        </div>
+      )}
+
+      {/* Cost row — same bordered grid */}
+      <div style={{
+        marginTop: 1,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+        gap: 1, background: T.border,
+        borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}`,
+      }}>
+        <EstStat label="Upfront"
+          value={fmtM(prepCost)}
+          color={insufficient ? T.red : T.text} />
+        <EstStat label="Per airing"
+          value={perAiring > 0 ? fmtM(perAiring) : '—'}
+          color={T.text} />
+        <EstStat label="Total cost"
+          value={fmtM(totalCost)}
+          color={T.text} />
+      </div>
+    </div>
+  )
+}
+
+function EstStat({ label, value, color, sub }) {
+  return (
+    <div style={{ background: T.bg, padding: '12px 14px' }}>
+      <div className="mono" style={{
+        fontSize: 9, color: T.muted, fontWeight: 700,
+        letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 4,
+      }}>{label}</div>
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 36, 'wght' 600",
+        fontSize: 18, letterSpacing: '-.01em',
+        color: color || T.text,
+      }}>{value}</div>
+      {sub && (
+        <div className="mono" style={{
+          fontSize: 9, color: T.muted, marginTop: 3, letterSpacing: '.04em',
+        }}>{sub}</div>
+      )}
     </div>
   )
 }
@@ -791,55 +954,190 @@ function sortBySpecialty(list, categoryId) {
   })
 }
 
-const inputStyle = {
-  width: '100%',
-  background: T.bg,
-  border: `1px solid ${T.border}`,
-  borderRadius: 4,
-  color: T.text,
-  padding: '7px 9px',
-  fontSize: 13,
-  fontFamily: 'inherit',
-  boxSizing: 'border-box',
-}
+// ─── SHARED EDITORIAL FORM PRIMITIVES ─────────────────────────────────
+// Same vocabulary as ContentScreen's NewScriptModal. Kept inline rather
+// than imported from there since ContentScreen doesn't export them.
 
-const btnPrimary = {
-  flex: 1, padding: '9px 12px',
-  background: T.accent, color: T.bg,
-  border: 'none', borderRadius: 4,
-  fontSize: 12, fontWeight: 700, cursor: 'pointer',
-}
-const btnSecondary = {
-  flex: 1, padding: '9px 12px',
-  background: 'transparent', color: T.muted,
-  border: `1px solid ${T.border}`, borderRadius: 4,
-  fontSize: 12, cursor: 'pointer',
-}
-
-function Modal({ children, onClose }) {
+function EditorialModal({ children, onClose }) {
   return (
     <div
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,.65)',
+        background: 'rgba(0,0,0,.72)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 100, padding: 12,
+        zIndex: 100, padding: 16,
       }}
     >
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          background: T.surface,
-          border: `1px solid ${T.border}`,
-          borderRadius: 8,
-          padding: 18,
+          background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+          border: `1px solid ${T.borderHi}`,
+          borderRadius: 6,
+          padding: '26px 26px',
           width: '100%',
-          maxWidth: 580,
+          maxWidth: 620,
           maxHeight: '95vh',
           overflow: 'auto',
         }}
-      >{children}</div>
+      >
+        {children}
+      </div>
     </div>
+  )
+}
+
+function EditorialField({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label className="mono" style={{
+        display: 'block', marginBottom: 6,
+        fontSize: 9.5, color: T.muted, fontWeight: 700,
+        letterSpacing: '.16em', textTransform: 'uppercase',
+      }}>{label}</label>
+      {children}
+    </div>
+  )
+}
+
+function EditorialInput({ ...props }) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: '100%',
+        background: T.surface,
+        border: `1px solid ${T.border}`,
+        borderRadius: 4,
+        color: T.text,
+        padding: '9px 11px',
+        fontSize: 13,
+        fontFamily: FONTS.sans,
+        boxSizing: 'border-box',
+        outline: 'none',
+      }}
+    />
+  )
+}
+
+function EditorialSelect({ children, ...props }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <select
+        {...props}
+        style={{
+          width: '100%',
+          background: T.surface,
+          border: `1px solid ${T.border}`,
+          borderRadius: 4,
+          color: T.text,
+          padding: '9px 30px 9px 11px',
+          fontSize: 13,
+          fontFamily: FONTS.sans,
+          boxSizing: 'border-box',
+          outline: 'none',
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          MozAppearance: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        {children}
+      </select>
+      <span style={{
+        position: 'absolute', right: 12, top: '50%',
+        transform: 'translateY(-50%)',
+        color: T.muted, fontSize: 12,
+        pointerEvents: 'none',
+      }}>▾</span>
+    </div>
+  )
+}
+
+function FieldNote({ children, tone = 'muted' }) {
+  const color = tone === 'gold' ? T.gold
+              : tone === 'red'  ? T.red
+              : tone === 'teal' ? T.teal
+              :                   T.muted
+  return (
+    <div style={{
+      marginTop: 6,
+      fontFamily: FONTS.serif,
+      fontVariationSettings: "'opsz' 14, 'wght' 400",
+      fontStyle: 'italic',
+      fontSize: 12, color, lineHeight: 1.5,
+    }}>
+      {children}
+    </div>
+  )
+}
+
+function Chip({ label, active, onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: active ? T.accent : 'transparent',
+        border: `1px solid ${active ? T.accent : (hover ? T.borderHi : T.border)}`,
+        color: active ? T.bg : (hover ? T.text : T.muted),
+        padding: '5px 11px', borderRadius: 3,
+        fontSize: 10, fontWeight: 600,
+        letterSpacing: '.08em', textTransform: 'uppercase',
+        fontFamily: FONTS.sans,
+        cursor: 'pointer', whiteSpace: 'nowrap',
+        transition: 'background .15s, border-color .15s, color .15s',
+      }}
+    >{label}</button>
+  )
+}
+
+function PrimaryButton({ onClick, disabled, children }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flex: 1, padding: '12px 16px',
+        background: disabled ? T.surface : (hover ? T.accentHi : T.accent),
+        color: disabled ? T.muted : T.bg,
+        border: disabled ? `1px dashed ${T.border}` : 'none',
+        borderRadius: 4,
+        fontFamily: FONTS.sans,
+        fontSize: 11, fontWeight: 700, letterSpacing: '.16em',
+        textTransform: 'uppercase',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background .15s',
+      }}
+    >{children}</button>
+  )
+}
+
+function SecondaryButton({ onClick, children }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flex: 1, padding: '12px 16px',
+        background: 'transparent',
+        color: hover ? T.text : T.muted,
+        border: `1px solid ${hover ? T.borderHi : T.border}`,
+        borderRadius: 4,
+        fontFamily: FONTS.sans,
+        fontSize: 11, fontWeight: 700, letterSpacing: '.16em',
+        textTransform: 'uppercase',
+        cursor: 'pointer',
+        transition: 'color .15s, border-color .15s',
+      }}
+    >{children}</button>
   )
 }

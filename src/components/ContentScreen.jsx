@@ -1,21 +1,22 @@
 import { useState, useMemo } from 'react'
-import { T } from '../theme.js'
+import { T, FONTS } from '../theme.js'
 import {
-  CATEGORIES, WRITERS_CAP, FIRE_PENALTY_MULT, MONTHS,
-  SCRIPT_TIERS, MARKET_ORDER,
+  CATEGORIES, MONTHS, SCRIPT_TIERS, MARKET_ORDER,
 } from '../constants.js'
-import { HTag, SectionTitle, Card } from './ui.jsx'
+// Note: HTag/SectionTitle/Card from ./ui.jsx removed in stage AN — replaced
+// with editorial SectionHead + gradient surfaces. Anton sub-tabs replaced
+// with the OpsSubTab pattern. The dead WritersTab function (writers are
+// managed in Operations/Talent) was dropped entirely.
 import {
   findWriter, findIP, findLeague, findMovie,
-  activeWriters, activeIPLicenses, fmtM, r1,
-  getUnlocks, availableScriptTiers,
-  talentCapacity, talentCount,
+  activeIPLicenses, fmtM, r1,
+  getUnlocks,
 } from '../engine.js'
 import { ProductionView } from './ProductionView.jsx'
 
 const SUB_TABS = [
   { id: 'production', label: 'Production' },
-  { id: 'scripts', label: 'Scripts' },
+  { id: 'scripts',    label: 'Scripts' },
 ]
 
 export function ContentScreen({
@@ -26,27 +27,55 @@ export function ContentScreen({
   onBack,
 }) {
   const [sub, setSub] = useState('production')
+  const activeTab = SUB_TABS.find(t => t.id === sub)
 
   return (
-    <div className="view-wrap" style={{ maxWidth: 1000, margin: '0 auto', padding: 14 }}>
+    <div className="view-wrap" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 32px 48px' }}>
+      <BackLink onClick={onBack} />
+
+      {/* ─── HERO ─── */}
+      <div style={{ position: 'relative', padding: '24px 0 24px' }}>
+        <div style={{
+          width: 36, height: 2,
+          background: `linear-gradient(90deg, ${T.accent} 0%, transparent 100%)`,
+          marginBottom: 14,
+        }} />
+        <div style={{
+          fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+          textTransform: 'uppercase', color: T.accent, marginBottom: 14,
+        }}>
+          Content · {activeTab?.label}
+        </div>
+        <h1 className="editorial" style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 144, 'wght' 600",
+          fontSize: 52, lineHeight: 0.95, letterSpacing: '-.025em',
+          color: T.text, marginBottom: 12,
+        }}>
+          Content
+        </h1>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 14, color: T.textDim, lineHeight: 1.55, maxWidth: 540,
+        }}>
+          Scripts in development. Productions in the can. What's on the shelf, on the air, and in the books.
+        </div>
+      </div>
+
       {/* Sub-tabs */}
       <div style={{
-        display: 'flex', gap: 4, marginBottom: 14,
-        borderBottom: `1px solid ${T.border}`, overflowX: 'auto',
+        display: 'flex', gap: 4, marginBottom: 28, marginTop: 16,
+        borderBottom: `1px solid ${T.border}`,
+        overflowX: 'auto',
       }}>
         {SUB_TABS.map(t => (
-          <button
-            key={t.id}
+          <ContentSubTab key={t.id}
+            label={t.label}
+            active={sub === t.id}
             onClick={() => setSub(t.id)}
-            style={{
-              background: 'transparent', border: 'none',
-              color: sub === t.id ? T.accent : T.muted,
-              fontFamily: 'Anton, sans-serif', fontSize: 14, letterSpacing: '.1em',
-              padding: '8px 14px', cursor: 'pointer',
-              borderBottom: `2px solid ${sub === t.id ? T.accent : 'transparent'}`,
-              marginBottom: -1, whiteSpace: 'nowrap',
-            }}
-          >{t.label}</button>
+          />
         ))}
       </div>
 
@@ -75,70 +104,229 @@ export function ContentScreen({
   )
 }
 
-// ─── PRODUCTION TAB ───────────────────────────────────────────────────────────
+/** Quiet "← Back" text-link. Same as Operations. */
+function BackLink({ onClick }) {
+  return (
+    <div style={{ paddingTop: 24 }}>
+      <button onClick={onClick} style={{
+        background: 'transparent', border: 'none',
+        color: T.muted, padding: '4px 0', cursor: 'pointer',
+        fontSize: 11, fontWeight: 500, letterSpacing: '.08em',
+        textTransform: 'uppercase', display: 'inline-flex',
+        alignItems: 'center', gap: 6,
+      }}>
+        <span style={{ fontSize: 14 }}>←</span> Back
+      </button>
+    </div>
+  )
+}
+
+function ContentSubTab({ label, active, onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={onClick}
+      style={{
+        background: hover && !active ? 'rgba(255,255,255,.025)' : 'transparent',
+        border: 'none',
+        color: active ? T.text : (hover ? T.text : T.muted),
+        fontFamily: FONTS.sans,
+        fontSize: 11, fontWeight: active ? 700 : 600,
+        letterSpacing: '.12em', textTransform: 'uppercase',
+        padding: '11px 16px', cursor: 'pointer',
+        position: 'relative',
+        whiteSpace: 'nowrap',
+        transition: 'color .15s, background .15s',
+      }}
+    >
+      {active && (
+        <span style={{
+          display: 'inline-block',
+          width: 5, height: 5,
+          background: T.accent,
+          marginRight: 8, marginBottom: 1,
+          verticalAlign: 'middle',
+        }} />
+      )}
+      {label}
+      {active && (
+        <div style={{
+          position: 'absolute', left: 0, right: 0, bottom: -1, height: 2,
+          background: T.accent,
+        }} />
+      )}
+    </button>
+  )
+}
+
+function SectionHead({ title, meta }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+      marginBottom: 16, paddingBottom: 10, position: 'relative',
+    }}>
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 144, 'wght' 500",
+        fontSize: 24, letterSpacing: '-.01em', color: T.text,
+      }}>
+        {title}
+      </div>
+      {meta && (
+        <div className="mono" style={{
+          fontSize: 10, color: T.muted,
+          letterSpacing: '.08em', textTransform: 'uppercase',
+        }}>
+          {meta}
+        </div>
+      )}
+      <div className="gradient-rule" style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+      }} />
+    </div>
+  )
+}
+
+function Chip({ label, active, onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: active ? T.accent : 'transparent',
+        border: `1px solid ${active ? T.accent : (hover ? T.borderHi : T.border)}`,
+        color: active ? T.bg : (hover ? T.text : T.muted),
+        padding: '5px 11px', borderRadius: 3,
+        fontSize: 10, fontWeight: 600,
+        letterSpacing: '.08em', textTransform: 'uppercase',
+        fontFamily: FONTS.sans,
+        cursor: 'pointer', whiteSpace: 'nowrap',
+        transition: 'background .15s, border-color .15s, color .15s',
+      }}
+    >{label}</button>
+  )
+}
+
+/** "+ New Production" / "+ New Script" — outline-fills accent button. */
+function NewButton({ onClick, disabled, children }) {
+  const [hover, setHover] = useState(false)
+  if (disabled) {
+    return (
+      <span className="mono" style={{
+        fontSize: 11, color: T.muted, fontWeight: 700,
+        padding: '10px 16px', borderRadius: 4,
+        background: T.surface, border: `1px dashed ${T.border}`,
+        letterSpacing: '.14em', textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
+      }}>{children}</span>
+    )
+  }
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: hover ? T.accent : 'transparent',
+        color: hover ? T.bg : T.accent,
+        border: `1px solid ${T.accent}`,
+        padding: '10px 16px', borderRadius: 4,
+        fontFamily: FONTS.sans,
+        fontSize: 11, fontWeight: 700, letterSpacing: '.16em',
+        textTransform: 'uppercase',
+        cursor: 'pointer', whiteSpace: 'nowrap',
+        transition: 'background .15s, color .15s',
+      }}
+    >{children}</button>
+  )
+}
+
+// ─── PRODUCTION TAB ──────────────────────────────────────────────────
 function ProductionTab({ station, year, monthIdx, research, onBeginProgram, onCancelProgram }) {
   const [showBuilder, setShowBuilder] = useState(false)
   const [filter, setFilter] = useState('active')
+  // Cancel-confirm modal — replaces window.confirm
+  const [cancelTarget, setCancelTarget] = useState(null)
 
   const programs = station.programs || []
   const producing = programs.filter(p => p.status === 'producing')
-  const shelf = programs.filter(p => p.status === 'shelf')
-  const airing = programs.filter(p => p.status === 'airing')
-  const finished = programs.filter(p => p.status === 'finished')
+  const shelf     = programs.filter(p => p.status === 'shelf')
+  const airing    = programs.filter(p => p.status === 'airing')
+  const finished  = programs.filter(p => p.status === 'finished')
 
   const filtered = useMemo(() => {
     if (filter === 'producing') return producing
-    if (filter === 'shelf') return shelf
-    if (filter === 'airing') return airing
-    if (filter === 'finished') return finished
+    if (filter === 'shelf')     return shelf
+    if (filter === 'airing')    return airing
+    if (filter === 'finished')  return finished
     // 'active' = everything except finished
     return [...producing, ...shelf, ...airing]
   }, [filter, programs])
 
   return (
     <>
+      <SectionHead title="Productions" meta={`${programs.length} total`} />
+
+      {/* Header bar — new button left, filter chips right */}
       <div style={{
-        display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap',
+        display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+        marginBottom: 18, paddingBottom: 14, borderBottom: `1px solid ${T.border}`,
       }}>
-        <button
-          onClick={() => setShowBuilder(true)}
-          style={{
-            background: T.accent, color: T.bg,
-            border: 'none', borderRadius: 5, padding: '8px 14px',
-            fontSize: 12, fontWeight: 700, cursor: 'pointer',
-          }}
-        >+ New Production</button>
+        <NewButton onClick={() => setShowBuilder(true)}>+ New Production</NewButton>
         <div style={{ flex: 1 }} />
-        <FilterChip label={`Active (${producing.length + shelf.length + airing.length})`} active={filter === 'active'} onClick={() => setFilter('active')} />
-        <FilterChip label={`Producing (${producing.length})`} active={filter === 'producing'} onClick={() => setFilter('producing')} />
-        <FilterChip label={`Shelf (${shelf.length})`} active={filter === 'shelf'} onClick={() => setFilter('shelf')} />
-        <FilterChip label={`Airing (${airing.length})`} active={filter === 'airing'} onClick={() => setFilter('airing')} />
-        <FilterChip label={`Done (${finished.length})`} active={filter === 'finished'} onClick={() => setFilter('finished')} />
+        <span className="mono" style={{
+          fontSize: 9.5, color: T.muted,
+          letterSpacing: '.16em', textTransform: 'uppercase',
+        }}>Filter</span>
+        <Chip label={`Active (${producing.length + shelf.length + airing.length})`}
+          active={filter === 'active'} onClick={() => setFilter('active')} />
+        <Chip label={`Producing (${producing.length})`}
+          active={filter === 'producing'} onClick={() => setFilter('producing')} />
+        <Chip label={`Shelf (${shelf.length})`}
+          active={filter === 'shelf'} onClick={() => setFilter('shelf')} />
+        <Chip label={`Airing (${airing.length})`}
+          active={filter === 'airing'} onClick={() => setFilter('airing')} />
+        <Chip label={`Done (${finished.length})`}
+          active={filter === 'finished'} onClick={() => setFilter('finished')} />
       </div>
 
       {filtered.length === 0 ? (
         <div style={{
-          background: T.surface, border: `1px dashed ${T.border}`,
-          borderRadius: 6, padding: 20, fontSize: 12, color: T.muted, textAlign: 'center',
+          background: T.surface, border: `1px dashed ${T.borderHi}`,
+          borderRadius: 6, padding: '32px 24px', textAlign: 'center',
         }}>
-          {programs.length === 0
-            ? 'No programs yet. Tap "+ New Production" to build one.'
-            : `No programs ${filter !== 'active' ? `in "${filter}"` : 'active'}.`}
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 500",
+            fontStyle: 'italic',
+            fontSize: 16, color: T.textDim, marginBottom: 6,
+          }}>
+            {programs.length === 0
+              ? 'Nothing in production yet.'
+              : `No programs ${filter !== 'active' ? `in "${filter}"` : 'active'}.`}
+          </div>
+          {programs.length === 0 && (
+            <div style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.55 }}>
+              Tap <span className="mono" style={{ fontSize: 11.5, color: T.text }}>+ New Production</span> to build your first show.
+            </div>
+          )}
         </div>
       ) : (
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 10,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: 10,
         }}>
           {filtered.map(p => (
             <ProgramCard
               key={p.id}
               program={p}
               onCancel={() => {
-                if (p.status === 'producing' || p.status === 'shelf') {
-                  if (window.confirm(`Cancel "${p.name}"? You won't get the upfront cost back.`)) {
-                    onCancelProgram(p.id)
-                  }
-                }
+                if (p.status === 'producing' || p.status === 'shelf') setCancelTarget(p)
               }}
             />
           ))}
@@ -155,6 +343,18 @@ function ProductionTab({ station, year, monthIdx, research, onBeginProgram, onCa
           onClose={() => setShowBuilder(false)}
         />
       )}
+
+      {cancelTarget && (
+        <ConfirmModal
+          title={cancelTarget.status === 'producing' ? 'Cancel production?' : 'Discard program?'}
+          message={cancelTarget.status === 'producing'
+            ? `Cancel "${cancelTarget.name}"? You won't get the upfront cost back.`
+            : `Discard "${cancelTarget.name}"? This cannot be undone.`}
+          confirmLabel={cancelTarget.status === 'producing' ? 'Cancel production' : 'Discard'}
+          onConfirm={() => { onCancelProgram(cancelTarget.id); setCancelTarget(null) }}
+          onClose={() => setCancelTarget(null)}
+        />
+      )}
     </>
   )
 }
@@ -163,403 +363,292 @@ function ProgramCard({ program: p, onCancel }) {
   const cat = CATEGORIES[p.categoryId]
   const movie = p.movieId ? findMovie(p.movieId) : null
   const league = p.sportsLeagueId ? findLeague(p.sportsLeagueId) : null
+  const catColor = cat?.color || T.accent
 
   const statusColor =
     p.status === 'producing' ? T.accent :
-    p.status === 'shelf' ? T.green :
-    p.status === 'airing' ? T.gold :
-    T.muted
+    p.status === 'shelf'     ? T.green :
+    p.status === 'airing'    ? T.gold :
+                               T.muted
   const statusLabel =
     p.status === 'producing' ? `Producing · ${p.prodMonthsRemaining}/${p.prodMonthsTotal} mo` :
-    p.status === 'shelf' ? 'On shelf' :
-    p.status === 'airing' ? `Airing (${p.airingsCount}×)` :
-    'Finished'
+    p.status === 'shelf'     ? 'On shelf' :
+    p.status === 'airing'    ? `Airing · ${p.airingsCount}×` :
+                               'Finished'
 
   const showTrue = p.revealed || p.status === 'finished' || p.status === 'airing'
+  const slugline = movie ? 'Movie · licensed feature'
+                : league ? `${league.label} · live coverage`
+                :          (cat?.label || p.categoryId || 'Program')
 
   return (
-    <Card style={{ padding: 12 }} accent={statusColor + '55'}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+    <div style={{
+      padding: 14,
+      background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+      border: `1px solid ${T.border}`,
+      borderLeft: `3px solid ${catColor}`,
+      borderRadius: 5,
+      display: 'flex', flexDirection: 'column',
+    }}>
+      {/* Header — name + status pill */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        gap: 10, marginBottom: 8,
+      }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{p.name}</div>
-          <div style={{ display: 'flex', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
-            <span style={{
-              fontSize: 10, color: cat?.color || T.muted,
-              background: (cat?.color || T.muted) + '22',
-              padding: '1px 6px', borderRadius: 3, letterSpacing: '.05em',
-            }}>
-              {movie ? '🎞' : league ? league.icon : cat?.icon} {movie ? 'Movie' : league ? league.label : (cat?.label || p.categoryId)}
-            </span>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 600",
+            fontSize: 16.5, color: T.text, letterSpacing: '-.01em',
+            marginBottom: 3,
+          }}>
+            {p.name}
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 12, color: T.muted, lineHeight: 1.4,
+          }}>
+            {slugline}
           </div>
         </div>
-        <div style={{
-          fontSize: 10, color: statusColor, fontWeight: 700,
-          background: statusColor + '22', padding: '2px 6px', borderRadius: 3,
-          whiteSpace: 'nowrap',
-        }}>{statusLabel}</div>
+        <span className="mono" style={{
+          fontSize: 9, color: statusColor, fontWeight: 700,
+          padding: '3px 8px', borderRadius: 3,
+          background: statusColor + '14',
+          border: `1px solid ${statusColor}66`,
+          letterSpacing: '.12em', textTransform: 'uppercase',
+          flexShrink: 0, whiteSpace: 'nowrap',
+        }}>{statusLabel}</span>
       </div>
 
-      <div style={{ display: 'flex', gap: 14, marginTop: 9, fontSize: 11 }}>
-        <div>
-          <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>
-            Quality {!showTrue && <span style={{ textTransform: 'none' }}>(est)</span>}
-          </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
-            {showTrue ? p.trueQ.toFixed(1) : `${p.estQRange[0]}–${p.estQRange[1]}`}
-          </div>
-        </div>
-        <div>
-          <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>
-            Hype {!showTrue && <span style={{ textTransform: 'none' }}>(est)</span>}
-          </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.gold, fontWeight: 600 }}>
-            {showTrue ? p.trueH.toFixed(1) : `${p.estHRange[0]}–${p.estHRange[1]}`}
-          </div>
-        </div>
+      {/* Stats row — mono pills */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        <StatPill label={showTrue ? 'Q' : 'Q est'} color={T.qEnd}
+          value={showTrue ? p.trueQ.toFixed(1) : `${p.estQRange[0]}–${p.estQRange[1]}`} />
+        <StatPill label={showTrue ? 'H' : 'H est'} color={T.gold}
+          value={showTrue ? p.trueH.toFixed(1) : `${p.estHRange[0]}–${p.estHRange[1]}`} />
         {p.airingsCount > 0 && (
-          <div style={{ flex: 1, textAlign: 'right' }}>
-            <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Total Aud</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
-              {p.totalAudience.toFixed(1)}M
-            </div>
-          </div>
+          <StatPill color={T.teal} bare value={`${p.totalAudience.toFixed(1)}M AUD`} />
         )}
       </div>
 
       {/* Cost line */}
-      <div style={{ marginTop: 8, fontSize: 11, color: T.muted, lineHeight: 1.4 }}>
-        Sunk: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text }}>{fmtM(p.totalCost)}</span>
+      <div style={{
+        display: 'flex', gap: 10, marginBottom: showTrue && !p.movieId && p.components ? 10 : 0,
+        fontSize: 11,
+      }}>
+        <div>
+          <div className="mono" style={{
+            fontSize: 9, color: T.muted, fontWeight: 700,
+            letterSpacing: '.14em', textTransform: 'uppercase',
+          }}>Sunk</div>
+          <div className="mono" style={{
+            fontSize: 12, color: T.text, fontWeight: 700, marginTop: 2, letterSpacing: '-.005em',
+          }}>{fmtM(p.totalCost)}</div>
+        </div>
         {p.status === 'airing' && (
-          <> · Earned: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: T.green }}>{fmtM(p.totalRevenue)}</span></>
+          <div>
+            <div className="mono" style={{
+              fontSize: 9, color: T.muted, fontWeight: 700,
+              letterSpacing: '.14em', textTransform: 'uppercase',
+            }}>Earned</div>
+            <div className="mono" style={{
+              fontSize: 12, color: T.green, fontWeight: 700, marginTop: 2, letterSpacing: '-.005em',
+            }}>{fmtM(p.totalRevenue)}</div>
+          </div>
         )}
       </div>
 
-      {/* Components — only when revealed and not a movie */}
+      {/* Component bars — revealed non-movies */}
       {showTrue && !p.movieId && p.components && (
         <div style={{
-          marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${T.border}`,
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8,
+          marginTop: 6, paddingTop: 10, borderTop: `1px solid ${T.border}`,
+          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10,
         }}>
-          <Comp label="Narr" value={p.components.narrative} />
-          <Comp label="Art" value={p.components.art} />
-          <Comp label="Innov" value={p.components.innovation} />
-          <Comp label="Tech" value={p.components.technical} />
+          <CompBar label="Narr"  value={p.components.narrative}  color={T.purple || T.accent} />
+          <CompBar label="Art"   value={p.components.art}        color={T.pink || T.gold} />
+          <CompBar label="Innov" value={p.components.innovation} color={T.teal} />
+          <CompBar label="Tech"  value={p.components.technical}  color={T.green} />
         </div>
       )}
 
-      {/* Review quote, if any */}
+      {/* Review quote — italic-serif pull-quote */}
       {showTrue && p.review && (
         <div style={{
-          marginTop: 10, padding: '8px 10px',
-          background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4,
-          fontSize: 11, color: T.muted, fontStyle: 'italic', lineHeight: 1.4,
+          marginTop: 10, padding: '10px 14px',
+          background: T.surface,
+          borderLeft: `2px solid ${T.gold}55`,
+          borderRadius: 3,
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 12.5, color: T.textDim, lineHeight: 1.5,
         }}>
-          “{p.review.quote}”
+          "{p.review.quote}"
         </div>
       )}
 
+      {/* Cancel button — pushed to bottom */}
       {(p.status === 'producing' || p.status === 'shelf') && (
         <button
           onClick={onCancel}
+          className="danger-btn"
           style={{
-            width: '100%', marginTop: 10, padding: '6px 8px',
-            background: 'transparent', color: T.red,
-            border: `1px solid ${T.red}55`,
-            borderRadius: 4, fontSize: 11,
-            cursor: 'pointer',
+            marginTop: 'auto', paddingTop: 10,
           }}
         >
-          {p.status === 'producing' ? '✕ Cancel Production' : '🗑 Discard'}
+          {p.status === 'producing' ? 'Cancel production' : 'Discard'}
         </button>
       )}
-    </Card>
+    </div>
   )
 }
 
-function Comp({ label, value }) {
+function StatPill({ label, value, color, bare, emphatic }) {
+  const c = color || T.text
+  return (
+    <span className="mono" style={{
+      fontSize: 9.5, fontWeight: 700, letterSpacing: '.06em',
+      padding: '2px 8px', borderRadius: 3,
+      background: emphatic ? c + '18' : (color ? c + '12' : 'transparent'),
+      color: c,
+      border: `1px solid ${color ? c + '55' : T.border}`,
+    }}>
+      {label && <span style={{ opacity: 0.7, marginRight: 3 }}>{label}</span>}
+      {value}
+    </span>
+  )
+}
+
+function CompBar({ label, value, color }) {
   const v = Math.max(0, Math.min(10, value || 0))
   return (
     <div>
-      <div style={{ fontSize: 9, color: T.muted, letterSpacing: '.05em', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: T.text, fontWeight: 600 }}>
-        {v.toFixed(1)}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+        marginBottom: 4,
+      }}>
+        <span className="mono" style={{
+          fontSize: 9, color: T.muted, letterSpacing: '.12em',
+          textTransform: 'uppercase',
+        }}>{label}</span>
+        <span className="mono" style={{
+          fontSize: 10.5, color: T.text, fontWeight: 600,
+        }}>{v.toFixed(1)}</span>
+      </div>
+      <div style={{ height: 3, background: T.border, borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{
+          width: `${(v / 10) * 100}%`, height: '100%',
+          background: `linear-gradient(90deg, ${color}aa 0%, ${color} 100%)`,
+          transition: 'width .5s',
+        }} />
       </div>
     </div>
   )
 }
 
-// ─── WRITERS TAB ──────────────────────────────────────────────────────────────
-function WritersTab({ station, marketWriters, onHireWriter, onFireWriter }) {
-  const hired = station.hiredWriters || []
-  const scripts = station.scripts || []
-  const capReached = hired.length >= WRITERS_CAP
-  // The unified talent room counts writers + stars + creative directors. Even if
-  // the writer-specific cap isn't hit, you can't hire if the room is full.
-  const roomCap = talentCapacity(station)
-  const roomCnt = talentCount(station)
-  const roomFull = roomCnt >= roomCap
-  const blocked = capReached || roomFull
-  const [confirmFire, setConfirmFire] = useState(null)
-
-  return (
-    <>
-      {/* Roster */}
-      <div style={{ marginBottom: 22 }}>
-        <div style={{
-          fontSize: 11, color: T.muted, letterSpacing: 1.5, marginBottom: 8,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-        }}>
-          <span>YOUR WRITERS ({hired.length} / {WRITERS_CAP})</span>
-        </div>
-
-        {hired.length === 0 ? (
-          <div style={{
-            background: T.surface, border: `1px dashed ${T.border}`,
-            borderRadius: 6, padding: 16, fontSize: 12, color: T.muted, textAlign: 'center',
-          }}>
-            No writers employed.
-          </div>
-        ) : (
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10,
-          }}>
-            {hired.map(h => {
-              const w = findWriter(h.talentId)
-              if (!w) return null
-              const draftCount = scripts.filter(s => s.writerId === w.id && s.status === 'drafting').length
-              const isBusy = draftCount > 0
-              const isFree = !!h.freeStarter
-              const penalty = isFree ? 0 : r1((h.perMonthCharge || w.cost || 0) * FIRE_PENALTY_MULT)
-              return (
-                <Card key={h.talentId} style={{ padding: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{w.name}</div>
-                      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                        <HTag tier={w.tier} />
-                        <span style={{
-                          fontSize: 10, color: CATEGORIES[w.specialty]?.color || T.muted,
-                          background: (CATEGORIES[w.specialty]?.color || T.muted) + '22',
-                          padding: '1px 6px', borderRadius: 3, letterSpacing: '.05em',
-                        }}>
-                          {CATEGORIES[w.specialty]?.icon} {CATEGORIES[w.specialty]?.label || w.specialty}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: 11 }}>
-                    <div>
-                      <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Skill</div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
-                        {(w.skill * 100).toFixed(0)}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Salary</div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: isFree ? T.green : T.text, fontWeight: 600 }}>
-                        {isFree ? 'free' : `${fmtM(h.perMonthCharge || w.cost)}/mo`}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Status</div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: isBusy ? T.accent : T.green, fontWeight: 600 }}>
-                        {isBusy ? `Drafting` : 'Idle'}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setConfirmFire({ id: w.id, name: w.name, penalty, busy: isBusy })}
-                    style={{
-                      width: '100%', marginTop: 10, padding: '6px 8px',
-                      background: 'transparent', border: `1px solid ${T.border}`,
-                      color: T.muted, borderRadius: 4, fontSize: 11, cursor: 'pointer',
-                    }}
-                  >Fire {!isFree && `(${fmtM(penalty)} penalty)`}</button>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Market */}
-      <div>
-        <div style={{ fontSize: 11, color: T.muted, letterSpacing: 1.5, marginBottom: 8 }}>
-          HIRE NEW WRITER · MARKET
-        </div>
-        {(capReached || roomFull) && (
-          <div style={{
-            background: T.red + '15', border: `1px solid ${T.red}55`,
-            borderRadius: 5, padding: 10, fontSize: 12, color: T.red, marginBottom: 10,
-          }}>
-            {roomFull
-              ? <><strong>Office full ({roomCnt}/{roomCap}).</strong> Fire someone, hire a Director of Talent (National), or expand market before signing anyone new.</>
-              : <><strong>Writer cap reached.</strong> Fire someone to make room.</>}
-          </div>
-        )}
-        {marketWriters.length === 0 ? (
-          <div style={{
-            background: T.surface, border: `1px dashed ${T.border}`,
-            borderRadius: 6, padding: 16, fontSize: 12, color: T.muted, textAlign: 'center',
-          }}>
-            No writers available this month. The roster refreshes after research / each year.
-          </div>
-        ) : (
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10,
-          }}>
-            {marketWriters.map(w => {
-              const upfront = r1(w.cost)
-              const affordable = station.cash >= upfront
-              const canHire = affordable && !blocked
-              return (
-                <Card key={w.id} style={{ padding: 12 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{w.name}</div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                    <HTag tier={w.tier} />
-                    <span style={{
-                      fontSize: 10, color: CATEGORIES[w.specialty]?.color || T.muted,
-                      background: (CATEGORIES[w.specialty]?.color || T.muted) + '22',
-                      padding: '1px 6px', borderRadius: 3, letterSpacing: '.05em',
-                    }}>
-                      {CATEGORIES[w.specialty]?.icon} {CATEGORIES[w.specialty]?.label || w.specialty}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11 }}>
-                    <div>
-                      <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Skill</div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
-                        {(w.skill * 100).toFixed(0)}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Salary</div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
-                        {fmtM(w.cost)}/mo
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Sign</div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
-                        {fmtM(upfront)}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => canHire && onHireWriter(w)}
-                    disabled={!canHire}
-                    style={{
-                      width: '100%', marginTop: 10, padding: '7px 8px',
-                      background: canHire ? T.accent : T.border,
-                      color: canHire ? T.bg : T.muted,
-                      border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700,
-                      cursor: canHire ? 'pointer' : 'not-allowed',
-                    }}
-                  >
-                    {!affordable
-                      ? 'Not enough cash'
-                      : roomFull
-                      ? 'Office full'
-                      : capReached
-                      ? 'Cap reached'
-                      : 'HIRE — Permanent'}
-                  </button>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-        <div style={{ fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.5, fontStyle: 'italic' }}>
-          Writers are permanent contracts only. Upfront cost = 1 month salary. Firing = {FIRE_PENALTY_MULT}× monthly salary.
-        </div>
-      </div>
-
-      {/* Fire confirm modal */}
-      {confirmFire && (
-        <Modal onClose={() => setConfirmFire(null)}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Fire {confirmFire.name}?</div>
-          {confirmFire.busy ? (
-            <div style={{ fontSize: 12, color: T.red, marginBottom: 12 }}>
-              This writer is mid-draft. Wait for the script to finish (or archive it) first.
-            </div>
-          ) : (
-            <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>
-              Penalty: <span style={{ color: T.red, fontWeight: 700 }}>{fmtM(confirmFire.penalty)}</span>. Their existing ready scripts remain.
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setConfirmFire(null)} style={btnSecondary}>Cancel</button>
-            <button
-              onClick={() => { onFireWriter(confirmFire.id); setConfirmFire(null) }}
-              disabled={confirmFire.busy}
-              style={{ ...btnDanger, opacity: confirmFire.busy ? 0.4 : 1 }}
-            >Confirm Fire</button>
-          </div>
-        </Modal>
-      )}
-    </>
-  )
-}
-
-// ─── SCRIPTS TAB ──────────────────────────────────────────────────────────────
+// ─── SCRIPTS TAB ─────────────────────────────────────────────────────
 function ScriptsTab({ station, year, research, onBeginScript, onRefreshScript, onArchiveScript, onDeleteScript }) {
   const scripts = station.scripts || []
   const writers = station.hiredWriters || []
   const [filter, setFilter] = useState('all') // all|ready|drafting|archived
   const [showNew, setShowNew] = useState(false)
+  // Delete-confirm modal — replaces window.confirm
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const filtered = useMemo(() => {
     if (filter === 'all') return scripts.filter(s => s.status !== 'archived')
     return scripts.filter(s => s.status === filter)
   }, [scripts, filter])
 
-  const ready = scripts.filter(s => s.status === 'ready').length
+  const ready    = scripts.filter(s => s.status === 'ready').length
   const drafting = scripts.filter(s => s.status === 'drafting').length
   const archived = scripts.filter(s => s.status === 'archived').length
 
   return (
     <>
+      <SectionHead title="Scripts" meta={`${scripts.length} total`} />
+
+      {/* Header bar */}
       <div style={{
-        display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap',
+        display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+        marginBottom: 18, paddingBottom: 14, borderBottom: `1px solid ${T.border}`,
       }}>
-        <button
-          onClick={() => setShowNew(true)}
-          disabled={writers.length === 0}
-          style={{
-            background: writers.length === 0 ? T.border : T.accent,
-            color: writers.length === 0 ? T.muted : T.bg,
-            border: 'none', borderRadius: 5, padding: '8px 14px',
-            fontSize: 12, fontWeight: 700,
-            cursor: writers.length === 0 ? 'not-allowed' : 'pointer',
-          }}
-        >+ New Script</button>
+        <NewButton onClick={() => setShowNew(true)} disabled={writers.length === 0}>
+          + New Script
+        </NewButton>
         <div style={{ flex: 1 }} />
-        <FilterChip label={`All (${scripts.filter(s => s.status !== 'archived').length})`} active={filter === 'all'} onClick={() => setFilter('all')} />
-        <FilterChip label={`Ready (${ready})`} active={filter === 'ready'} onClick={() => setFilter('ready')} />
-        <FilterChip label={`Drafting (${drafting})`} active={filter === 'drafting'} onClick={() => setFilter('drafting')} />
-        <FilterChip label={`Archived (${archived})`} active={filter === 'archived'} onClick={() => setFilter('archived')} />
+        <span className="mono" style={{
+          fontSize: 9.5, color: T.muted,
+          letterSpacing: '.16em', textTransform: 'uppercase',
+        }}>Filter</span>
+        <Chip label={`All (${scripts.filter(s => s.status !== 'archived').length})`}
+          active={filter === 'all'} onClick={() => setFilter('all')} />
+        <Chip label={`Ready (${ready})`}
+          active={filter === 'ready'} onClick={() => setFilter('ready')} />
+        <Chip label={`Drafting (${drafting})`}
+          active={filter === 'drafting'} onClick={() => setFilter('drafting')} />
+        <Chip label={`Archived (${archived})`}
+          active={filter === 'archived'} onClick={() => setFilter('archived')} />
       </div>
 
+      {/* No-writers gate */}
       {writers.length === 0 && (
         <div style={{
-          background: T.surface, border: `1px dashed ${T.border}`,
-          borderRadius: 6, padding: 16, fontSize: 12, color: T.muted, marginBottom: 10,
+          marginBottom: 20, padding: '20px 22px',
+          background: `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`,
+          border: `1px solid ${T.red}44`,
+          borderLeft: `3px solid ${T.red}`,
+          borderRadius: 6,
         }}>
-          Hire a writer first to start commissioning scripts.
+          <div style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+            textTransform: 'uppercase', color: T.red, marginBottom: 10,
+          }}>
+            No writers on staff
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 500",
+            fontStyle: 'italic',
+            fontSize: 16, color: T.text, marginBottom: 6, lineHeight: 1.3,
+          }}>
+            Hire a writer first.
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 13, color: T.textDim, lineHeight: 1.55,
+          }}>
+            Open <span className="mono" style={{ fontStyle: 'normal', fontSize: 11.5, color: T.text }}>Operations → Talent</span> to sign a writer before commissioning scripts.
+          </div>
         </div>
       )}
 
+      {/* Empty state */}
       {filtered.length === 0 && writers.length > 0 && (
         <div style={{
-          background: T.surface, border: `1px dashed ${T.border}`,
-          borderRadius: 6, padding: 20, fontSize: 12, color: T.muted, textAlign: 'center',
+          background: T.surface, border: `1px dashed ${T.borderHi}`,
+          borderRadius: 6, padding: '32px 24px', textAlign: 'center',
         }}>
-          No scripts {filter !== 'all' && `in "${filter}"`}.
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 500",
+            fontStyle: 'italic',
+            fontSize: 16, color: T.textDim,
+          }}>
+            No scripts {filter !== 'all' ? `in "${filter}"` : 'yet'}.
+          </div>
         </div>
       )}
 
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 10,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+        gap: 10,
       }}>
         {filtered.map(s => (
           <ScriptCard
@@ -568,7 +657,7 @@ function ScriptsTab({ station, year, research, onBeginScript, onRefreshScript, o
             anyFreeWriter={writers.some(h => !scripts.some(x => x.writerId === h.talentId && x.status === 'drafting'))}
             onRefresh={() => onRefreshScript(s.id)}
             onArchive={() => onArchiveScript(s.id)}
-            onDelete={() => onDeleteScript(s.id)}
+            onDelete={() => setDeleteTarget(s)}
           />
         ))}
       </div>
@@ -582,6 +671,16 @@ function ScriptsTab({ station, year, research, onBeginScript, onRefreshScript, o
           onConfirm={(opts) => { onBeginScript(opts); setShowNew(false) }}
         />
       )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Delete script?"
+          message={`Permanently delete "${deleteTarget.name}"? This cannot be undone.`}
+          confirmLabel="Delete script"
+          onConfirm={() => { onDeleteScript(deleteTarget.id); setDeleteTarget(null) }}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
     </>
   )
 }
@@ -591,169 +690,241 @@ function ScriptCard({ script: s, anyFreeWriter, onRefresh, onArchive, onDelete }
   const ip = s.ipId ? findIP(s.ipId) : null
   const cat = CATEGORIES[s.categoryId]
   const topic = cat?.topics.find(t => t.id === s.topicId)
+  const catColor = cat?.color || T.accent
 
   const statusColor =
-    s.status === 'ready' ? T.green :
+    s.status === 'ready'    ? T.green :
     s.status === 'drafting' ? T.accent :
-    T.muted
+                              T.muted
   const statusLabel =
-    s.status === 'drafting' ? (s.refreshing ? `Refreshing · ${s.monthsRemaining}mo` : `Drafting · ${s.monthsRemaining}mo`) :
-    s.status === 'ready' ? `Ready` :
-    `Archived`
+    s.status === 'drafting' ? (s.refreshing ? `Refreshing · ${s.monthsRemaining} mo` : `Drafting · ${s.monthsRemaining} mo`) :
+    s.status === 'ready'    ? 'Ready' :
+                              'Archived'
+
+  // Hype color based on bucket
+  const hypeColor = s.hype < 25 ? T.red : s.hype < 50 ? T.gold : T.green
 
   return (
-    <Card style={{ padding: 12 }} accent={s.status === 'ready' ? T.green + '55' : T.border}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+    <div style={{
+      padding: 14,
+      background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+      border: `1px solid ${T.border}`,
+      borderLeft: `3px solid ${s.status === 'ready' ? T.green : catColor}`,
+      borderRadius: 5,
+      display: 'flex', flexDirection: 'column',
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        gap: 10, marginBottom: 8,
+      }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{s.name}</div>
-          <div style={{ display: 'flex', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
-            <span style={{
-              fontSize: 10, color: cat?.color || T.muted,
-              background: (cat?.color || T.muted) + '22',
-              padding: '1px 6px', borderRadius: 3, letterSpacing: '.05em',
-            }}>
-              {cat?.icon} {topic?.label || s.topicId}
-            </span>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 600",
+            fontSize: 16.5, color: T.text, letterSpacing: '-.01em',
+            marginBottom: 3,
+          }}>
+            {s.name}
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 12, color: T.muted, lineHeight: 1.4,
+          }}>
+            {cat?.label} · {topic?.label || s.topicId}
             {ip && (
-              <span style={{
-                fontSize: 10, color: T.gold,
-                background: T.gold + '22',
-                padding: '1px 6px', borderRadius: 3, letterSpacing: '.05em',
-              }}>
-                📜 {ip.name}
-              </span>
+              <span className="mono" style={{
+                fontStyle: 'normal', color: T.gold,
+                fontSize: 10, fontWeight: 700,
+                marginLeft: 8, letterSpacing: '.1em',
+              }}>· {ip.name.toUpperCase()}</span>
             )}
           </div>
         </div>
-        <div style={{
-          fontSize: 10, color: statusColor, fontWeight: 700,
-          background: statusColor + '22', padding: '2px 6px', borderRadius: 3,
-          whiteSpace: 'nowrap',
-        }}>{statusLabel}</div>
+        <span className="mono" style={{
+          fontSize: 9, color: statusColor, fontWeight: 700,
+          padding: '3px 8px', borderRadius: 3,
+          background: statusColor + '14',
+          border: `1px solid ${statusColor}66`,
+          letterSpacing: '.12em', textTransform: 'uppercase',
+          flexShrink: 0, whiteSpace: 'nowrap',
+        }}>{statusLabel}</span>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, marginTop: 9, fontSize: 11 }}>
-        <div>
-          <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Writer</div>
-          <div style={{ color: T.text, fontWeight: 600 }}>{writer?.name || '?'}</div>
-        </div>
-        {s.status !== 'drafting' && (
-          <>
-            <div>
-              <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>Quality</div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", color: T.text, fontWeight: 600 }}>
-                {s.baseQuality.toFixed(1)}
-              </div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em', textTransform: 'uppercase' }}>
-                Hype {s.timesUsed > 0 && <span style={{ color: T.muted, textTransform: 'none' }}>({s.timesUsed} use{s.timesUsed > 1 ? 's' : ''})</span>}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{
-                  flex: 1, height: 6, background: T.border, borderRadius: 3, overflow: 'hidden',
-                }}>
-                  <div style={{
-                    width: `${s.hype}%`,
-                    height: '100%',
-                    background: s.hype < 25 ? T.red : s.hype < 50 ? T.gold : T.green,
-                  }} />
-                </div>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: T.text, fontWeight: 600, minWidth: 28, textAlign: 'right' }}>
-                  {Math.round(s.hype)}
-                </span>
-              </div>
-            </div>
-          </>
+      {/* Writer + tier callout */}
+      <div style={{
+        fontSize: 11.5, color: T.textDim,
+        marginBottom: s.status !== 'drafting' ? 10 : 12,
+      }}>
+        <span className="mono" style={{
+          fontSize: 9, color: T.muted, fontWeight: 700,
+          letterSpacing: '.14em', textTransform: 'uppercase', marginRight: 6,
+        }}>Writer</span>
+        <span style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 24, 'wght' 600",
+          fontSize: 13, color: T.text,
+        }}>{writer?.name || '?'}</span>
+        {s.tier && s.tier !== 'normal' && (
+          <span className="mono" style={{
+            fontSize: 9, color: T.gold, fontWeight: 700,
+            padding: '1px 6px', borderRadius: 3,
+            background: T.gold + '14', border: `1px solid ${T.gold}55`,
+            letterSpacing: '.12em', textTransform: 'uppercase',
+            marginLeft: 8,
+          }}>{s.tier}</span>
         )}
       </div>
 
-      {/* Actions */}
-      <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+      {/* Quality + hype — only for non-drafting */}
+      {s.status !== 'drafting' && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 14, marginBottom: 10,
+        }}>
+          <div>
+            <div className="mono" style={{
+              fontSize: 9, color: T.muted, fontWeight: 700,
+              letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 3,
+            }}>Quality</div>
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 96, 'wght' 600",
+              fontSize: 22, color: T.text, letterSpacing: '-.025em', lineHeight: 1,
+            }}>
+              {s.baseQuality.toFixed(1)}
+            </div>
+          </div>
+          <div>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+              marginBottom: 5,
+            }}>
+              <div className="mono" style={{
+                fontSize: 9, color: T.muted, fontWeight: 700,
+                letterSpacing: '.14em', textTransform: 'uppercase',
+              }}>
+                Hype {s.timesUsed > 0 && (
+                  <span style={{ color: T.muted, fontWeight: 500, marginLeft: 4 }}>
+                    · {s.timesUsed} use{s.timesUsed > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <span className="mono" style={{
+                fontSize: 11, color: T.text, fontWeight: 700,
+              }}>
+                {Math.round(s.hype)}
+              </span>
+            </div>
+            <div style={{ height: 4, background: T.border, borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                width: `${s.hype}%`, height: '100%',
+                background: `linear-gradient(90deg, ${hypeColor}aa 0%, ${hypeColor} 100%)`,
+                transition: 'width .5s',
+              }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Actions — pushed to bottom */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 'auto', paddingTop: 8 }}>
         {s.status === 'ready' && (
           <>
-            <button
-              onClick={onRefresh}
+            <ActionButton
+              variant="primary"
               disabled={!anyFreeWriter}
-              title={anyFreeWriter ? `Refresh hype to ${s.originalHype.toFixed(0)} (1 month writer time)` : 'All writers busy'}
-              style={{
-                flex: 1, padding: '6px 8px',
-                background: anyFreeWriter ? T.accent + '33' : T.border,
-                color: anyFreeWriter ? T.accent : T.muted,
-                border: `1px solid ${anyFreeWriter ? T.accent : T.border}`,
-                borderRadius: 4, fontSize: 11, fontWeight: 600,
-                cursor: anyFreeWriter ? 'pointer' : 'not-allowed',
-              }}
-            >🔁 Refresh</button>
-            <button
-              onClick={onArchive}
-              style={{
-                flex: 1, padding: '6px 8px',
-                background: 'transparent', color: T.muted,
-                border: `1px solid ${T.border}`,
-                borderRadius: 4, fontSize: 11,
-                cursor: 'pointer',
-              }}
-            >📦 Archive</button>
+              title={anyFreeWriter ? `Refresh hype to ${s.originalHype.toFixed(0)}` : 'All writers busy'}
+              onClick={onRefresh}
+            >
+              Refresh
+            </ActionButton>
+            <ActionButton variant="secondary" onClick={onArchive}>
+              Archive
+            </ActionButton>
           </>
         )}
         {s.status === 'drafting' && (
-          <button
-            onClick={onArchive}
-            style={{
-              flex: 1, padding: '6px 8px',
-              background: 'transparent', color: T.muted,
-              border: `1px solid ${T.border}`,
-              borderRadius: 4, fontSize: 11,
-              cursor: 'pointer',
-            }}
-          >Cancel Draft</button>
+          <ActionButton variant="secondary" onClick={onArchive}>
+            Cancel draft
+          </ActionButton>
         )}
         {s.status === 'archived' && (
-          <button
-            onClick={() => {
-              if (window.confirm(`Permanently delete "${s.name}"? This cannot be undone.`)) onDelete()
-            }}
-            style={{
-              flex: 1, padding: '6px 8px',
-              background: 'transparent', color: T.red,
-              border: `1px solid ${T.red}55`,
-              borderRadius: 4, fontSize: 11,
-              cursor: 'pointer',
-            }}
-          >🗑 Delete</button>
+          <button onClick={onDelete} className="danger-btn" style={{ flex: 1 }}>
+            Delete
+          </button>
         )}
       </div>
-    </Card>
+    </div>
   )
 }
 
+/** Action button — primary (outline-fills accent) or secondary (outline-only muted). */
+function ActionButton({ variant, disabled, title, onClick, children }) {
+  const [hover, setHover] = useState(false)
+  const isPrimary = variant === 'primary'
+
+  if (disabled) {
+    return (
+      <span title={title} className="mono" style={{
+        flex: 1, padding: '6px 10px', textAlign: 'center',
+        background: T.surface, border: `1px dashed ${T.border}`,
+        color: T.muted, fontSize: 10, fontWeight: 700,
+        letterSpacing: '.14em', textTransform: 'uppercase', borderRadius: 3,
+      }}>
+        {children}
+      </span>
+    )
+  }
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title={title}
+      style={{
+        flex: 1,
+        background: isPrimary && hover ? T.accent : 'transparent',
+        color: isPrimary
+          ? (hover ? T.bg : T.accent)
+          : (hover ? T.text : T.muted),
+        border: `1px solid ${
+          isPrimary ? T.accent : (hover ? T.borderHi : T.border)
+        }`,
+        padding: '6px 10px', borderRadius: 3,
+        fontFamily: FONTS.sans,
+        fontSize: 10, fontWeight: 700, letterSpacing: '.14em',
+        textTransform: 'uppercase',
+        cursor: 'pointer',
+        transition: 'background .15s, color .15s, border-color .15s',
+      }}
+    >{children}</button>
+  )
+}
+
+// ─── NEW SCRIPT MODAL ────────────────────────────────────────────────
 function NewScriptModal({ station, year, research, onCancel, onConfirm }) {
   const writers = station.hiredWriters || []
   const scripts = station.scripts || []
   const busyIds = new Set(scripts.filter(s => s.status === 'drafting').map(s => s.writerId))
 
-  // What's unlocked for this station (focus + research)
   const unlocks = useMemo(() => getUnlocks(station, research), [station.focus, research?.contentUnlocks])
-  // Movies are licensed, not scripted. Sports use the rights path, not scripts.
   const unlockedCategoryIds = useMemo(
     () => Object.keys(CATEGORIES).filter(id => id !== 'movie' && unlocks.hasCat(id)),
     [unlocks]
   )
 
-  // Default to first non-busy writer
   const initialWriterId = writers.find(h => !busyIds.has(h.talentId))?.talentId || writers[0]?.talentId || ''
   const [writerId, setWriterId] = useState(initialWriterId)
 
   const writer = findWriter(writerId)
-  // Default category: writer's specialty if unlocked, otherwise first unlocked category
   const defaultCat =
     writer?.specialty && unlocks.hasCat(writer.specialty) ? writer.specialty :
     (unlockedCategoryIds[0] || 'series')
   const [categoryId, setCategoryId] = useState(defaultCat)
 
   const cat = CATEGORIES[categoryId]
-  // Filter topics to unlocked ones
   const unlockedTopics = (cat?.topics || []).filter(t => unlocks.hasTopic(categoryId, t.id))
   const [topicId, setTopicId] = useState(unlockedTopics[0]?.id || '')
   const [ipId, setIpId] = useState(null)
@@ -763,8 +934,6 @@ function NewScriptModal({ station, year, research, onCancel, onConfirm }) {
     .map(lic => findIP(lic.ipId)).filter(Boolean)
     .filter(ip => (ip.fits || []).includes(categoryId))
 
-  // ── Script tier state ────────────────────────────────────────────────
-  // Always-available tiers come from research.scriptTiersUnlocked (+ 'normal').
   const unlockedTierIds = useMemo(() => {
     const set = new Set(research?.scriptTiersUnlocked || [])
     set.add('normal')
@@ -786,39 +955,53 @@ function NewScriptModal({ station, year, research, onCancel, onConfirm }) {
   const writerBusy = busyIds.has(writerId)
   const canSubmit = writerId && categoryId && topicId && name.trim().length >= 2 && !writerBusy && canAffordTier
 
-  // If no categories are unlocked at all, show a guidance message
   if (unlockedCategoryIds.length === 0) {
     return (
-      <Modal onClose={onCancel}>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Commission Script</div>
+      <EditorialModal onClose={onCancel} title="Commission script">
         <div style={{
-          padding: 16, background: T.bg, border: `1px solid ${T.border}`,
-          borderRadius: 5, fontSize: 12, color: T.muted, lineHeight: 1.5,
+          padding: '20px 22px',
+          background: `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`,
+          border: `1px solid ${T.red}44`,
+          borderLeft: `3px solid ${T.red}`,
+          borderRadius: 6,
+          marginBottom: 18,
         }}>
-          No content categories unlocked yet. Visit the <strong style={{ color: T.text }}>Research</strong> tab to unlock categories and topics.
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 500",
+            fontStyle: 'italic',
+            fontSize: 16, color: T.text, marginBottom: 8, lineHeight: 1.3,
+          }}>
+            No content categories unlocked yet.
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 13, color: T.textDim, lineHeight: 1.55,
+          }}>
+            Open <span className="mono" style={{ fontStyle: 'normal', fontSize: 11.5, color: T.text }}>Research</span> to unlock categories and topics before commissioning a script.
+          </div>
         </div>
-        <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={onCancel} style={btnSecondary}>Close</button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <SecondaryButton onClick={onCancel}>Close</SecondaryButton>
         </div>
-      </Modal>
+      </EditorialModal>
     )
   }
 
   return (
-    <Modal onClose={onCancel}>
-      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Commission Script</div>
-
-      <Field label="Title">
-        <input
+    <EditorialModal onClose={onCancel} title="Commission script">
+      <EditorialField label="Title">
+        <EditorialInput
           value={name} onChange={e => setName(e.target.value)}
           placeholder="e.g. The Last Frontier"
-          style={inputStyle}
           maxLength={48}
         />
-      </Field>
+      </EditorialField>
 
-      <Field label="Writer">
-        <select value={writerId} onChange={e => setWriterId(e.target.value)} style={inputStyle}>
+      <EditorialField label="Writer">
+        <EditorialSelect value={writerId} onChange={e => setWriterId(e.target.value)}>
           {writers.map(h => {
             const w = findWriter(h.talentId)
             if (!w) return null
@@ -829,190 +1012,127 @@ function NewScriptModal({ station, year, research, onCancel, onConfirm }) {
               </option>
             )
           })}
-        </select>
+        </EditorialSelect>
         {writer && (
-          <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
-            Skill {(writer.skill * 100).toFixed(0)} · best in {CATEGORIES[writer.specialty]?.label}
-            {!unlocks.hasCat(writer.specialty) && (
-              <span style={{ color: T.gold }}> — their specialty isn't unlocked yet</span>
-            )}
-          </div>
+          <FieldNote tone={!unlocks.hasCat(writer.specialty) ? 'gold' : 'muted'}>
+            Skill <span className="mono" style={{ fontStyle: 'normal' }}>{(writer.skill * 100).toFixed(0)}</span> · best in {CATEGORIES[writer.specialty]?.label}
+            {!unlocks.hasCat(writer.specialty) && ' — their specialty isn\'t unlocked yet'}
+          </FieldNote>
         )}
-      </Field>
+      </EditorialField>
 
-      <Field label="Category">
-        <select value={categoryId} onChange={e => onCatChange(e.target.value)} style={inputStyle}>
+      <EditorialField label="Category">
+        <EditorialSelect value={categoryId} onChange={e => onCatChange(e.target.value)}>
           {unlockedCategoryIds.map(id => {
             const c = CATEGORIES[id]
             return <option key={id} value={id}>{c.icon} {c.label}</option>
           })}
-        </select>
+        </EditorialSelect>
         {writer && writer.specialty !== categoryId && (
-          <div style={{ fontSize: 10, color: T.gold, marginTop: 4 }}>
-            ⚠ Off-specialty — quality and hype will be reduced.
-          </div>
+          <FieldNote tone="gold">
+            Off-specialty — quality and hype will be reduced.
+          </FieldNote>
         )}
-      </Field>
+      </EditorialField>
 
-      <Field label="Topic">
-        <select value={topicId} onChange={e => setTopicId(e.target.value)} style={inputStyle}>
+      <EditorialField label="Topic">
+        <EditorialSelect value={topicId} onChange={e => setTopicId(e.target.value)}>
           {unlockedTopics.map(t => (
             <option key={t.id} value={t.id}>{t.label}</option>
           ))}
-        </select>
+        </EditorialSelect>
         {unlockedTopics.length < (cat?.topics?.length || 0) && (
-          <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
-            {(cat?.topics?.length || 0) - unlockedTopics.length} more topic{unlockedTopics.length === (cat?.topics?.length || 0) - 1 ? '' : 's'} locked. Visit Research to unlock.
-          </div>
+          <FieldNote tone="muted">
+            {(cat?.topics?.length || 0) - unlockedTopics.length} more topic{unlockedTopics.length === (cat?.topics?.length || 0) - 1 ? '' : 's'} locked — visit Research to unlock.
+          </FieldNote>
         )}
-      </Field>
+      </EditorialField>
 
-      <Field label={`IP (optional)${ownedIps.length === 0 ? ' — no compatible IPs licensed' : ''}`}>
-        <select value={ipId || ''} onChange={e => setIpId(e.target.value || null)} style={inputStyle}>
+      <EditorialField label={`IP${ownedIps.length === 0 ? ' · no compatible IPs licensed' : ' · optional'}`}>
+        <EditorialSelect value={ipId || ''} onChange={e => setIpId(e.target.value || null)}>
           <option value="">— None (original) —</option>
           {ownedIps.map(ip => (
             <option key={ip.id} value={ip.id}>{ip.name} ({ip.tier})</option>
           ))}
-        </select>
-      </Field>
+        </EditorialSelect>
+      </EditorialField>
 
-      <Field label="Script Tier">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+      <EditorialField label="Script tier">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           {SCRIPT_TIERS.map(t => {
             const unlocked = unlockedTierIds.has(t.id)
             const isActive = tier === t.id
-            // Why locked, if locked
             let lockReason = null
             if (!unlocked) {
               const marketOk = !t.requiresMarket
                 || MARKET_ORDER.indexOf(station.market) >= MARKET_ORDER.indexOf(t.requiresMarket)
               lockReason = !marketOk
                 ? `Needs ${t.requiresMarket} market`
-                : `Needs research`
+                : 'Needs research'
             }
             return (
-              <button
+              <TierPickerButton
                 key={t.id}
+                tier={t}
+                isActive={isActive}
+                unlocked={unlocked}
+                lockReason={lockReason}
                 onClick={() => unlocked && setTier(t.id)}
-                disabled={!unlocked}
-                style={{
-                  background: isActive ? T.accent + '22' : 'transparent',
-                  border: `1px solid ${isActive ? T.accent : T.border}`,
-                  borderRadius: 5,
-                  padding: '8px 6px',
-                  cursor: unlocked ? 'pointer' : 'not-allowed',
-                  opacity: unlocked ? 1 : 0.5,
-                  textAlign: 'left',
-                  color: T.text,
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 600, color: isActive ? T.accent : T.text }}>
-                  {t.label}
-                </div>
-                <div style={{ fontSize: 9.5, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
-                  {t.months}mo · ×{t.costMult.toFixed(1)} cost<br/>
-                  Q≤{t.qCap.toFixed(1)} · H≤{t.hCap}
-                </div>
-                {lockReason && (
-                  <div style={{ fontSize: 9, color: T.red, marginTop: 4 }}>
-                    🔒 {lockReason}
-                  </div>
-                )}
-              </button>
+              />
             )
           })}
         </div>
-        <div style={{ fontSize: 10.5, color: T.muted, marginTop: 6, lineHeight: 1.5 }}>
+        <FieldNote tone="muted" style={{ marginTop: 8 }}>
           {tierDef.desc}
-        </div>
-      </Field>
+        </FieldNote>
+      </EditorialField>
+
+      {/* Cost summary */}
+      <div style={{
+        padding: '12px 14px', marginBottom: 16,
+        background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4,
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+        gap: 12,
+      }}>
+        <SummaryStat label="Duration" value={`${tierDef.months} mo`} />
+        <SummaryStat label="Cost"     value={fmtM(tierCost)} color={canAffordTier ? T.text : T.red} />
+        <SummaryStat label="Q cap"    value={tierDef.qCap.toFixed(1)} />
+        <SummaryStat label="H cap"    value={String(tierDef.hCap)} />
+      </div>
 
       <div style={{
-        fontSize: 11, color: T.muted, lineHeight: 1.55, marginTop: 6, marginBottom: 14,
-        padding: '8px 10px', background: T.bg, borderRadius: 4,
-        border: `1px solid ${T.border}`,
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 12, color: T.muted, lineHeight: 1.55, marginBottom: 16,
       }}>
-        Drafting takes <strong style={{ color: T.text }}>{tierDef.months} month{tierDef.months > 1 ? 's' : ''}</strong> · Cost <strong style={{ color: canAffordTier ? T.text : T.red }}>{fmtM(tierCost)}</strong> (writer salary × {tierDef.costMult.toFixed(1)})<br/>
-        Quality capped at <strong style={{ color: T.text }}>{tierDef.qCap.toFixed(1)}</strong>, hype at <strong style={{ color: T.text }}>{tierDef.hCap}</strong>. Writer is locked until it ships. Each later use drops hype 20%.
+        Writer is locked until the script ships. Each later use drops hype 20%.
       </div>
 
       <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={onCancel} style={btnSecondary}>Cancel</button>
-        <button
+        <SecondaryButton onClick={onCancel}>Cancel</SecondaryButton>
+        <PrimaryButton
           onClick={() => canSubmit && onConfirm({ writerId, name: name.trim(), categoryId, topicId, ipId, tier })}
           disabled={!canSubmit}
-          style={{ ...btnPrimary, opacity: canSubmit ? 1 : 0.4, cursor: canSubmit ? 'pointer' : 'not-allowed' }}
         >
-          {writerBusy ? 'Writer busy' : !canAffordTier ? `Need ${fmtM(tierCost)}` : `Begin ${tierDef.label} Draft (${tierDef.months}mo)`}
-        </button>
+          {writerBusy ? 'Writer busy'
+            : !canAffordTier ? `Need ${fmtM(tierCost)}`
+            : `Begin ${tierDef.label} draft`}
+        </PrimaryButton>
       </div>
-    </Modal>
+    </EditorialModal>
   )
 }
 
-// ─── SHARED BITS ──────────────────────────────────────────────────────────────
-function FilterChip({ label, active, onClick }) {
-  return (
-    <button onClick={onClick} style={{
-      background: active ? T.accent + '33' : 'transparent',
-      border: `1px solid ${active ? T.accent : T.border}`,
-      color: active ? T.accent : T.muted,
-      borderRadius: 12, padding: '3px 9px', fontSize: 11,
-      cursor: 'pointer', whiteSpace: 'nowrap',
-    }}>{label}</button>
-  )
-}
+// ─── SHARED EDITORIAL FORM PRIMITIVES ─────────────────────────────────
 
-function Field({ label, children }) {
-  return (
-    <div style={{ marginBottom: 10 }}>
-      <label style={{
-        fontSize: 10, color: T.muted, letterSpacing: '.1em',
-        textTransform: 'uppercase', display: 'block', marginBottom: 4,
-      }}>{label}</label>
-      {children}
-    </div>
-  )
-}
-
-const inputStyle = {
-  width: '100%',
-  background: T.bg,
-  border: `1px solid ${T.border}`,
-  borderRadius: 4,
-  color: T.text,
-  padding: '7px 9px',
-  fontSize: 13,
-  fontFamily: 'inherit',
-  boxSizing: 'border-box',
-}
-
-const btnPrimary = {
-  flex: 1, padding: '9px 12px',
-  background: T.accent, color: T.bg,
-  border: 'none', borderRadius: 4,
-  fontSize: 12, fontWeight: 700, cursor: 'pointer',
-}
-const btnSecondary = {
-  flex: 1, padding: '9px 12px',
-  background: 'transparent', color: T.muted,
-  border: `1px solid ${T.border}`, borderRadius: 4,
-  fontSize: 12, cursor: 'pointer',
-}
-const btnDanger = {
-  flex: 1, padding: '9px 12px',
-  background: T.red, color: '#fff',
-  border: 'none', borderRadius: 4,
-  fontSize: 12, fontWeight: 700, cursor: 'pointer',
-}
-
-function Modal({ children, onClose }) {
+function EditorialModal({ children, onClose, title }) {
   return (
     <div
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,.65)',
+        background: 'rgba(0,0,0,.72)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 100, padding: 16,
       }}
@@ -1020,16 +1140,272 @@ function Modal({ children, onClose }) {
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          background: T.surface,
-          border: `1px solid ${T.border}`,
-          borderRadius: 8,
-          padding: 18,
+          background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+          border: `1px solid ${T.borderHi}`,
+          borderRadius: 6,
+          padding: '24px 26px',
           width: '100%',
-          maxWidth: 420,
+          maxWidth: 460,
           maxHeight: '90vh',
           overflow: 'auto',
         }}
-      >{children}</div>
+      >
+        {title && (
+          <>
+            <div style={{
+              width: 32, height: 2,
+              background: `linear-gradient(90deg, ${T.accent} 0%, transparent 100%)`,
+              marginBottom: 12,
+            }} />
+            <div style={{
+              fontSize: 9.5, fontWeight: 600, letterSpacing: '.2em',
+              textTransform: 'uppercase', color: T.accent, marginBottom: 10,
+            }}>
+              Modal
+            </div>
+            <h2 style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 144, 'wght' 600",
+              fontSize: 26, lineHeight: 1.05, letterSpacing: '-.02em',
+              color: T.text, marginBottom: 20,
+            }}>
+              {title}
+            </h2>
+          </>
+        )}
+        {children}
+      </div>
     </div>
+  )
+}
+
+function EditorialField({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label className="mono" style={{
+        display: 'block', marginBottom: 6,
+        fontSize: 9.5, color: T.muted, fontWeight: 700,
+        letterSpacing: '.16em', textTransform: 'uppercase',
+      }}>{label}</label>
+      {children}
+    </div>
+  )
+}
+
+function EditorialInput({ ...props }) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: '100%',
+        background: T.surface,
+        border: `1px solid ${T.border}`,
+        borderRadius: 4,
+        color: T.text,
+        padding: '9px 11px',
+        fontSize: 13,
+        fontFamily: FONTS.sans,
+        boxSizing: 'border-box',
+        outline: 'none',
+      }}
+    />
+  )
+}
+
+/** Native <select> styled to match the editorial system. We keep the
+ *  native dropdown for accessibility and reliable touch behavior — only
+ *  the trigger is restyled. */
+function EditorialSelect({ children, ...props }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <select
+        {...props}
+        style={{
+          width: '100%',
+          background: T.surface,
+          border: `1px solid ${T.border}`,
+          borderRadius: 4,
+          color: T.text,
+          padding: '9px 30px 9px 11px',
+          fontSize: 13,
+          fontFamily: FONTS.sans,
+          boxSizing: 'border-box',
+          outline: 'none',
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          MozAppearance: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        {children}
+      </select>
+      {/* Custom chevron — pointer-events none so click reaches the select */}
+      <span style={{
+        position: 'absolute', right: 12, top: '50%',
+        transform: 'translateY(-50%)',
+        color: T.muted, fontSize: 12,
+        pointerEvents: 'none',
+      }}>▾</span>
+    </div>
+  )
+}
+
+/** Inline note beneath a field. Tone: muted | gold | red. */
+function FieldNote({ children, tone = 'muted', style }) {
+  const color = tone === 'gold' ? T.gold : tone === 'red' ? T.red : T.muted
+  return (
+    <div style={{
+      marginTop: 6,
+      fontFamily: FONTS.serif,
+      fontVariationSettings: "'opsz' 14, 'wght' 400",
+      fontStyle: 'italic',
+      fontSize: 12, color, lineHeight: 1.5,
+      ...(style || {}),
+    }}>
+      {children}
+    </div>
+  )
+}
+
+/** Tier picker button — used for script tiers. Active = accent border,
+ *  filled background. Locked = dashed, lower opacity, red lock reason. */
+function TierPickerButton({ tier, isActive, unlocked, lockReason, onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      disabled={!unlocked}
+      style={{
+        background: isActive
+          ? T.accent + '18'
+          : (hover && unlocked
+              ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+              : T.surface),
+        border: isActive
+          ? `1px solid ${T.accent}`
+          : `1px ${unlocked ? 'solid' : 'dashed'} ${unlocked ? (hover ? T.borderHi : T.border) : T.border}`,
+        borderRadius: 5,
+        padding: '10px 10px',
+        cursor: unlocked ? 'pointer' : 'not-allowed',
+        opacity: unlocked ? 1 : 0.55,
+        textAlign: 'left',
+        color: T.text,
+        fontFamily: FONTS.sans,
+        transition: 'background .15s, border-color .15s',
+      }}
+    >
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 24, 'wght' 600",
+        fontSize: 14, letterSpacing: '-.005em',
+        color: isActive ? T.accent : T.text,
+        marginBottom: 5,
+      }}>
+        {tier.label}
+      </div>
+      <div className="mono" style={{
+        fontSize: 9.5, color: T.muted, fontWeight: 600,
+        letterSpacing: '.04em', lineHeight: 1.4,
+      }}>
+        {tier.months}mo · ×{tier.costMult.toFixed(1)} cost<br/>
+        Q≤{tier.qCap.toFixed(1)} · H≤{tier.hCap}
+      </div>
+      {lockReason && (
+        <div className="mono" style={{
+          marginTop: 6, fontSize: 9, color: T.red, fontWeight: 700,
+          letterSpacing: '.12em', textTransform: 'uppercase',
+        }}>
+          🔒 {lockReason}
+        </div>
+      )}
+    </button>
+  )
+}
+
+function SummaryStat({ label, value, color }) {
+  return (
+    <div>
+      <div className="mono" style={{
+        fontSize: 9, color: T.muted, fontWeight: 700,
+        letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 3,
+      }}>{label}</div>
+      <div className="mono" style={{
+        fontSize: 13, color: color || T.text, fontWeight: 700,
+        letterSpacing: '-.005em',
+      }}>{value}</div>
+    </div>
+  )
+}
+
+function PrimaryButton({ onClick, disabled, children }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flex: 1, padding: '11px 14px',
+        background: disabled ? T.surface : (hover ? T.accentHi : T.accent),
+        color: disabled ? T.muted : T.bg,
+        border: disabled ? `1px dashed ${T.border}` : 'none',
+        borderRadius: 4,
+        fontFamily: FONTS.sans,
+        fontSize: 11, fontWeight: 700, letterSpacing: '.16em',
+        textTransform: 'uppercase',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background .15s',
+      }}
+    >{children}</button>
+  )
+}
+
+function SecondaryButton({ onClick, children }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flex: 1, padding: '11px 14px',
+        background: 'transparent',
+        color: hover ? T.text : T.muted,
+        border: `1px solid ${hover ? T.borderHi : T.border}`,
+        borderRadius: 4,
+        fontFamily: FONTS.sans,
+        fontSize: 11, fontWeight: 700, letterSpacing: '.16em',
+        textTransform: 'uppercase',
+        cursor: 'pointer',
+        transition: 'color .15s, border-color .15s',
+      }}
+    >{children}</button>
+  )
+}
+
+// ─── CONFIRM MODAL ───────────────────────────────────────────────────
+// Used for cancel-production and delete-script — replaces window.confirm.
+// Same vocabulary as FireStaffConfirm from Operations.
+function ConfirmModal({ title, message, confirmLabel, onConfirm, onClose }) {
+  return (
+    <EditorialModal onClose={onClose} title={title}>
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 14, color: T.textDim, lineHeight: 1.55, marginBottom: 22,
+      }}>
+        {message}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <SecondaryButton onClick={onClose}>Keep</SecondaryButton>
+        <button onClick={onConfirm} className="danger-btn" style={{ flex: 1 }}>
+          {confirmLabel}
+        </button>
+      </div>
+    </EditorialModal>
   )
 }
