@@ -11,7 +11,10 @@ import {
   MOVIES, MOVIE_PACK_REBUY_HYPE_PENALTY, MOVIE_PACK_COOLDOWN_MONTHS,
   FIRE_PENALTY_MULT,
 } from '../constants.js'
-import { HTag, Bar, Pill, SectionTitle } from './ui.jsx'
+// Note: HTag/Pill/Bar/SectionTitle from ./ui.jsx are no longer used here —
+// the editorial migration (stage AJ) inlined their roles using SectionHead,
+// mono tier pills, and gradient progress bars. Kept ui.jsx untouched so
+// un-migrated screens elsewhere still work.
 import { Icon, CategoryIcon } from '../icons.jsx'
 import { OfficeFloorPlan } from './OfficeFloorPlan.jsx'
 import {
@@ -1062,43 +1065,50 @@ function FireConfirm({ role, id, t, onConfirm, onCancel }) {
 // ─── 2. PURCHASE RIGHTS TAB ──────────────────────────────────────────────
 function RightsTab({ station, year, monthIdx, research, onBuyIP, onBuyMoviePack, onBuySportsLicense }) {
   const [section, setSection] = useState('ip')
+
+  // Reuse OpsSubTab — same vocabulary as the screen-level tabs and the
+  // Producers/Stars/Writers inner tabs on Talent. Consistent across the
+  // whole Operations screen.
   return (
     <div>
-      {/* Sub-sub-tab bar */}
       <div style={{
-        display: 'flex', gap: 0, marginBottom: 14,
+        display: 'flex', gap: 4, marginBottom: 24,
         borderBottom: `1px solid ${T.border}`,
+        overflowX: 'auto',
       }}>
-        <SubSubTab id="ip"     label="IP Licenses" active={section} onClick={setSection} />
-        <SubSubTab id="sports" label="Sports"      active={section} onClick={setSection} />
-        <SubSubTab id="movies" label="Movie Packs" active={section} onClick={setSection} />
+        <OpsSubTab id="ip"     label="IP Licenses" active={section === 'ip'}     onClick={() => setSection('ip')} />
+        <OpsSubTab id="sports" label="Sports"      active={section === 'sports'} onClick={() => setSection('sports')} />
+        <OpsSubTab id="movies" label="Movie Packs" active={section === 'movies'} onClick={() => setSection('movies')} />
       </div>
 
       {section === 'ip' && (
         <>
-          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
-            License existing IPs (books, characters, franchises) to pair with scripts for hype + quality bumps.
-          </div>
+          <RightsSubhead>
+            License existing IPs — books, characters, franchises — to pair with scripts
+            for hype and quality bumps. Free per-show use during the license term.
+          </RightsSubhead>
           <IPBlock station={station} year={year} research={research} onBuy={onBuyIP} />
         </>
       )}
 
       {section === 'sports' && (
         <>
-          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
+          <RightsSubhead>
             Buy a full year of league rights, then assign them to a slot in Programming.
-            Each league only airs during its real season, and gets a big bump on its peak month.
+            Each league only airs during its real season and gets a big bump on its peak month.
             Major leagues cost more in bigger markets.
-          </div>
+          </RightsSubhead>
           <SportsBlock station={station} year={year} onBuy={onBuySportsLicense} />
         </>
       )}
 
       {section === 'movies' && (
         <>
-          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
-            Each pack gives you 3 airings of the same licensed film. When you exhaust a pack, it returns to the catalog — but re-buying within 12 months means reduced hype (overexposure).
-          </div>
+          <RightsSubhead>
+            Each pack delivers 3 airings of the same licensed film. When a pack is exhausted
+            it returns to the catalog — but re-buying within 12 months means reduced hype
+            (overexposure).
+          </RightsSubhead>
           <MoviePackBlock station={station} year={year} monthIdx={monthIdx} onBuy={onBuyMoviePack} />
         </>
       )}
@@ -1106,26 +1116,17 @@ function RightsTab({ station, year, monthIdx, research, onBuyIP, onBuyMoviePack,
   )
 }
 
-function SubSubTab({ id, label, active, onClick }) {
-  const isActive = active === id
+/** Italic-serif subhead for each Rights sub-section. */
+function RightsSubhead({ children }) {
   return (
-    <button
-      onClick={() => onClick(id)}
-      style={{
-        background: 'transparent',
-        border: 'none',
-        color: isActive ? T.accent : T.muted,
-        padding: '8px 14px',
-        fontSize: 12,
-        fontWeight: isActive ? 700 : 500,
-        cursor: 'pointer',
-        letterSpacing: '.02em',
-        borderBottom: isActive ? `2px solid ${T.accent}` : '2px solid transparent',
-        marginBottom: -1,
-      }}
-    >
-      {label}
-    </button>
+    <div style={{
+      fontFamily: FONTS.serif,
+      fontVariationSettings: "'opsz' 14, 'wght' 400",
+      fontStyle: 'italic',
+      fontSize: 13, color: T.textDim, marginBottom: 20, lineHeight: 1.55, maxWidth: 620,
+    }}>
+      {children}
+    </div>
   )
 }
 
@@ -1145,91 +1146,192 @@ function SportsBlock({ station, year, onBuy }) {
     byTier[t].push(lg)
   }
   const tierLabels = {
-    mega: 'Mega Events',
-    pro: 'Pro Leagues',
+    mega: 'Mega events',
+    pro: 'Pro leagues',
     college: 'College',
     regional: 'Regional',
     niche: 'Niche',
   }
+  // Color per tier — used for the left stripe and the price emphasis
+  const tierColors = {
+    mega:     T.gold,
+    pro:      T.teal,
+    college:  T.green,
+    regional: T.accent,
+    niche:    T.muted,
+  }
 
   return (
     <div>
-      {tierOrder.filter(t => byTier[t]).map(t => (
-        <div key={t} style={{ marginBottom: 16 }}>
-          <div style={{
-            fontSize: 10, color: T.muted, letterSpacing: '.15em',
-            textTransform: 'uppercase', marginBottom: 6,
-          }}>{tierLabels[t]}</div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-            gap: 8,
-          }}>
-            {byTier[t].map(lg => {
-              const isOwned = ownedIds.has(lg.id)
-              const cost = sportsLicenseCost(lg.id, market)
-              const affordable = station.cash >= cost
-              const availableThisYear = leagueAvailableInYear(lg, year)
-              const yearsAway = availableThisYear ? 0 : leagueYearsUntilReturn(lg, year)
-              const fame = lg.fameOnSign || 0
-              const canBuy = !isOwned && affordable && availableThisYear
-
-              return (
-                <div key={lg.id} style={{
-                  background: isOwned ? T.green + '15' : (!availableThisYear ? T.bg : T.card),
-                  border: `1px solid ${isOwned ? T.green : (!availableThisYear ? T.border : T.border)}`,
-                  borderRadius: 5, padding: 10,
-                  opacity: availableThisYear ? 1 : 0.65,
-                }}>
-                  <div style={{
-                    fontSize: 13, fontWeight: 600,
-                    color: isOwned ? T.green : T.text,
-                  }}>
-                    {lg.icon} {lg.label} {isOwned && '✓'}
-                  </div>
-                  <div style={{ fontSize: 10, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
-                    Season: {lg.season.length} mo · Peak: {MONTHS[lg.peakMonth]} ({lg.peakLabel})
-                  </div>
-                  {fame > 0 && (
-                    <div style={{
-                      fontSize: 10, color: T.gold, marginTop: 4, fontWeight: 600,
-                    }}>
-                      ⭐ +{fame} fame on signing
-                    </div>
-                  )}
-                  {!availableThisYear ? (
-                    <div style={{
-                      marginTop: 7, fontSize: 10, color: T.muted,
-                      fontStyle: 'italic',
-                      background: T.border + '33', padding: '4px 6px', borderRadius: 3,
-                    }}>
-                      Returns in Y{year + (yearsAway || 1)}
-                    </div>
-                  ) : !isOwned ? (
-                    <button
-                      onClick={() => onBuy(lg.id)}
-                      disabled={!affordable}
-                      style={{
-                        width: '100%', marginTop: 7, padding: '6px 8px',
-                        background: affordable ? T.accent : T.border,
-                        color: affordable ? T.bg : T.muted,
-                        border: 'none', borderRadius: 4,
-                        fontSize: 11, fontWeight: 700,
-                        cursor: affordable ? 'pointer' : 'not-allowed',
-                      }}
-                    >${cost.toFixed(0)}M · BUY</button>
-                  ) : (
-                    <div style={{ marginTop: 7, fontSize: 10, color: T.green, fontStyle: 'italic' }}>
-                      Owned · Use in slot editor
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+      {tierOrder.filter(t => byTier[t]).map(t => {
+        const tierColor = tierColors[t]
+        return (
+          <div key={t} style={{ marginBottom: 28 }}>
+            <SectionHead title={tierLabels[t]} meta={`${byTier[t].length} ${byTier[t].length === 1 ? 'league' : 'leagues'}`} />
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+              gap: 10,
+            }}>
+              {byTier[t].map(lg => (
+                <SportsLeagueCard
+                  key={lg.id}
+                  league={lg}
+                  tierColor={tierColor}
+                  owned={ownedIds.has(lg.id)}
+                  station={station}
+                  market={market}
+                  year={year}
+                  onBuy={onBuy}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
+  )
+}
+
+/** Single league card — gradient surface + tier-colored stripe.
+ *  Hover state subtly brightens (no over-the-top halo since these aren't
+ *  picked individually — they're scanned in a grid). */
+function SportsLeagueCard({ league: lg, tierColor, owned, station, market, year, onBuy }) {
+  const [hover, setHover] = useState(false)
+  const cost = sportsLicenseCost(lg.id, market)
+  const affordable = station.cash >= cost
+  const availableThisYear = leagueAvailableInYear(lg, year)
+  const yearsAway = availableThisYear ? 0 : leagueYearsUntilReturn(lg, year)
+  const fame = lg.fameOnSign || 0
+  const canBuy = !owned && affordable && availableThisYear
+
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: owned
+          ? `linear-gradient(180deg, ${T.green}10 0%, ${T.green}06 100%)`
+          : (!availableThisYear
+              ? T.surface
+              : hover
+                ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+                : `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`),
+        border: `1px solid ${owned ? T.green + '55' : (hover && canBuy ? T.borderHi : T.border)}`,
+        borderLeft: `3px solid ${owned ? T.green : (availableThisYear ? tierColor : T.border)}`,
+        borderRadius: 5, padding: 12,
+        opacity: availableThisYear || owned ? 1 : 0.6,
+        transition: 'background .15s, border-color .15s',
+      }}
+    >
+      {/* Header — icon + name + owned check */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 6, marginBottom: 4,
+      }}>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 24, 'wght' 600",
+          fontSize: 14.5, color: owned ? T.green : T.text,
+          letterSpacing: '-.005em',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          minWidth: 0,
+        }}>
+          {lg.icon} {lg.label}
+        </div>
+        {owned && (
+          <span className="mono" style={{ fontSize: 10, color: T.green, letterSpacing: '.08em', flexShrink: 0 }}>✓ OWNED</span>
+        )}
+      </div>
+
+      {/* Slug — italic serif */}
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 11.5, color: T.muted, marginBottom: 8, lineHeight: 1.4,
+      }}>
+        {lg.season.length}-month season · Peak {MONTHS[lg.peakMonth]} ({lg.peakLabel})
+      </div>
+
+      {/* Fame badge if any */}
+      {fame > 0 && (
+        <div className="mono" style={{
+          display: 'inline-block',
+          fontSize: 9.5, color: T.gold, fontWeight: 700,
+          padding: '2px 7px', borderRadius: 3,
+          background: T.gold + '14', border: `1px solid ${T.gold}55`,
+          letterSpacing: '.08em', marginBottom: 10,
+        }}>
+          +{fame} FAME ON SIGN
+        </div>
+      )}
+
+      {/* Action */}
+      {!availableThisYear ? (
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 11, color: T.muted,
+          paddingTop: 6, borderTop: `1px solid ${T.border}`,
+        }}>
+          Returns in Y{year + (yearsAway || 1)}
+        </div>
+      ) : !owned ? (
+        <SportsBuyButton
+          cost={cost}
+          affordable={affordable}
+          color={tierColor}
+          onClick={() => onBuy(lg.id)}
+        />
+      ) : (
+        <div className="mono" style={{
+          fontSize: 10, color: T.green, fontStyle: 'italic',
+          paddingTop: 6, borderTop: `1px solid ${T.green}33`,
+        }}>
+          Use in slot editor
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Buy button for sports — outline fills with tier color on hover. */
+function SportsBuyButton({ cost, affordable, color, onClick }) {
+  const [hover, setHover] = useState(false)
+  if (!affordable) {
+    return (
+      <button disabled style={{
+        width: '100%', padding: '8px 10px',
+        background: T.surface, color: T.muted,
+        border: `1px dashed ${T.border}`,
+        borderRadius: 4, cursor: 'not-allowed',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <span style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', fontWeight: 600 }}>Need</span>
+        <span className="mono" style={{ fontSize: 12, color: T.red, fontWeight: 700 }}>${cost.toFixed(0)}M</span>
+      </button>
+    )
+  }
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: '100%', padding: '8px 10px',
+        background: hover ? color : 'transparent',
+        color: hover ? T.bg : color,
+        border: `1px solid ${color}`,
+        borderRadius: 4, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        transition: 'background .15s, color .15s',
+      }}
+    >
+      <span style={{ fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', fontWeight: 700 }}>License</span>
+      <span className="mono" style={{ fontSize: 12, fontWeight: 700 }}>${cost.toFixed(0)}M</span>
+    </button>
   )
 }
 
@@ -1239,29 +1341,61 @@ function IPBlock({ station, year, research, onBuy }) {
   // Owned vs available
   const owned = activeIPLicenses(station, year)
   const ownedById = new Map(owned.map(o => [o.ipId, o]))
+  const available = IPS.filter(ip => !ownedById.has(ip.id))
 
   return (
     <div>
       {/* Owned IPs */}
       {owned.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 10, color: T.green, marginBottom: 6 }}>YOU OWN ({owned.length})</div>
-          <div style={{ display: 'grid', gap: 6,
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+        <div style={{ marginBottom: 28 }}>
+          <SectionHead title="Under license" meta={`${owned.length} active`} />
+          <div style={{ display: 'grid', gap: 8,
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
             {owned.map(o => {
               const ip = findIP(o.ipId)
               if (!ip) return null
               return (
                 <div key={o.ipId} style={{
-                  padding: 9, background: T.green + '12',
-                  border: `1px solid ${T.green}55`, borderRadius: 5,
+                  padding: 12,
+                  background: `linear-gradient(180deg, ${T.green}10 0%, ${T.green}05 100%)`,
+                  border: `1px solid ${T.green}44`,
+                  borderLeft: `3px solid ${T.green}`,
+                  borderRadius: 5,
                 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>📜 {ip.name}</div>
-                  <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>
-                    Q +{ip.q.toFixed(1)} H +{ip.h.toFixed(1)} · Fits: {ip.fits.join(', ')}
+                  <div style={{
+                    fontFamily: FONTS.serif,
+                    fontVariationSettings: "'opsz' 24, 'wght' 600",
+                    fontSize: 14.5, color: T.text, letterSpacing: '-.005em',
+                    marginBottom: 4,
+                  }}>
+                    {ip.name}
                   </div>
-                  <div style={{ fontSize: 10, color: T.green, marginTop: 4 }}>
-                    Expires after Year {o.expiresYear}
+                  <div style={{
+                    fontFamily: FONTS.serif,
+                    fontVariationSettings: "'opsz' 14, 'wght' 400",
+                    fontStyle: 'italic',
+                    fontSize: 11.5, color: T.muted, marginBottom: 8,
+                  }}>
+                    Fits {ip.fits.join(', ')}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span className="mono" style={{
+                      fontSize: 9.5, color: T.qEnd, fontWeight: 700,
+                      padding: '2px 7px', borderRadius: 3,
+                      background: T.qEnd + '18',
+                      border: `1px solid ${T.qEnd}55`,
+                      letterSpacing: '.06em',
+                    }}>Q +{ip.q.toFixed(1)}</span>
+                    <span className="mono" style={{
+                      fontSize: 9.5, color: T.gold, fontWeight: 700,
+                      padding: '2px 7px', borderRadius: 3,
+                      background: T.gold + '14',
+                      border: `1px solid ${T.gold}66`,
+                      letterSpacing: '.06em',
+                    }}>H +{ip.h.toFixed(1)}</span>
+                  </div>
+                  <div className="mono" style={{ fontSize: 10, color: T.green, marginTop: 8, letterSpacing: '.06em' }}>
+                    Expires after Y{o.expiresYear}
                   </div>
                 </div>
               )
@@ -1271,26 +1405,10 @@ function IPBlock({ station, year, research, onBuy }) {
       )}
 
       {/* Available IPs */}
-      <div style={{ fontSize: 10, color: T.muted, marginBottom: 6 }}>AVAILABLE TO LICENSE</div>
-      <div style={{ display: 'grid', gap: 6 }}>
-        {IPS.filter(ip => !ownedById.has(ip.id)).map(ip => (
-          <div key={ip.id} style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: 10, background: T.card, border: `1px solid ${T.border}`, borderRadius: 5,
-          }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>📜 {ip.name}</div>
-              <div style={{ fontSize: 10, color: T.muted }}>
-                Q +{ip.q.toFixed(1)} H +{ip.h.toFixed(1)} · Fits: {ip.fits.join(', ')}
-              </div>
-            </div>
-            <HTag tier={ip.tier} />
-            <button onClick={() => setIpModal(ip)} style={{
-              background: T.accent, color: T.bg, padding: '6px 12px',
-              border: 'none', borderRadius: 4,
-              fontSize: 11, fontWeight: 700, cursor: 'pointer',
-            }}>License</button>
-          </div>
+      <SectionHead title="Available to license" meta={`${available.length} ${available.length === 1 ? 'IP' : 'IPs'}`} />
+      <div style={{ display: 'grid', gap: 8 }}>
+        {available.map(ip => (
+          <IPRow key={ip.id} ip={ip} onClick={() => setIpModal(ip)} />
         ))}
       </div>
 
@@ -1304,42 +1422,206 @@ function IPBlock({ station, year, research, onBuy }) {
   )
 }
 
+/** Single available-IP row — gradient surface, tier-colored stripe, License button. */
+function IPRow({ ip, onClick }) {
+  const [hover, setHover] = useState(false)
+  const ts = tierStyle(ip.tier)
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '12px 14px',
+        background: hover
+          ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+          : `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+        border: `1px solid ${hover ? ts.b : T.border}`,
+        borderLeft: `3px solid ${ts.c}`,
+        borderRadius: 5,
+        transition: 'background .15s, border-color .15s',
+        boxShadow: hover ? '0 4px 16px rgba(0,0,0,.25)' : 'none',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 24, 'wght' 600",
+          fontSize: 15, color: T.text, letterSpacing: '-.005em',
+          marginBottom: 3,
+        }}>
+          {ip.name}
+        </div>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 11.5, color: T.muted,
+        }}>
+          Fits {ip.fits.join(', ')}
+        </div>
+      </div>
+      {/* Q/H pills */}
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <span className="mono" style={{
+          fontSize: 9.5, color: T.qEnd, fontWeight: 700,
+          padding: '2px 7px', borderRadius: 3,
+          background: T.qEnd + '18', border: `1px solid ${T.qEnd}55`,
+          letterSpacing: '.06em',
+        }}>Q +{ip.q.toFixed(1)}</span>
+        <span className="mono" style={{
+          fontSize: 9.5, color: T.gold, fontWeight: 700,
+          padding: '2px 7px', borderRadius: 3,
+          background: T.gold + '14', border: `1px solid ${T.gold}66`,
+          letterSpacing: '.06em',
+        }}>H +{ip.h.toFixed(1)}</span>
+      </div>
+      {/* Tier pill */}
+      <span className="mono" style={{
+        fontSize: 9.5, color: ts.c, fontWeight: 700,
+        padding: '3px 9px', borderRadius: 3,
+        background: ts.bg, border: `1px solid ${ts.b}`,
+        letterSpacing: '.1em', textTransform: 'uppercase', flexShrink: 0,
+      }}>{ip.tier}</span>
+      {/* License button — outline fills on hover, same vocab as SignButton */}
+      <IPLicenseButton onClick={onClick} />
+    </div>
+  )
+}
+
+function IPLicenseButton({ onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: hover ? T.accent : 'transparent',
+        color: hover ? T.bg : T.accent,
+        border: `1px solid ${T.accent}`,
+        padding: '7px 14px', borderRadius: 4,
+        fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', fontWeight: 700,
+        cursor: 'pointer', flexShrink: 0,
+        transition: 'background .15s, color .15s',
+      }}
+    >
+      License
+    </button>
+  )
+}
+
 function IPLicenseModal({ ip, station, year, research, onConfirm, onCancel }) {
   return (
     <ModalOverlay onClose={onCancel}>
-      <div style={{ padding: 18 }}>
-        <div className="bebas" style={{ fontSize: 18, color: T.accent, marginBottom: 4 }}>
-          License {ip.name}
+      <div style={{ padding: 24 }}>
+        {/* Eyebrow */}
+        <div style={{
+          fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+          textTransform: 'uppercase', color: T.accent, marginBottom: 10,
+        }}>
+          License · {ip.tier}
         </div>
-        <div style={{ fontSize: 11, color: T.muted, marginBottom: 14 }}>
+
+        {/* Title — Fraunces */}
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 96, 'wght' 600",
+          fontSize: 28, color: T.text, letterSpacing: '-.02em',
+          marginBottom: 6, lineHeight: 1.05,
+        }}>
+          {ip.name}
+        </div>
+
+        {/* Italic subtitle */}
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 13, color: T.textDim, marginBottom: 20, lineHeight: 1.55,
+        }}>
           Free per-show use during the license term. Renewable when it expires.
         </div>
+
+        {/* Option cards */}
+        <div className="gradient-rule" style={{ marginBottom: 16 }} />
         <div style={{ display: 'grid', gap: 8 }}>
           {IP_LICENSE_TERMS.map(term => {
             const cost = ipLicenseCost(ip.id, term.id, research)
             const affordable = station.cash >= cost
             const expYear = year + term.years - 1
             return (
-              <button key={term.id} disabled={!affordable} onClick={() => onConfirm(term.id)} style={{
-                textAlign: 'left', padding: '11px 13px',
-                background: affordable ? T.cardHi : T.surface,
-                border: `1px solid ${affordable ? T.borderHi : T.border}`,
-                borderRadius: 5, cursor: affordable ? 'pointer' : 'not-allowed',
-                opacity: affordable ? 1 : 0.5, color: T.text,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{term.label}</span>
-                  <span style={{ fontFamily: 'JetBrains Mono', fontSize: 11, color: T.green }}>
-                    ${cost.toFixed(1)}M · expires Y{expYear}
-                  </span>
-                </div>
-                <div style={{ fontSize: 10, color: T.muted }}>{term.desc}</div>
-              </button>
+              <IPLicenseOption
+                key={term.id}
+                term={term}
+                cost={cost}
+                expYear={expYear}
+                affordable={affordable}
+                onClick={() => onConfirm(term.id)}
+              />
             )
           })}
         </div>
       </div>
     </ModalOverlay>
+  )
+}
+
+function IPLicenseOption({ term, cost, expYear, affordable, onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      disabled={!affordable}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        textAlign: 'left', padding: '14px 16px',
+        background: affordable
+          ? (hover
+              ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+              : `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`)
+          : T.surface,
+        border: `1px solid ${affordable ? (hover ? T.accent : T.border) : T.border}`,
+        borderRadius: 5, cursor: affordable ? 'pointer' : 'not-allowed',
+        opacity: affordable ? 1 : 0.5, color: T.text,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+        gap: 12, transition: 'background .15s, border-color .15s',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 24, 'wght' 600",
+          fontSize: 16, color: T.text, letterSpacing: '-.005em',
+          marginBottom: 3,
+        }}>
+          {term.label}
+        </div>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 12, color: T.muted, lineHeight: 1.45,
+        }}>
+          {term.desc}
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div className="mono" style={{
+          fontSize: 15, color: affordable ? T.text : T.muted, fontWeight: 600,
+          letterSpacing: '-.01em',
+        }}>
+          ${cost.toFixed(1)}M
+        </div>
+        <div className="mono" style={{
+          fontSize: 9.5, color: T.muted, letterSpacing: '.1em',
+          textTransform: 'uppercase', marginTop: 2,
+        }}>
+          Expires Y{expYear}
+        </div>
+      </div>
+    </button>
   )
 }
 
@@ -1349,19 +1631,38 @@ function StaffTab({ station, pendingHires, onOpenPosition, onCancelPosition, onP
   const salary = staffSalaryTotal(station)
   const isNational = station.market === 'national'
 
+  // Fire-confirm modal state: { role, name, tier } when active
+  const [fireTarget, setFireTarget] = useState(null)
+
   return (
     <div>
-      {/* Office floor plan — visual status of who's been hired */}
+      {/* Office floor plan — visual status of who's been hired.
+          Left as-is for now; deferred to a later stage. */}
       <OfficeFloorPlan station={station} />
 
-      {/* Pending hires — must resolve first */}
+      {/* Pending hires — must resolve first.
+          Restyled as an editorial event card: gold stripe + eyebrow + Fraunces. */}
       {pendingHires.length > 0 && (
         <div style={{
-          marginBottom: 22, padding: 14,
-          background: T.gold + '14', border: `1px solid ${T.gold}55`, borderRadius: 6,
+          marginTop: 24, marginBottom: 28, padding: '20px 22px',
+          background: `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`,
+          border: `1px solid ${T.gold}55`,
+          borderLeft: `3px solid ${T.gold}`,
+          borderRadius: 6,
         }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: T.gold, marginBottom: 8 }}>
-            ⭐ {pendingHires.length} search result{pendingHires.length > 1 ? 's' : ''} ready — pick a candidate
+          <div style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+            textTransform: 'uppercase', color: T.gold, marginBottom: 10,
+          }}>
+            Search results · {pendingHires.length} ready
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 96, 'wght' 500",
+            fontStyle: 'italic',
+            fontSize: 17, color: T.text, marginBottom: 16, lineHeight: 1.4,
+          }}>
+            Pick a candidate — your shortlist is on the desk.
           </div>
           {pendingHires.map(p => (
             <PendingHireBlock key={p.role} pending={p} onPick={onPickCandidate} />
@@ -1369,21 +1670,34 @@ function StaffTab({ station, pendingHires, onOpenPosition, onCancelPosition, onP
         </div>
       )}
 
-      {/* Total salary */}
+      {/* Monthly salary strip — small editorial stat row */}
       <div style={{
-        marginBottom: 18, padding: 12,
-        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5,
+        marginTop: pendingHires.length > 0 ? 0 : 24,
+        marginBottom: 28,
+        padding: '14px 16px',
+        background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+        border: `1px solid ${T.border}`, borderRadius: 5,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
-        <div style={{ fontSize: 12 }}>Monthly salary burn</div>
-        <div style={{ fontFamily: 'JetBrains Mono', fontSize: 14, color: salary > 0 ? T.red : T.muted, fontWeight: 700 }}>
-          {salary > 0 ? `$${salary.toFixed(1)}M/mo` : 'None hired'}
+        <div className="mono" style={{
+          fontSize: 9.5, color: T.muted, letterSpacing: '.16em',
+          textTransform: 'uppercase',
+        }}>
+          Monthly salary burn
+        </div>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 36, 'wght' 600",
+          fontSize: 18, color: salary > 0 ? T.red : T.muted,
+          letterSpacing: '-.01em',
+        }}>
+          {salary > 0 ? `$${salary.toFixed(1)}M / mo` : 'None hired'}
         </div>
       </div>
 
       {/* VP section */}
-      <SectionTitle>Vice Presidents</SectionTitle>
-      <div style={{ display: 'grid', gap: 10 }}>
+      <SectionHead title="Vice presidents" meta={`${STAFF_ROLES.length} roles`} />
+      <div style={{ display: 'grid', gap: 10, marginBottom: 24 }}>
         {STAFF_ROLES.map(role => (
           <StaffRoleCard
             key={role.id}
@@ -1393,33 +1707,52 @@ function StaffTab({ station, pendingHires, onOpenPosition, onCancelPosition, onP
             personnelHired={personnelHired}
             onOpen={onOpenPosition}
             onCancel={onCancelPosition}
-            onFire={onFireStaff}
+            onFire={(r) => {
+              const hired = station.staff?.[r]
+              if (!hired) return
+              setFireTarget({ role: r, name: hired.name, tier: hired.tier, kind: 'vp' })
+            }}
           />
         ))}
       </div>
 
       {!personnelHired && (
         <div style={{
-          marginTop: 14, padding: 12,
-          background: T.cardHi, border: `1px dashed ${T.border}`, borderRadius: 5,
-          fontSize: 11, color: T.muted, lineHeight: 1.5,
+          marginTop: 4, marginBottom: 8, padding: '14px 16px',
+          background: T.surface, border: `1px dashed ${T.borderHi}`, borderRadius: 5,
         }}>
-          💡 Hire a VP of Personnel first — they unlock searches for all other VPs.
-          Until then only Personnel can be opened (via Quick Search).
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 13, color: T.textDim, lineHeight: 1.55,
+          }}>
+            Hire a VP of Personnel first — they unlock searches for all other VPs.
+            Until then only Personnel can be opened via Quick Search.
+          </div>
         </div>
       )}
 
       {/* Directors section — only relevant at National */}
-      <div style={{ marginTop: 28 }}>
-        <SectionTitle>Directors</SectionTitle>
+      <div style={{ marginTop: 36 }}>
+        <SectionHead title="Directors" meta={isNational ? `${DIRECTOR_ROLES.length} roles` : 'National only'} />
         {!isNational ? (
           <div style={{
-            padding: 12, background: T.cardHi,
-            border: `1px dashed ${T.border}`, borderRadius: 5,
-            fontSize: 11, color: T.muted, lineHeight: 1.5,
+            padding: '32px 24px',
+            background: T.surface, border: `1px dashed ${T.borderHi}`, borderRadius: 6,
+            textAlign: 'center',
           }}>
-            🔒 Director-level hires are only available at the National office.
-            Promote your market when you're ready.
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 36, 'wght' 500",
+              fontStyle: 'italic',
+              fontSize: 16, color: T.textDim, marginBottom: 6, letterSpacing: '-.005em',
+            }}>
+              Director-level hires unlock at the National office.
+            </div>
+            <div style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.55, maxWidth: 420, margin: '0 auto' }}>
+              Promote your market when you're ready and the floor opens up.
+            </div>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
@@ -1429,17 +1762,30 @@ function StaffTab({ station, pendingHires, onOpenPosition, onCancelPosition, onP
                 role={role}
                 station={station}
                 onHire={onHireDirector}
-                onFire={onFireDirector}
+                onFire={(r) => setFireTarget({ role: r, name: `${role.label}`, kind: 'director' })}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Fire confirmation modal — replaces the old window.confirm */}
+      {fireTarget && (
+        <FireStaffConfirm
+          target={fireTarget}
+          onCancel={() => setFireTarget(null)}
+          onConfirm={() => {
+            if (fireTarget.kind === 'vp') onFireStaff(fireTarget.role)
+            else onFireDirector(fireTarget.role)
+            setFireTarget(null)
+          }}
+        />
+      )}
     </div>
   )
 }
 
-/** A single director card — hire/fire UI for one DIRECTOR_ROLES entry. */
+/** A single director card — gradient surface, tier-styled, edit/hire/fire UI. */
 function DirectorRoleCard({ role, station, onHire, onFire }) {
   const cur = directorCount(station, role.id)
   const isScheduling = role.id === 'scheduling'
@@ -1453,90 +1799,163 @@ function DirectorRoleCard({ role, station, onHire, onFire }) {
 
   return (
     <div style={{
-      padding: 12, background: T.surface,
-      border: `1px solid ${cur > 0 ? T.gold + '88' : T.border}`,
+      padding: 14,
+      background: cur > 0
+        ? `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`
+        : T.surface,
+      border: `1px solid ${cur > 0 ? T.gold + '55' : T.border}`,
+      borderLeft: `3px solid ${cur > 0 ? T.gold : T.borderHi}`,
       borderRadius: 5,
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <div style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{role.icon}</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ fontSize: 22, lineHeight: 1, marginTop: 2, flexShrink: 0 }}>{role.icon}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{role.label}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 24, 'wght' 600",
+              fontSize: 15.5, color: T.text, letterSpacing: '-.005em',
+            }}>
+              {role.label}
+            </div>
             {cur > 0 && (
-              <Pill color={T.gold}>
+              <span className="mono" style={{
+                fontSize: 9, color: T.gold, fontWeight: 700,
+                padding: '2px 7px', borderRadius: 3,
+                background: T.gold + '14', border: `1px solid ${T.gold}66`,
+                letterSpacing: '.1em', textTransform: 'uppercase',
+              }}>
                 {isScheduling ? `${cur} / ${max}` : 'Hired'}
-              </Pill>
+              </span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4, marginBottom: 8 }}>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 12.5, color: T.textDim, lineHeight: 1.5, marginBottom: 10,
+          }}>
             {role.desc}
           </div>
-          <div style={{ fontSize: 10, color: T.muted, marginBottom: 8 }}>
+          <div className="mono" style={{
+            fontSize: 10, color: T.muted, marginBottom: 12, letterSpacing: '.08em',
+          }}>
             ${DIRECTOR_SALARY.toFixed(1)}M / month · ${DIRECTOR_HIRE_COST.toFixed(1)}M to hire (Common)
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <DirectorHireButton
+              canHire={canHire}
+              filled={filled}
+              isScheduling={isScheduling}
+              cur={cur}
+              max={max}
               onClick={() => onHire(role.id)}
-              disabled={!canHire || filled}
-              style={{
-                background: (canHire && !filled) ? T.accent + '22' : 'transparent',
-                border: `1.5px solid ${(canHire && !filled) ? T.accent : T.border}`,
-                color: (canHire && !filled) ? T.accent : T.muted,
-                padding: '6px 12px', fontSize: 11, fontWeight: 700,
-                borderRadius: 4,
-                cursor: (canHire && !filled) ? 'pointer' : 'not-allowed',
-              }}
-            >
-              {filled ? 'Slots full' : (isScheduling && cur > 0 ? `Hire another (${cur + 1}/${max})` : 'Hire')}
-            </button>
+            />
             {cur > 0 && (
-              <button
-                onClick={() => onFire(role.id)}
-                style={{
-                  background: 'transparent', border: `1.5px solid ${T.red}88`,
-                  color: T.red, padding: '6px 12px', fontSize: 11, fontWeight: 600,
-                  borderRadius: 4, cursor: 'pointer',
-                }}
-              >
+              <button onClick={() => onFire(role.id)} className="danger-btn">
                 {isScheduling && cur > 1 ? `Fire one (${cur - 1} remain)` : 'Fire'}
               </button>
             )}
+            {hireDisabledReason && cur === 0 && (
+              <span style={{
+                fontFamily: FONTS.serif,
+                fontVariationSettings: "'opsz' 14, 'wght' 400",
+                fontStyle: 'italic',
+                fontSize: 11.5, color: T.muted,
+              }}>
+                {hireDisabledReason}
+              </span>
+            )}
           </div>
-          {hireDisabledReason && cur === 0 && (
-            <div style={{ fontSize: 10, color: T.muted, marginTop: 6, fontStyle: 'italic' }}>
-              {hireDisabledReason}
-            </div>
-          )}
         </div>
       </div>
     </div>
   )
 }
 
+function DirectorHireButton({ canHire, filled, isScheduling, cur, max, onClick }) {
+  const [hover, setHover] = useState(false)
+  const disabled = !canHire || filled
+  const label = filled ? 'Slots full' : (isScheduling && cur > 0 ? `Hire another (${cur + 1}/${max})` : 'Hire')
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: disabled ? 'transparent' : (hover ? T.accent : 'transparent'),
+        color: disabled ? T.muted : (hover ? T.bg : T.accent),
+        border: `1px solid ${disabled ? T.border : T.accent}`,
+        padding: '6px 14px', borderRadius: 4,
+        fontSize: 10, fontWeight: 700, letterSpacing: '.14em',
+        textTransform: 'uppercase',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background .15s, color .15s',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
 function PendingHireBlock({ pending, onPick }) {
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 11, color: T.muted, marginBottom: 5 }}>
-        VP OF {pending.role.toUpperCase()} — pick one of {pending.candidates.length}
+    <div style={{ marginBottom: 16, marginTop: 4 }}>
+      <div className="mono" style={{
+        fontSize: 9.5, color: T.muted, letterSpacing: '.16em',
+        textTransform: 'uppercase', marginBottom: 8,
+      }}>
+        VP of {pending.role} · {pending.candidates.length} candidate{pending.candidates.length > 1 ? 's' : ''}
       </div>
-      <div style={{ display: 'grid', gap: 5 }}>
+      <div style={{ display: 'grid', gap: 6 }}>
         {pending.candidates.map((c, i) => (
-          <button key={i} onClick={() => onPick(pending.role, c)} style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: 10, background: T.card, border: `1px solid ${T.border}`,
-            borderRadius: 5, cursor: 'pointer', color: T.text, textAlign: 'left',
-          }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
-              <div style={{ fontSize: 10, color: T.muted }}>
-                ${STAFF_SALARY_BY_TIER[c.tier].toFixed(1)}M/mo salary
-              </div>
-            </div>
-            <HTag tier={c.tier} />
-          </button>
+          <PendingCandidateRow key={i} candidate={c} onPick={() => onPick(pending.role, c)} />
         ))}
       </div>
     </div>
+  )
+}
+
+function PendingCandidateRow({ candidate: c, onPick }) {
+  const [hover, setHover] = useState(false)
+  const ts = tierStyle(c.tier)
+  return (
+    <button
+      onClick={onPick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '11px 14px',
+        background: hover
+          ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+          : `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+        border: `1px solid ${hover ? ts.b : T.border}`,
+        borderLeft: `3px solid ${ts.c}`,
+        borderRadius: 5, cursor: 'pointer', color: T.text, textAlign: 'left',
+        transition: 'background .15s, border-color .15s',
+      }}
+    >
+      <div>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 24, 'wght' 600",
+          fontSize: 14.5, color: T.text, letterSpacing: '-.005em', marginBottom: 2,
+        }}>
+          {c.name}
+        </div>
+        <div className="mono" style={{ fontSize: 10.5, color: T.muted, letterSpacing: '.04em' }}>
+          ${STAFF_SALARY_BY_TIER[c.tier].toFixed(1)}M / mo
+        </div>
+      </div>
+      <span className="mono" style={{
+        fontSize: 9.5, color: ts.c, fontWeight: 700,
+        padding: '3px 9px', borderRadius: 3,
+        background: ts.bg, border: `1px solid ${ts.b}`,
+        letterSpacing: '.1em', textTransform: 'uppercase',
+      }}>{c.tier}</span>
+    </button>
   )
 }
 
@@ -1547,91 +1966,211 @@ function StaffRoleCard({ role, station, research, personnelHired, onOpen, onCanc
 
   return (
     <div style={{
-      padding: 12,
-      background: hired ? T.green + '08' : T.surface,
-      border: `1px solid ${hired ? T.green + '55' : T.border}`,
-      borderRadius: 6,
+      padding: 14,
+      background: hired
+        ? `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`
+        : T.surface,
+      border: `1px solid ${hired ? T.green + '44' : T.border}`,
+      borderLeft: `3px solid ${hired ? T.green : (openPos ? T.gold : T.borderHi)}`,
+      borderRadius: 5,
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <div style={{ fontSize: 20 }}>{role.icon}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>{role.label}</div>
-          <div style={{ fontSize: 10, color: T.muted, marginTop: 2, lineHeight: 1.4 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ fontSize: 20, flexShrink: 0, marginTop: 1 }}>{role.icon}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 24, 'wght' 600",
+              fontSize: 15.5, color: T.text, letterSpacing: '-.005em',
+            }}>
+              {role.label}
+            </div>
+            {hired && (() => {
+              const ts = tierStyle(hired.tier)
+              return (
+                <span className="mono" style={{
+                  fontSize: 9, color: ts.c, fontWeight: 700,
+                  padding: '2px 7px', borderRadius: 3,
+                  background: ts.bg, border: `1px solid ${ts.b}`,
+                  letterSpacing: '.1em', textTransform: 'uppercase',
+                }}>{hired.tier}</span>
+              )
+            })()}
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 12.5, color: T.textDim, lineHeight: 1.5,
+          }}>
             {role.desc}
           </div>
         </div>
-        {hired && <HTag tier={hired.tier} />}
       </div>
 
       {/* Hired state */}
       {hired && (
         <div style={{
-          marginTop: 10, padding: '8px 10px',
-          background: T.green + '10', borderRadius: 4,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          marginTop: 14, padding: '10px 12px',
+          background: T.green + '0c',
+          border: `1px solid ${T.green}33`, borderRadius: 4,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
         }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600 }}>{hired.name}</div>
-            <div style={{ fontSize: 10, color: T.muted }}>
-              ${STAFF_SALARY_BY_TIER[hired.tier].toFixed(1)}M/mo · effect: {effectSummary(role, hired.tier)}
+          <div style={{ minWidth: 0 }}>
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 24, 'wght' 600",
+              fontSize: 13.5, color: T.text, marginBottom: 2, letterSpacing: '-.005em',
+            }}>
+              {hired.name}
+            </div>
+            <div className="mono" style={{ fontSize: 10, color: T.muted, letterSpacing: '.06em' }}>
+              ${STAFF_SALARY_BY_TIER[hired.tier].toFixed(1)}M/mo · {effectSummary(role, hired.tier)}
             </div>
           </div>
-          <button onClick={() => {
-            if (window.confirm(`Fire ${hired.name}? Severance = ${STAFF_FIRE_PENALTY_MULT}× one month ($${(STAFF_SALARY_BY_TIER[hired.tier] * STAFF_FIRE_PENALTY_MULT).toFixed(1)}M).`)) {
-              onFire(role.id)
-            }
-          }} style={{
-            background: 'transparent', border: `1px solid ${T.red}55`,
-            color: T.red, padding: '5px 10px', borderRadius: 4,
-            fontSize: 10, fontWeight: 700, cursor: 'pointer',
-          }}>Fire</button>
+          <button onClick={() => onFire(role.id)} className="danger-btn">Fire</button>
         </div>
       )}
 
       {/* Open search */}
       {openPos && (
         <div style={{
-          marginTop: 10, padding: '8px 10px',
-          background: T.gold + '10', border: `1px solid ${T.gold}33`, borderRadius: 4,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          marginTop: 14, padding: '10px 12px',
+          background: T.gold + '10', border: `1px solid ${T.gold}44`, borderRadius: 4,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
         }}>
-          <div style={{ fontSize: 11, color: T.gold }}>
-            🔍 Finding a {role.label}… {openPos.monthsLeft}/{openPos.monthsTotal} mo left
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 12.5, color: T.gold,
+          }}>
+            Searching for a {role.label} · <span className="mono" style={{ fontStyle: 'normal', fontSize: 11 }}>{openPos.monthsLeft}/{openPos.monthsTotal} mo left</span>
           </div>
-          <button onClick={() => onCancel(role.id)} style={{
-            background: 'transparent', border: `1px solid ${T.red}55`,
-            color: T.red, padding: '4px 8px', borderRadius: 4,
-            fontSize: 10, fontWeight: 700, cursor: 'pointer',
-          }}>Cancel</button>
+          <button onClick={() => onCancel(role.id)} className="danger-btn">Cancel</button>
         </div>
       )}
 
       {/* Hire actions */}
       {!hired && !openPos && (
-        <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ marginTop: 14, display: 'grid', gap: 6,
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
           {STAFF_SEARCHES.map(s => {
             const available = isSearchTierAvailable(s.id, research, role.id, personnelHired)
             return (
-              <button key={s.id} disabled={!available || locked} onClick={() => onOpen(role.id, s.id)}
-                style={{
-                  flex: '1 1 auto', padding: '7px 10px',
-                  background: available && !locked ? T.cardHi : T.surface,
-                  border: `1px solid ${available && !locked ? T.borderHi : T.border}`,
-                  color: available && !locked ? T.text : T.muted,
-                  borderRadius: 4, cursor: available && !locked ? 'pointer' : 'not-allowed',
-                  fontSize: 11, fontWeight: 600, opacity: available && !locked ? 1 : 0.5,
-                }}
-              >
-                <div>{s.label}</div>
-                <div style={{ fontSize: 9, color: T.muted, marginTop: 2 }}>
-                  {s.months} mo · ${s.cost.toFixed(1)}M
-                </div>
-              </button>
+              <SearchTierButton
+                key={s.id}
+                search={s}
+                available={available}
+                locked={locked}
+                onClick={() => onOpen(role.id, s.id)}
+              />
             )
           })}
         </div>
       )}
     </div>
+  )
+}
+
+function SearchTierButton({ search: s, available, locked, onClick }) {
+  const [hover, setHover] = useState(false)
+  const disabled = !available || locked
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: '10px 12px',
+        background: disabled
+          ? T.surface
+          : (hover
+              ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+              : `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`),
+        border: `1px solid ${disabled ? T.border : (hover ? T.accent : T.borderHi)}`,
+        borderRadius: 4,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        textAlign: 'left',
+        transition: 'background .15s, border-color .15s',
+      }}
+    >
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 24, 'wght' 600",
+        fontSize: 13, color: T.text, letterSpacing: '-.005em',
+      }}>
+        {s.label}
+      </div>
+      <div className="mono" style={{ fontSize: 10, color: T.muted, marginTop: 3, letterSpacing: '.06em' }}>
+        {s.months} mo · ${s.cost.toFixed(1)}M
+      </div>
+    </button>
+  )
+}
+
+/** Fire confirmation — editorial modal replacing window.confirm. */
+function FireStaffConfirm({ target, onCancel, onConfirm }) {
+  // VP severance = STAFF_FIRE_PENALTY_MULT × monthly salary for that tier.
+  // Directors don't have a clean severance formula in code so for those we
+  // just show a generic warning.
+  const severance = target.kind === 'vp' && target.tier
+    ? STAFF_SALARY_BY_TIER[target.tier] * STAFF_FIRE_PENALTY_MULT
+    : null
+
+  return (
+    <ModalOverlay onClose={onCancel}>
+      <div style={{ padding: 24, maxWidth: 460 }}>
+        {/* Red eyebrow */}
+        <div style={{
+          fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+          textTransform: 'uppercase', color: T.red, marginBottom: 10,
+        }}>
+          Confirm fire
+        </div>
+        {/* Name — Fraunces serif */}
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 96, 'wght' 600",
+          fontSize: 26, color: T.text, letterSpacing: '-.02em',
+          marginBottom: 14, lineHeight: 1.05,
+        }}>
+          {target.name}
+        </div>
+        {/* Italic body */}
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 14, color: T.textDim, marginBottom: 22, lineHeight: 1.55,
+        }}>
+          {severance != null ? (
+            <>Severance is <span className="mono" style={{ fontStyle: 'normal', color: T.red, fontWeight: 700 }}>{STAFF_FIRE_PENALTY_MULT}×</span> one month, or <span className="mono" style={{ fontStyle: 'normal', color: T.red, fontWeight: 700 }}>${severance.toFixed(1)}M</span>. They walk out the door today.</>
+          ) : (
+            <>They walk out the door today. The role goes back to open.</>
+          )}
+        </div>
+        {/* Button row */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onCancel} style={{
+            flex: 1, padding: '11px 16px',
+            background: 'transparent', color: T.text,
+            border: `1px solid ${T.borderHi}`, borderRadius: 4,
+            fontSize: 10.5, fontWeight: 700, letterSpacing: '.14em',
+            textTransform: 'uppercase', cursor: 'pointer',
+          }}>Keep</button>
+          <button onClick={onConfirm} style={{
+            flex: 1, padding: '11px 16px',
+            background: T.red, color: T.text,
+            border: 'none', borderRadius: 4,
+            fontSize: 10.5, fontWeight: 700, letterSpacing: '.14em',
+            textTransform: 'uppercase', cursor: 'pointer',
+          }}>Fire</button>
+        </div>
+      </div>
+    </ModalOverlay>
   )
 }
 
@@ -1683,19 +2222,23 @@ function MarketingTab({ station, research, onLaunchCampaign }) {
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: T.muted, marginBottom: 14, lineHeight: 1.5 }}>
-        Station-wide campaigns boost <strong>every show</strong>'s hype while active and
-        grant a one-time fame bump on launch. Sponsorships run multiple months;
-        Super Bowl ads burn bright for one. Campaigns can stack.
+      {/* Intro — italic serif slugline */}
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 13, color: T.textDim, marginBottom: 24, lineHeight: 1.55, maxWidth: 620,
+      }}>
+        Station-wide campaigns boost every show's hype while active and grant a one-time
+        fame bump on launch. Sponsorships run multiple months; Super Bowl ads burn bright
+        for one. Campaigns stack.
       </div>
 
+      {/* Active campaigns */}
       {active.length > 0 && (
-        <div style={{ marginBottom: 18 }}>
-          <div style={{
-            fontSize: 10, color: T.muted, letterSpacing: '.12em',
-            textTransform: 'uppercase', marginBottom: 6,
-          }}>Active ({active.length})</div>
-          <div style={{ display: 'grid', gap: 6 }}>
+        <div style={{ marginBottom: 32 }}>
+          <SectionHead title="Active" meta={`${active.length} running`} />
+          <div style={{ display: 'grid', gap: 8 }}>
             {active.map(c => (
               <ActiveCampaignCard key={c.id} c={c} />
             ))}
@@ -1703,11 +2246,8 @@ function MarketingTab({ station, research, onLaunchCampaign }) {
         </div>
       )}
 
-      <div style={{
-        fontSize: 10, color: T.muted, letterSpacing: '.12em',
-        textTransform: 'uppercase', marginBottom: 6,
-      }}>Launch a new campaign</div>
-
+      {/* Catalog */}
+      <SectionHead title="Launch a new campaign" meta={`${NETWORK_CAMPAIGNS.length} options`} />
       <div style={{ display: 'grid', gap: 8 }}>
         {NETWORK_CAMPAIGNS.map(c => {
           const adjustedCost = c.cost * costMult
@@ -1718,54 +2258,22 @@ function MarketingTab({ station, research, onLaunchCampaign }) {
           const affordable = station.cash >= adjustedCost
           const canLaunch = affordable && marketOk
 
-          // Mega campaigns open the modal; basic campaigns launch directly.
-          const handleClick = () => {
-            if (!canLaunch) return
-            if (c.needsInputs) setLauncherTier(c)
-            else onLaunchCampaign(c.id)
-          }
-
           return (
-            <button
+            <CampaignCatalogCard
               key={c.id}
-              disabled={!canLaunch}
-              onClick={handleClick}
-              style={{
-                padding: '12px 14px', textAlign: 'left',
-                background: canLaunch ? T.card : T.surface,
-                border: `1px solid ${c.needsInputs ? T.gold + '55' : T.border}`,
-                borderRadius: 5, cursor: canLaunch ? 'pointer' : 'not-allowed',
-                opacity: canLaunch ? 1 : 0.55, color: T.text,
+              campaign={c}
+              adjustedCost={adjustedCost}
+              adjustedHype={adjustedHype}
+              adjustedFame={adjustedFame}
+              marketOk={marketOk}
+              affordable={affordable}
+              canLaunch={canLaunch}
+              onClick={() => {
+                if (!canLaunch) return
+                if (c.needsInputs) setLauncherTier(c)
+                else onLaunchCampaign(c.id)
               }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontSize: 14, fontWeight: 700 }}>
-                  {c.icon || '📣'} {c.label}
-                  {c.needsInputs && (
-                    <span style={{
-                      marginLeft: 8, fontSize: 9, color: T.gold,
-                      background: T.gold + '22', border: `1px solid ${T.gold}66`,
-                      padding: '1px 6px', borderRadius: 3,
-                      letterSpacing: '.1em', fontWeight: 700,
-                    }}>MEGA</span>
-                  )}
-                </span>
-                <span style={{ fontFamily: 'JetBrains Mono', fontSize: 12, color: T.red, fontWeight: 700 }}>
-                  ${adjustedCost.toFixed(1)}M
-                </span>
-              </div>
-              <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4 }}>
-                {c.desc}
-              </div>
-              <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>
-                +{adjustedFame.toFixed(1)} fame · +{adjustedHype.toFixed(2)} hype/mo · {c.monthsActive || 1} mo
-                {!marketOk && <span style={{ color: T.red, marginLeft: 6 }}>· Requires {c.minMarket} market</span>}
-                {marketOk && !affordable && <span style={{ color: T.red, marginLeft: 6 }}>· Not enough cash</span>}
-                {c.needsInputs && marketOk && affordable && (
-                  <span style={{ color: T.gold, marginLeft: 6 }}>· Tap to configure ▸</span>
-                )}
-              </div>
-            </button>
+            />
           )
         })}
       </div>
@@ -1787,6 +2295,133 @@ function MarketingTab({ station, research, onLaunchCampaign }) {
   )
 }
 
+/** Single catalog entry — gradient surface, tier-colored stripe (mega=gold, basic=accent),
+ *  Fraunces title, italic body, mono cost. Hover lifts. */
+function CampaignCatalogCard({ campaign: c, adjustedCost, adjustedHype, adjustedFame, marketOk, affordable, canLaunch, onClick }) {
+  const [hover, setHover] = useState(false)
+  const isMega = !!c.needsInputs
+  const stripeColor = isMega ? T.gold : T.accent
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={!canLaunch}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        textAlign: 'left',
+        padding: '14px 16px',
+        background: !canLaunch
+          ? T.surface
+          : (hover
+              ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+              : `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`),
+        border: `1px solid ${!canLaunch ? T.border : (hover ? stripeColor + '88' : T.border)}`,
+        borderLeft: `3px solid ${stripeColor}`,
+        borderRadius: 5,
+        cursor: canLaunch ? 'pointer' : 'not-allowed',
+        opacity: canLaunch ? 1 : 0.55,
+        color: T.text,
+        transition: 'background .15s, border-color .15s',
+        boxShadow: hover && canLaunch ? '0 4px 16px rgba(0,0,0,.25)' : 'none',
+      }}
+    >
+      {/* Header: name + mega badge + cost */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+        gap: 14, marginBottom: 6,
+      }}>
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 600",
+            fontSize: 17, color: T.text, letterSpacing: '-.01em',
+          }}>
+            {c.icon || '📣'} {c.label}
+          </span>
+          {isMega && (
+            <span className="mono" style={{
+              fontSize: 9, color: T.gold, fontWeight: 700,
+              padding: '2px 7px', borderRadius: 3,
+              background: T.gold + '14', border: `1px solid ${T.gold}66`,
+              letterSpacing: '.16em', textTransform: 'uppercase',
+            }}>Mega</span>
+          )}
+        </div>
+        <div className="mono" style={{
+          fontSize: 15, color: canLaunch ? T.text : T.red, fontWeight: 700,
+          letterSpacing: '-.01em', flexShrink: 0,
+        }}>
+          ${adjustedCost.toFixed(1)}M
+        </div>
+      </div>
+
+      {/* Description — italic serif */}
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 12.5, color: T.muted, lineHeight: 1.5, marginBottom: 10,
+      }}>
+        {c.desc}
+      </div>
+
+      {/* Stats row — mono pills */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span className="mono" style={{
+          fontSize: 9.5, color: T.gold, fontWeight: 700,
+          padding: '2px 7px', borderRadius: 3,
+          background: T.gold + '14', border: `1px solid ${T.gold}66`,
+          letterSpacing: '.06em',
+        }}>+{adjustedFame.toFixed(1)} FAME</span>
+        <span className="mono" style={{
+          fontSize: 9.5, color: T.pink, fontWeight: 700,
+          padding: '2px 7px', borderRadius: 3,
+          background: T.pink + '14', border: `1px solid ${T.pink}66`,
+          letterSpacing: '.06em',
+        }}>+{adjustedHype.toFixed(2)} H/MO</span>
+        <span className="mono" style={{
+          fontSize: 9.5, color: T.muted, fontWeight: 700,
+          padding: '2px 7px', borderRadius: 3,
+          background: T.surface, border: `1px solid ${T.border}`,
+          letterSpacing: '.06em',
+        }}>{c.monthsActive || 1} MO</span>
+        {!marketOk && (
+          <span style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 11, color: T.red,
+          }}>
+            Requires {c.minMarket} market
+          </span>
+        )}
+        {marketOk && !affordable && (
+          <span style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 11, color: T.red,
+          }}>
+            Not enough cash
+          </span>
+        )}
+        {isMega && marketOk && affordable && (
+          <span style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 11, color: T.gold,
+            marginLeft: 'auto',
+          }}>
+            Tap to configure →
+          </span>
+        )}
+      </div>
+    </button>
+  )
+}
+
 /** Pinned card showing one active campaign, with a months-remaining badge. */
 function ActiveCampaignCard({ c }) {
   // Multi-month campaigns show progress; one-month campaigns just show "1 mo".
@@ -1794,29 +2429,50 @@ function ActiveCampaignCard({ c }) {
   const remaining = c.monthsRemaining || 1
   return (
     <div style={{
-      padding: 10,
-      background: T.gold + '12',
-      border: `1px solid ${T.gold}55`, borderRadius: 5,
+      padding: '12px 14px',
+      background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+      border: `1px solid ${T.gold}44`,
+      borderLeft: `3px solid ${T.gold}`,
+      borderRadius: 5,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-        <span style={{ fontSize: 13, color: T.gold, fontWeight: 700 }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+        gap: 12, marginBottom: 4,
+      }}>
+        <span style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 24, 'wght' 600",
+          fontSize: 15, color: T.text, letterSpacing: '-.005em',
+        }}>
           {c.icon || '📣'} {c.label}
         </span>
-        <span style={{
-          fontSize: 10, fontFamily: 'JetBrains Mono', color: T.gold,
-          background: T.gold + '22', padding: '2px 8px', borderRadius: 3,
+        <span className="mono" style={{
+          fontSize: 10, color: T.gold, fontWeight: 700,
+          padding: '2px 8px', borderRadius: 3,
+          background: T.gold + '14', border: `1px solid ${T.gold}66`,
+          letterSpacing: '.04em', flexShrink: 0,
         }}>
-          {remaining}/{totalMonths} mo left
+          {remaining}/{totalMonths} MO LEFT
         </span>
       </div>
-      <div style={{ fontSize: 10, color: T.muted, lineHeight: 1.4 }}>
-        +{(c.hypeBoost || 0).toFixed(2)} hype on every airing
-        {c.starName && ` · featuring ${c.starName}`}
-        {c.showNames?.length === 2 && ` · ${c.showNames[0]} + ${c.showNames[1]}`}
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 12, color: T.muted, lineHeight: 1.45,
+      }}>
+        <span className="mono" style={{ fontStyle: 'normal', color: T.pink, fontWeight: 700 }}>
+          +{(c.hypeBoost || 0).toFixed(2)} H
+        </span>
+        {' '}on every airing
+        {c.starName && <> · featuring <span style={{ color: T.textDim }}>{c.starName}</span></>}
+        {c.showNames?.length === 2 && <> · {c.showNames[0]} + {c.showNames[1]}</>}
       </div>
       {c.inputMultiplier && c.inputMultiplier !== 1.0 && (
-        <div style={{ fontSize: 9, color: T.muted, marginTop: 3, fontStyle: 'italic' }}>
-          Input multiplier: ×{c.inputMultiplier.toFixed(2)}
+        <div className="mono" style={{
+          fontSize: 9.5, color: T.muted, marginTop: 6, letterSpacing: '.08em',
+        }}>
+          Input multiplier · ×{c.inputMultiplier.toFixed(2)}
         </div>
       )}
     </div>
@@ -1859,51 +2515,91 @@ function CampaignLauncher({ tier, station, costMult, impactMult, onCancel, onLau
   const affordable = station.cash >= adjustedCost
   const canLaunch = !!star && !!show1 && !!show2 && distinctShows && affordable
 
+  // Common select style — gradient surface, CSS chevron from inline SVG
+  const selectStyle = {
+    width: '100%', padding: '11px 36px 11px 14px',
+    background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%) no-repeat,
+                 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23bbb1c4' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E") right 14px center / 10px no-repeat`,
+    backgroundColor: T.cardGradBot,
+    color: T.text,
+    border: `1px solid ${T.borderHi}`, borderRadius: 4,
+    fontSize: 13, fontFamily: FONTS.sans,
+    appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+    cursor: 'pointer',
+  }
+
   return (
     <ModalOverlay onClose={onCancel}>
-      <div style={{ padding: 18, maxWidth: 540, width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-          <div>
-            <div className="bebas" style={{ fontSize: 22, color: T.gold, letterSpacing: '.02em' }}>
+      <div style={{ padding: 24, maxWidth: 560, width: '100%' }}>
+        {/* Header — eyebrow + Fraunces title + close × */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          gap: 16, marginBottom: 6,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+              textTransform: 'uppercase', color: T.gold, marginBottom: 10,
+            }}>
+              Mega campaign · {tier.minMarket} market+
+            </div>
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 96, 'wght' 600",
+              fontSize: 28, color: T.text, letterSpacing: '-.02em',
+              marginBottom: 6, lineHeight: 1.05,
+            }}>
               {tier.icon} {tier.label}
             </div>
-            <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
-              {tier.monthsActive} month{tier.monthsActive > 1 ? 's' : ''} · {tier.minMarket} market minimum
+            <div className="mono" style={{
+              fontSize: 10, color: T.muted, letterSpacing: '.1em',
+              textTransform: 'uppercase',
+            }}>
+              {tier.monthsActive} month{tier.monthsActive > 1 ? 's' : ''} · cost ×{costMult.toFixed(2)} · impact ×{impactMult.toFixed(2)}
             </div>
           </div>
           <button onClick={onCancel} style={{
-            background: 'transparent', border: 'none', color: T.muted,
-            fontSize: 20, cursor: 'pointer', padding: 4,
+            background: 'transparent', border: `1px solid ${T.borderHi}`,
+            color: T.muted, borderRadius: 4,
+            width: 32, height: 32, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 18, lineHeight: 1, flexShrink: 0,
           }}>×</button>
         </div>
 
-        <div style={{ fontSize: 12, color: T.textDim, marginBottom: 14, lineHeight: 1.5 }}>
+        {/* Italic body */}
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 13, color: T.textDim, marginTop: 14, marginBottom: 18, lineHeight: 1.55,
+        }}>
           {tier.desc}
         </div>
 
+        <div className="gradient-rule" style={{ marginBottom: 20 }} />
+
         {/* Star picker */}
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 10, color: T.muted, letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 5 }}>
-            Featured Star
+        <div style={{ marginBottom: 18 }}>
+          <div className="mono" style={{
+            fontSize: 9.5, color: T.muted, letterSpacing: '.16em',
+            textTransform: 'uppercase', marginBottom: 8,
+          }}>
+            Featured star
           </div>
           {!hasEnoughStars ? (
             <div style={{
-              padding: 10, background: T.bg, border: `1px solid ${T.red}55`,
-              borderRadius: 4, fontSize: 11, color: T.red,
+              padding: '12px 14px', background: T.surface,
+              border: `1px dashed ${T.red}55`, borderRadius: 4,
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 14, 'wght' 400",
+              fontStyle: 'italic',
+              fontSize: 13, color: T.red, lineHeight: 1.5,
             }}>
               You don't have any stars under contract. Sign one before launching this campaign.
             </div>
           ) : (
-            <select
-              value={starId}
-              onChange={e => setStarId(e.target.value)}
-              style={{
-                width: '100%', padding: '8px 10px',
-                background: T.bg, color: T.text,
-                border: `1px solid ${T.border}`, borderRadius: 4,
-                fontSize: 12,
-              }}
-            >
+            <select value={starId} onChange={e => setStarId(e.target.value)} style={selectStyle}>
               {hiredStars.map(({ star: s }) => (
                 <option key={s.id} value={s.id}>
                   {s.name} — {s.tier} {s.specialty} (Q+{s.q.toFixed(1)} H+{s.h.toFixed(1)})
@@ -1914,29 +2610,27 @@ function CampaignLauncher({ tier, station, costMult, impactMult, onCancel, onLau
         </div>
 
         {/* Show pickers */}
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 10, color: T.muted, letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 5 }}>
-            Tentpole Shows (choose 2)
+        <div style={{ marginBottom: 22 }}>
+          <div className="mono" style={{
+            fontSize: 9.5, color: T.muted, letterSpacing: '.16em',
+            textTransform: 'uppercase', marginBottom: 8,
+          }}>
+            Tentpole shows · pick two
           </div>
           {!hasEnoughShows ? (
             <div style={{
-              padding: 10, background: T.bg, border: `1px solid ${T.red}55`,
-              borderRadius: 4, fontSize: 11, color: T.red,
+              padding: '12px 14px', background: T.surface,
+              border: `1px dashed ${T.red}55`, borderRadius: 4,
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 14, 'wght' 400",
+              fontStyle: 'italic',
+              fontSize: 13, color: T.red, lineHeight: 1.5,
             }}>
               You need at least two programs in your catalog before launching this campaign.
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: 6 }}>
-              <select
-                value={show1Id}
-                onChange={e => setShow1Id(e.target.value)}
-                style={{
-                  width: '100%', padding: '8px 10px',
-                  background: T.bg, color: T.text,
-                  border: `1px solid ${T.border}`, borderRadius: 4,
-                  fontSize: 12,
-                }}
-              >
+            <div style={{ display: 'grid', gap: 8 }}>
+              <select value={show1Id} onChange={e => setShow1Id(e.target.value)} style={selectStyle}>
                 <option value="">— Pick first show —</option>
                 {programs.map(p => (
                   <option key={p.id} value={p.id}>
@@ -1944,16 +2638,7 @@ function CampaignLauncher({ tier, station, costMult, impactMult, onCancel, onLau
                   </option>
                 ))}
               </select>
-              <select
-                value={show2Id}
-                onChange={e => setShow2Id(e.target.value)}
-                style={{
-                  width: '100%', padding: '8px 10px',
-                  background: T.bg, color: T.text,
-                  border: `1px solid ${T.border}`, borderRadius: 4,
-                  fontSize: 12,
-                }}
-              >
+              <select value={show2Id} onChange={e => setShow2Id(e.target.value)} style={selectStyle}>
                 <option value="">— Pick second show —</option>
                 {programs.filter(p => p.id !== show1Id).map(p => (
                   <option key={p.id} value={p.id}>
@@ -1965,38 +2650,62 @@ function CampaignLauncher({ tier, station, costMult, impactMult, onCancel, onLau
           )}
         </div>
 
-        {/* Live preview */}
+        {/* Live preview — editorial block */}
         <div style={{
-          padding: 12, marginBottom: 14,
-          background: T.bg, border: `1px solid ${T.border}`, borderRadius: 5,
+          padding: 16, marginBottom: 20,
+          background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+          border: `1px solid ${T.border}`,
+          borderLeft: `3px solid ${T.gold}`,
+          borderRadius: 5,
         }}>
+          <div className="mono" style={{
+            fontSize: 9.5, color: T.muted, letterSpacing: '.16em',
+            textTransform: 'uppercase', marginBottom: 12,
+          }}>
+            Preview · live
+          </div>
           <div style={{
-            fontSize: 10, color: T.muted, letterSpacing: '.12em',
-            textTransform: 'uppercase', marginBottom: 6,
-          }}>Preview</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
+          }}>
             <div>
-              <div style={{ color: T.muted, fontSize: 10 }}>Hype per airing</div>
-              <div style={{ color: T.gold, fontSize: 16, fontWeight: 700 }}>
+              <div className="mono" style={{ fontSize: 9.5, color: T.muted, letterSpacing: '.12em', textTransform: 'uppercase' }}>
+                Hype / airing
+              </div>
+              <div style={{
+                fontFamily: FONTS.serif,
+                fontVariationSettings: "'opsz' 96, 'wght' 600",
+                fontSize: 26, color: T.gold, letterSpacing: '-.02em',
+                marginTop: 2,
+              }}>
                 +{adjustedHype.toFixed(2)}
               </div>
-              <div style={{ color: T.muted, fontSize: 9 }}>
-                for {tier.monthsActive} month{tier.monthsActive > 1 ? 's' : ''}
+              <div className="mono" style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>
+                {tier.monthsActive} month{tier.monthsActive > 1 ? 's' : ''}
               </div>
             </div>
             <div>
-              <div style={{ color: T.muted, fontSize: 10 }}>Fame on launch</div>
-              <div style={{ color: T.gold, fontSize: 16, fontWeight: 700 }}>
+              <div className="mono" style={{ fontSize: 9.5, color: T.muted, letterSpacing: '.12em', textTransform: 'uppercase' }}>
+                Fame on launch
+              </div>
+              <div style={{
+                fontFamily: FONTS.serif,
+                fontVariationSettings: "'opsz' 96, 'wght' 600",
+                fontSize: 26, color: T.gold, letterSpacing: '-.02em',
+                marginTop: 2,
+              }}>
                 +{adjustedFame.toFixed(1)}
               </div>
-              <div style={{ color: T.muted, fontSize: 9 }}>
-                input multiplier ×{inputMult.toFixed(2)}
+              <div className="mono" style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>
+                input ×{inputMult.toFixed(2)}
               </div>
             </div>
           </div>
+          <div className="gradient-rule" style={{ marginTop: 14, marginBottom: 10 }} />
           <div style={{
-            marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}`,
-            fontSize: 11, color: T.textDim, fontStyle: 'italic', lineHeight: 1.4,
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 12.5, color: T.textDim, lineHeight: 1.5,
           }}>
             {inputMult >= 1.5 ? `Excellent inputs — a stacked star and strong shows make this campaign roar.`
               : inputMult >= 1.2 ? `Solid inputs — your campaign lands well.`
@@ -2005,42 +2714,74 @@ function CampaignLauncher({ tier, station, costMult, impactMult, onCancel, onLau
           </div>
         </div>
 
-        {/* Cost + launch */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 11, color: T.muted }}>Cost</span>
-          <span style={{ fontFamily: 'JetBrains Mono', fontSize: 16, color: T.red, fontWeight: 700 }}>
+        {/* Cost + launch row */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+          marginBottom: 14, padding: '8px 0',
+        }}>
+          <span className="mono" style={{
+            fontSize: 9.5, color: T.muted, letterSpacing: '.16em',
+            textTransform: 'uppercase',
+          }}>Total cost</span>
+          <span style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 96, 'wght' 600",
+            fontSize: 22, color: affordable ? T.text : T.red, letterSpacing: '-.015em',
+          }}>
             ${adjustedCost.toFixed(1)}M
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onCancel} style={{
-            flex: 1, padding: '10px 14px',
-            background: T.card, color: T.text,
-            border: `1px solid ${T.border}`, borderRadius: 4,
-            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            flex: 1, padding: '12px 16px',
+            background: 'transparent', color: T.text,
+            border: `1px solid ${T.borderHi}`, borderRadius: 4,
+            fontSize: 10.5, fontWeight: 700, letterSpacing: '.14em',
+            textTransform: 'uppercase', cursor: 'pointer',
           }}>Cancel</button>
-          <button
+          <LaunchButton
+            canLaunch={canLaunch}
+            affordable={affordable}
+            hasStar={!!star}
+            hasShows={!!show1 && !!show2}
+            distinctShows={distinctShows}
+            adjustedCost={adjustedCost}
             onClick={() => canLaunch && onLaunch({ starId, showProgramIds: [show1Id, show2Id] })}
-            disabled={!canLaunch}
-            style={{
-              flex: 2, padding: '10px 14px',
-              background: canLaunch ? T.gold : T.border,
-              color: canLaunch ? T.bg : T.muted,
-              border: 'none', borderRadius: 4,
-              fontSize: 13, fontWeight: 700, cursor: canLaunch ? 'pointer' : 'not-allowed',
-              letterSpacing: '.05em',
-            }}
-          >
-            {!affordable ? 'NOT ENOUGH CASH'
-              : !star ? 'PICK A STAR'
-              : !show1 || !show2 ? 'PICK TWO SHOWS'
-              : !distinctShows ? 'PICK TWO DIFFERENT SHOWS'
-              : `LAUNCH · $${adjustedCost.toFixed(1)}M`}
-          </button>
+          />
         </div>
       </div>
     </ModalOverlay>
+  )
+}
+
+function LaunchButton({ canLaunch, affordable, hasStar, hasShows, distinctShows, adjustedCost, onClick }) {
+  const [hover, setHover] = useState(false)
+  const label = !affordable ? 'Not enough cash'
+    : !hasStar ? 'Pick a star'
+    : !hasShows ? 'Pick two shows'
+    : !distinctShows ? 'Pick two different shows'
+    : `Launch · $${adjustedCost.toFixed(1)}M`
+  return (
+    <button
+      onClick={onClick}
+      disabled={!canLaunch}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flex: 2, padding: '12px 16px',
+        background: !canLaunch ? T.surface : (hover ? T.gold + 'dd' : T.gold),
+        color: !canLaunch ? T.muted : T.bg,
+        border: !canLaunch ? `1px solid ${T.border}` : 'none',
+        borderRadius: 4,
+        fontSize: 11, fontWeight: 700, letterSpacing: '.14em',
+        textTransform: 'uppercase',
+        cursor: canLaunch ? 'pointer' : 'not-allowed',
+        transition: 'background .15s',
+      }}
+    >
+      {label}
+    </button>
   )
 }
 
@@ -2131,89 +2872,118 @@ function StatusTab({ station, year, monthIdx, allShows, awardsByYear, onPromote 
 
   return (
     <div>
-      {/* ─── STAT STRIP ─── */}
+      {/* ─── STAT STRIP ───
+          Editorial stat blocks: small-caps label, Fraunces serif value.
+          Period gets the brand accent color so it visually anchors the row. */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
         gap: 10,
-        marginBottom: 24,
+        marginBottom: 32,
       }}>
-        <StatusStat label="Period"   value={`${MONTHS[monthIdx]} Y${year}`} accent={T.text} />
-        <StatusStat label="Market"   value={market.label}                   accent={T.teal} />
-        <StatusStat label="Cash"     value={fmtM(station.cash)}             accent={T.green} />
-        <StatusStat label="Fame"     value={`${station.fame.toFixed(1)} · ${fameLabel(station.fame)}`} accent={T.gold} />
+        <StatusStat label="Period" value={`${MONTHS[monthIdx]} Y${year}`} accent={T.accent} />
+        <StatusStat label="Market" value={market.label}                  accent={T.text} />
+        <StatusStat label="Cash"   value={fmtM(station.cash)}            accent={T.green} />
+        <StatusStat label="Fame"   value={`${station.fame.toFixed(1)} · ${fameLabel(station.fame)}`} accent={T.gold} />
         {market.monthlyInfra > 0 && (
-          <StatusStat label="Infra"  value={`${fmtM(market.monthlyInfra)}/mo`} accent={T.red} />
+          <StatusStat label="Infra" value={`${fmtM(market.monthlyInfra)}/mo`} accent={T.red} />
         )}
       </div>
 
-      {/* ─── EXPANSION OPPORTUNITY (only when promotable) ─── */}
+      {/* ─── EXPANSION OPPORTUNITY ───
+          Becomes an editorial "event card" — gold rule, accent eyebrow,
+          Fraunces serif headline, italic body. Big editorial vocabulary
+          works because expansion IS a big moment in the game. */}
       {promotable && nextMarket && (
         <div style={{
-          background: 'linear-gradient(135deg, ' + T.teal + '18 0%, ' + T.teal + '08 100%)',
-          border: `1px solid ${T.teal}`,
-          borderRadius: 6, padding: 16, marginBottom: 24,
+          background: `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`,
+          border: `1px solid ${T.borderHi}`,
+          borderLeft: `3px solid ${T.gold}`,
+          borderRadius: 6, padding: '22px 24px', marginBottom: 32,
+          position: 'relative',
         }}>
+          {/* Eyebrow */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
+            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
           }}>
-            <Icon name="chart_up" size={18} color={T.teal} />
-            <div className="display" style={{
-              fontSize: 16, color: T.teal, letterSpacing: '.08em', textTransform: 'uppercase',
-            }}>Expansion Available</div>
+            <div style={{
+              width: 24, height: 2,
+              background: `linear-gradient(90deg, ${T.gold} 0%, transparent 100%)`,
+            }} />
+            <div style={{
+              fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+              textTransform: 'uppercase', color: T.gold,
+            }}>
+              Expansion · {nextMarket.label}
+            </div>
           </div>
-          <div style={{ fontSize: 12.5, color: T.text, marginBottom: 12, lineHeight: 1.55 }}>
-            You've reached the fame threshold for <b>{nextMarket.label}</b>. {nextMarket.desc}
-          </div>
+
+          {/* Headline */}
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-            gap: 8, marginBottom: 12,
-            padding: 10, background: 'rgba(0,0,0,.25)', borderRadius: 4,
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 96, 'wght' 500",
+            fontSize: 26, lineHeight: 1.1, color: T.text,
+            marginBottom: 10, letterSpacing: '-.015em',
           }}>
-            <StatusStat label="One-time"      value={fmtM(expansionCost)}             accent={canAffordExpansion ? T.text : T.red} />
-            <StatusStat label="Monthly infra" value={`${fmtM(nextMarket.monthlyInfra)}/mo`} accent={T.text} />
-            <StatusStat label="Prod cost"     value={`×${nextMarket.prodCostMult.toFixed(2)}`} accent={T.text} />
-            <StatusStat label="Rev/viewer"    value={`$${nextMarket.revPerViewer.toFixed(1)}`} accent={T.green} />
+            You've outgrown the {market.label.toLowerCase()}.
           </div>
+
+          {/* Italic serif body */}
           <div style={{
-            fontSize: 11, color: T.gold, lineHeight: 1.55, marginBottom: 12,
-            padding: '8px 10px',
-            background: T.gold + '0c', border: `1px dashed ${T.gold}55`, borderRadius: 4,
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 13.5, color: T.textDim, marginBottom: 18, lineHeight: 1.55,
+            maxWidth: 580,
           }}>
-            ⚠ Specialization reset: only your specialty (min 0.5★) and any genre at 4★+ (kept at 1★) carry over.
+            {nextMarket.desc}
           </div>
-          <button
-            onClick={canAffordExpansion ? onPromote : undefined}
-            disabled={!canAffordExpansion}
-            style={{
-              background: canAffordExpansion ? T.teal : T.card,
-              color: canAffordExpansion ? T.bg : T.muted,
-              border: 'none', borderRadius: 4,
-              padding: '11px 18px',
-              fontFamily: 'Anton, sans-serif',
-              fontSize: 15, letterSpacing: '.08em',
-              textTransform: 'uppercase',
-              cursor: canAffordExpansion ? 'pointer' : 'not-allowed',
-            }}
-          >
-            {canAffordExpansion ? `Expand for ${fmtM(expansionCost)} ▸` : `Need ${fmtM(expansionCost)} (have ${fmtM(station.cash)})`}
-          </button>
+
+          {/* Cost grid — mono numbers, small-caps labels */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+            gap: 14, marginBottom: 16,
+          }}>
+            <ExpansionStat label="One-time"      value={fmtM(expansionCost)}                    color={canAffordExpansion ? T.text : T.red} />
+            <ExpansionStat label="Monthly infra" value={`${fmtM(nextMarket.monthlyInfra)}/mo`}   color={T.text} />
+            <ExpansionStat label="Prod cost"     value={`×${nextMarket.prodCostMult.toFixed(2)}`} color={T.text} />
+            <ExpansionStat label="Rev / viewer"  value={`$${nextMarket.revPerViewer.toFixed(1)}`} color={T.green} />
+          </div>
+
+          {/* Warning — italic serif with mono callout */}
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+            fontSize: 12.5, color: T.gold, lineHeight: 1.55, marginBottom: 18,
+            paddingLeft: 12, borderLeft: `2px solid ${T.gold}55`,
+          }}>
+            Specialization resets — only your specialty (kept at <span className="mono" style={{ fontStyle: 'normal', fontSize: 11 }}>0.5★</span> minimum) and any genre at <span className="mono" style={{ fontStyle: 'normal', fontSize: 11 }}>4★+</span> (kept at <span className="mono" style={{ fontStyle: 'normal', fontSize: 11 }}>1★</span>) carry over.
+          </div>
+
+          {/* CTA — outline-fills-on-hover, gold variant */}
+          <ExpandButton
+            cost={expansionCost}
+            cash={station.cash}
+            canAfford={canAffordExpansion}
+            onClick={onPromote}
+          />
         </div>
       )}
 
       {/* ─── TREND ─── */}
-      <SectionHeader>3-Month Trend</SectionHeader>
+      <SectionHead title="Three-month trend" meta={trend.length > 0 ? `Through ${MONTHS[trend[trend.length - 1].month]} Y${trend[trend.length - 1].year}` : null} />
       {trend.length === 0 ? (
         <EmptyPanel
           icon="chart_up"
           title="No history yet"
-          subtitle="Trend appears after you've completed at least one month of airings."
+          subtitle="The trend appears once you've completed at least one month of airings."
         />
       ) : (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: 12, marginBottom: 24,
+          gap: 14, marginBottom: 36,
         }}>
           <TrendCard
             label="Audience"
@@ -2235,18 +3005,21 @@ function StatusTab({ station, year, monthIdx, allShows, awardsByYear, onPromote 
       )}
 
       {/* ─── SPECIALIZATION ─── */}
-      <SectionHeader>Specialization</SectionHeader>
-      <div style={{ fontSize: 11.5, color: T.muted, marginBottom: 12, lineHeight: 1.55, maxWidth: 640 }}>
-        Your network's expertise per genre. Every airing earns XP toward the next
-        half-star (XP = airing rating). Stars boost the quality of new productions in
-        that genre — and at 3★+ they also boost hype, as audiences anticipate something
-        new from you. Going to Metro / National wipes most progress except your
-        specialty.
+      <SectionHead title="Specialization" meta={`${SPEC_GENRES.length} genres`} />
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 14, 'wght' 400",
+        fontStyle: 'italic',
+        fontSize: 13, color: T.textDim, marginBottom: 16, lineHeight: 1.55, maxWidth: 640,
+      }}>
+        Your network's expertise per genre. Every airing earns XP toward the next half-star
+        — quality compounds, and at 3★+ audiences anticipate the brand. Promotion wipes
+        most progress except your specialty.
       </div>
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-        gap: 10, marginBottom: 28,
+        gap: 10, marginBottom: 36,
       }}>
         {SPEC_GENRES.map(g => (
           <SpecGenreRow
@@ -2261,7 +3034,7 @@ function StatusTab({ station, year, monthIdx, allShows, awardsByYear, onPromote 
       </div>
 
       {/* ─── AWARDS BY YEAR ─── */}
-      <SectionHeader>Awards History</SectionHeader>
+      <SectionHead title="Awards history" meta={awardRows.length > 0 ? `${awardRows.length} year${awardRows.length > 1 ? 's' : ''}` : null} />
       {awardRows.length === 0 ? (
         <EmptyPanel
           icon="trophy"
@@ -2270,39 +3043,46 @@ function StatusTab({ station, year, monthIdx, allShows, awardsByYear, onPromote 
         />
       ) : (
         <div style={{
-          background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
+          background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+          border: `1px solid ${T.border}`, borderRadius: 6,
           overflow: 'hidden',
         }}>
+          {/* Column headers — small-caps mono labels */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: '80px 1fr 1fr 1fr',
-            background: T.card,
-            padding: '8px 14px',
+            padding: '10px 16px',
             borderBottom: `1px solid ${T.border}`,
-            fontSize: 10.5, color: T.muted, letterSpacing: '.12em',
-            fontFamily: "'JetBrains Mono', monospace",
+            fontFamily: FONTS.mono,
+            fontSize: 9.5, color: T.muted, letterSpacing: '.16em',
+            textTransform: 'uppercase',
           }}>
-            <span>YEAR</span>
-            <span style={{ textAlign: 'right' }}>WINS</span>
-            <span style={{ textAlign: 'right' }}>CASH BONUS</span>
-            <span style={{ textAlign: 'right' }}>FAME BONUS</span>
+            <span>Year</span>
+            <span style={{ textAlign: 'right' }}>Wins</span>
+            <span style={{ textAlign: 'right' }}>Cash bonus</span>
+            <span style={{ textAlign: 'right' }}>Fame bonus</span>
           </div>
-          {awardRows.map(row => (
+          {awardRows.map((row, i) => (
             <div key={row.year} style={{
               display: 'grid',
               gridTemplateColumns: '80px 1fr 1fr 1fr',
-              padding: '10px 14px',
-              borderBottom: `1px solid ${T.border}`,
+              padding: '12px 16px',
+              borderBottom: i === awardRows.length - 1 ? 'none' : `1px solid ${T.border}`,
               alignItems: 'center',
             }}>
-              <span className="mono" style={{ fontSize: 13, color: T.text, fontWeight: 700 }}>
+              {/* Year in Fraunces */}
+              <span style={{
+                fontFamily: FONTS.serif,
+                fontVariationSettings: "'opsz' 36, 'wght' 600",
+                fontSize: 16, color: T.text, letterSpacing: '-.01em',
+              }}>
                 Y{row.year}
               </span>
               <span className="mono" style={{ fontSize: 13, color: T.text, textAlign: 'right', fontWeight: 500 }}>
                 {row.count}
               </span>
               <span className="mono" style={{ fontSize: 13, color: T.green, textAlign: 'right' }}>
-                +{fmtM(row.cash).replace('$','$')}
+                +{fmtM(row.cash)}
               </span>
               <span className="mono" style={{ fontSize: 13, color: T.gold, textAlign: 'right' }}>
                 +{row.fame.toFixed(1)}
@@ -2312,6 +3092,73 @@ function StatusTab({ station, year, monthIdx, allShows, awardsByYear, onPromote 
         </div>
       )}
     </div>
+  )
+}
+
+/** Mono number block inside the expansion event card. */
+function ExpansionStat({ label, value, color }) {
+  return (
+    <div>
+      <div className="mono" style={{
+        fontSize: 9.5, color: T.muted, letterSpacing: '.14em',
+        textTransform: 'uppercase', marginBottom: 5,
+      }}>{label}</div>
+      <div className="mono" style={{
+        fontSize: 16, color: color || T.text, fontWeight: 600, letterSpacing: '-.01em',
+      }}>{value}</div>
+    </div>
+  )
+}
+
+/** Editorial CTA — outline-fills-on-hover gold button. */
+function ExpandButton({ cost, cash, canAfford, onClick }) {
+  const [hover, setHover] = useState(false)
+  if (!canAfford) {
+    return (
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', gap: 10,
+        padding: '11px 18px',
+        background: T.surface, border: `1px dashed ${T.borderHi}`,
+        color: T.muted, borderRadius: 4,
+      }}>
+        <span style={{ fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', fontWeight: 600 }}>
+          Need
+        </span>
+        <span className="mono" style={{ fontSize: 14, color: T.red, fontWeight: 700 }}>
+          {fmtM(cost)}
+        </span>
+        <span style={{ fontSize: 10.5, color: T.muted, fontStyle: 'italic' }}>
+          (have {fmtM(cash)})
+        </span>
+      </div>
+    )
+  }
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 12,
+        padding: '12px 22px',
+        background: hover ? T.gold : 'transparent',
+        color: hover ? T.bg : T.gold,
+        border: `1px solid ${T.gold}`,
+        borderRadius: 4,
+        cursor: 'pointer',
+        transition: 'background .15s, color .15s',
+      }}
+    >
+      <span style={{
+        fontSize: 10, letterSpacing: '.18em', fontWeight: 700,
+        textTransform: 'uppercase',
+      }}>
+        Promote
+      </span>
+      <span className="mono" style={{ fontSize: 15, fontWeight: 700 }}>
+        {fmtM(cost)}
+      </span>
+    </button>
   )
 }
 
@@ -2329,60 +3176,72 @@ function trendDirection(values) {
 }
 
 function StatusStat({ label, value, accent }) {
+  // Editorial stat block — gradient surface, small-caps mono label,
+  // Fraunces value. Matches the talent-card stat vocabulary in feel.
   return (
     <div style={{
-      background: T.surface,
+      background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
       border: `1px solid ${T.border}`,
       borderRadius: 5,
-      padding: '10px 12px',
+      padding: '12px 14px',
       minWidth: 0,
     }}>
       <div className="mono" style={{
-        fontSize: 9.5, color: T.muted, letterSpacing: '.12em',
-      }}>{label.toUpperCase()}</div>
-      <div className="mono" style={{
-        fontSize: 14, color: accent || T.text, fontWeight: 700,
-        marginTop: 4, letterSpacing: '-.01em',
+        fontSize: 9.5, color: T.muted, letterSpacing: '.16em',
+        textTransform: 'uppercase',
+      }}>{label}</div>
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 36, 'wght' 500",
+        fontSize: 19, color: accent || T.text,
+        marginTop: 4, letterSpacing: '-.015em',
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{value}</div>
     </div>
   )
 }
 
-function SectionHeader({ children }) {
-  return (
-    <div className="display" style={{
-      fontSize: 14, color: T.text, letterSpacing: '.06em',
-      textTransform: 'uppercase', marginBottom: 10,
-      paddingBottom: 6, borderBottom: `1px solid ${T.border}`,
-    }}>
-      {children}
-    </div>
-  )
-}
+// (old Anton-uppercase SectionHeader removed — SectionHead is the canonical editorial section divider)
+
 
 function TrendCard({ label, metric, unit, color, data, direction }) {
   // Compute max for bar scaling
   const max = Math.max(0.01, ...data.map(d => d[metric] || 0))
-  const arrow = direction === 'up'   ? { icon: 'chart_up',   color: T.green, label: 'UP' }
-              : direction === 'down' ? { icon: 'chart_down', color: T.red,   label: 'DOWN' }
-              :                        { icon: 'dot',        color: T.muted, label: 'FLAT' }
+  const arrow = direction === 'up'   ? { icon: 'chart_up',   color: T.green, label: 'Trending up' }
+              : direction === 'down' ? { icon: 'chart_down', color: T.red,   label: 'Trending down' }
+              :                        { icon: 'dot',        color: T.muted, label: 'Holding' }
+  const latest = data[data.length - 1]
+  const earliest = data[0]
   return (
     <div style={{
-      background: T.surface, border: `1px solid ${T.border}`,
-      borderRadius: 6, padding: 14,
+      background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+      border: `1px solid ${T.border}`,
+      borderLeft: `3px solid ${color}`,
+      borderRadius: 6, padding: 18,
     }}>
+      {/* Header row */}
       <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: 10,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+        marginBottom: 14,
       }}>
-        <div className="mono" style={{ fontSize: 10.5, color: T.muted, letterSpacing: '.12em' }}>
-          {label.toUpperCase()}
+        <div>
+          <div className="mono" style={{
+            fontSize: 9.5, color: T.muted, letterSpacing: '.16em',
+            textTransform: 'uppercase', marginBottom: 4,
+          }}>{label}</div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 600",
+            fontSize: 22, color: T.text, letterSpacing: '-.015em',
+          }}>
+            {latest ? (metric === 'revenue' ? fmtM(latest[metric]) : `${(latest[metric] || 0).toFixed(1)}M`) : '—'}
+          </div>
         </div>
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 5,
+          display: 'flex', alignItems: 'center', gap: 6,
           color: arrow.color,
-          fontSize: 10, letterSpacing: '.1em', fontWeight: 600,
+          fontSize: 9.5, letterSpacing: '.14em', fontWeight: 600,
+          textTransform: 'uppercase',
         }}>
           <Icon name={arrow.icon} size={12} color={arrow.color} />
           {arrow.label}
@@ -2391,29 +3250,34 @@ function TrendCard({ label, metric, unit, color, data, direction }) {
 
       {/* Mini bar chart — 3 bars side by side */}
       <div style={{
-        display: 'flex', alignItems: 'flex-end', gap: 10, height: 70,
-        marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${T.border}`,
+        display: 'flex', alignItems: 'flex-end', gap: 10, height: 64,
+        marginBottom: 10,
       }}>
         {data.map((d, i) => {
           const v = d[metric] || 0
-          const h = Math.max(6, (v / max) * 60)
+          const h = Math.max(4, (v / max) * 54)
           const isLatest = i === data.length - 1
           return (
             <div key={i} style={{
               flex: 1, display: 'flex', flexDirection: 'column',
               alignItems: 'center', gap: 4,
             }}>
-              <div className="mono" style={{ fontSize: 10, color: T.text, fontWeight: 500 }}>
+              <div className="mono" style={{
+                fontSize: 9.5, color: isLatest ? T.text : T.muted, fontWeight: 500,
+              }}>
                 {metric === 'revenue' ? `$${v.toFixed(1)}` : v.toFixed(1)}
               </div>
               <div style={{
                 width: '100%', maxWidth: 50, height: h,
-                background: isLatest ? color : color + '66',
+                background: isLatest ? color : color + '55',
                 borderRadius: '3px 3px 0 0',
-                boxShadow: isLatest ? `0 0 12px ${color}55` : 'none',
+                boxShadow: isLatest ? `0 0 14px ${color}55` : 'none',
                 transition: 'all .3s',
               }} />
-              <div className="mono" style={{ fontSize: 9, color: T.muted, letterSpacing: '.05em' }}>
+              <div className="mono" style={{
+                fontSize: 9, color: T.muted, letterSpacing: '.08em',
+                textTransform: 'uppercase',
+              }}>
                 {MONTHS[d.month]}
               </div>
             </div>
@@ -2421,9 +3285,15 @@ function TrendCard({ label, metric, unit, color, data, direction }) {
         })}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: T.muted }}>
-        <span>Earliest: {data[0] ? (metric === 'revenue' ? fmtM(data[0][metric]) : `${(data[0][metric]||0).toFixed(1)}M`) : '—'}</span>
-        <span>Latest: {data[data.length-1] ? (metric === 'revenue' ? fmtM(data[data.length-1][metric]) : `${(data[data.length-1][metric]||0).toFixed(1)}M`) : '—'}</span>
+      {/* Footer hairline + range */}
+      <div className="gradient-rule" style={{ marginBottom: 8 }} />
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontSize: 10, color: T.muted, fontFamily: FONTS.mono,
+        letterSpacing: '.06em',
+      }}>
+        <span>From {earliest ? (metric === 'revenue' ? fmtM(earliest[metric]) : `${(earliest[metric]||0).toFixed(1)}M`) : '—'}</span>
+        <span>→ {latest ? (metric === 'revenue' ? fmtM(latest[metric]) : `${(latest[metric]||0).toFixed(1)}M`) : '—'}</span>
       </div>
     </div>
   )
@@ -2439,31 +3309,37 @@ function SpecGenreRow({ genre, stars, xp, market, isFocus }) {
   const qBonus = specQualityBonus(stars)
   const hBonus = specHypeBonus(stars)
   const hasAnyBonus = qBonus > 0 || hBonus > 0
+  const hasStars = stars > 0
 
   return (
     <div style={{
-      background: T.surface, border: `1px solid ${T.border}`,
-      borderLeft: `3px solid ${stars > 0 ? color : T.border}`,
-      borderRadius: 5, padding: '11px 13px',
+      background: hasStars
+        ? `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`
+        : T.surface,
+      border: `1px solid ${T.border}`,
+      borderLeft: `3px solid ${hasStars ? color : T.border}`,
+      borderRadius: 5, padding: '12px 14px',
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 8, marginBottom: 7,
+        gap: 8, marginBottom: 8,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-          <CategoryIcon categoryId={genre} size={14} color={stars > 0 ? color : T.muted} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <CategoryIcon categoryId={genre} size={14} color={hasStars ? color : T.muted} />
           <span style={{
-            fontSize: 13, color: T.text, fontWeight: 600,
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 24, 'wght' 600",
+            fontSize: 14.5, color: T.text, letterSpacing: '-.005em',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>{label}</span>
           {isFocus && (
             <span className="mono" style={{
-              fontSize: 8.5, color: T.gold, letterSpacing: '.1em',
-              padding: '1px 5px', borderRadius: 2,
+              fontSize: 8.5, color: T.gold, letterSpacing: '.14em',
+              padding: '2px 6px', borderRadius: 2,
               border: `1px solid ${T.gold}55`,
               background: T.gold + '12',
-              flexShrink: 0,
-            }}>SPECIALTY</span>
+              flexShrink: 0, textTransform: 'uppercase',
+            }}>Specialty</span>
           )}
         </div>
         <StarMeter stars={stars} color={color} />
@@ -2472,7 +3348,7 @@ function SpecGenreRow({ genre, stars, xp, market, isFocus }) {
       {/* Active bonus badges — only when there's something to show. */}
       {hasAnyBonus && (
         <div style={{
-          display: 'flex', gap: 6, marginBottom: 7,
+          display: 'flex', gap: 6, marginBottom: 8,
         }}>
           {qBonus > 0 && (
             <span className="mono" style={{
@@ -2499,15 +3375,17 @@ function SpecGenreRow({ genre, stars, xp, market, isFocus }) {
         </div>
       )}
 
-      {/* XP bar */}
+      {/* XP bar — gradient-filled to match other progress in the editorial system */}
       <div style={{
-        height: 4, background: T.border, borderRadius: 2, overflow: 'hidden',
-        marginBottom: 4,
+        height: 3, background: T.border, borderRadius: 2, overflow: 'hidden',
+        marginBottom: 5,
       }}>
         <div style={{
           height: '100%',
           width: `${pct * 100}%`,
-          background: color,
+          background: hasStars
+            ? `linear-gradient(90deg, ${color}aa 0%, ${color} 100%)`
+            : color + 'aa',
           transition: 'width .5s',
         }} />
       </div>
@@ -2516,11 +3394,11 @@ function SpecGenreRow({ genre, stars, xp, market, isFocus }) {
         fontSize: 9.5, color: T.muted, letterSpacing: '.06em',
       }}>
         {atCap ? (
-          <span style={{ color: T.gold }}>MAX</span>
+          <span style={{ color: T.gold, letterSpacing: '.16em' }}>MAX</span>
         ) : (
           <>
             <span>XP {xp.toFixed(1)} / {threshold}</span>
-            <span>Next: {(stars + 0.5).toFixed(1)}★</span>
+            <span>Next · {(stars + 0.5).toFixed(1)}★</span>
           </>
         )}
       </div>
@@ -2569,14 +3447,20 @@ function StarSlot({ state, color }) {
 function EmptyPanel({ icon, title, subtitle }) {
   return (
     <div style={{
-      background: T.surface, border: `1px solid ${T.border}`,
-      borderRadius: 6, padding: 28, textAlign: 'center', marginBottom: 24,
+      background: T.surface, border: `1px dashed ${T.borderHi}`,
+      borderRadius: 6, padding: '32px 24px', textAlign: 'center', marginBottom: 32,
     }}>
-      <Icon name={icon} size={24} color={T.muted} />
-      <div style={{ fontSize: 13.5, color: T.text, marginTop: 10, marginBottom: 4 }}>
+      <Icon name={icon} size={26} color={T.muted} />
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 36, 'wght' 500",
+        fontStyle: 'italic',
+        fontSize: 17, color: T.textDim,
+        marginTop: 12, marginBottom: 6, letterSpacing: '-.005em',
+      }}>
         {title}
       </div>
-      <div style={{ fontSize: 11.5, color: T.muted, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.55, maxWidth: 420, margin: '0 auto' }}>
         {subtitle}
       </div>
     </div>
@@ -2593,38 +3477,70 @@ function MoviePackBlock({ station, year, monthIdx, onBuy }) {
   const catalog = [...MOVIES].sort((a, b) =>
     (tierOrder[a.tier] ?? 99) - (tierOrder[b.tier] ?? 99) || (b.h - a.h)
   )
+  const availableCount = catalog.filter(p => !ownedIds.has(p.id)).length
 
   return (
     <div>
       {/* Owned packs */}
       {ownedPacks.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 10, color: T.green, marginBottom: 6 }}>ON SHELF ({ownedPacks.length})</div>
-          <div style={{ display: 'grid', gap: 6,
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+        <div style={{ marginBottom: 28 }}>
+          <SectionHead title="On the shelf" meta={`${ownedPacks.length} pack${ownedPacks.length > 1 ? 's' : ''}`} />
+          <div style={{ display: 'grid', gap: 8,
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
             {ownedPacks.map(p => {
               const pack = MOVIES.find(m => m.id === p.packId)
               if (!pack) return null
               const total = pack.packSize || 3
+              const ts = tierStyle(pack.tier)
               return (
                 <div key={p.packId} style={{
-                  padding: 10, background: T.green + '12',
-                  border: `1px solid ${T.green}55`, borderRadius: 5,
+                  padding: 12,
+                  background: `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+                  border: `1px solid ${T.border}`,
+                  borderLeft: `3px solid ${ts.c}`,
+                  borderRadius: 5,
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      🎞 {pack.name}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 8, marginBottom: 4,
+                  }}>
+                    <div style={{
+                      fontFamily: FONTS.serif,
+                      fontVariationSettings: "'opsz' 24, 'wght' 600",
+                      fontSize: 14.5, color: T.text, letterSpacing: '-.005em',
+                      minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {pack.name}
                     </div>
                     <div className="mono" style={{
-                      fontSize: 11, color: T.green, fontWeight: 600, flexShrink: 0,
-                      background: T.green + '22', padding: '2px 7px', borderRadius: 3,
+                      fontSize: 11, color: T.green, fontWeight: 700, flexShrink: 0,
+                      background: T.green + '18', padding: '2px 8px', borderRadius: 3,
+                      letterSpacing: '.04em',
                     }}>
                       {p.airingsLeft}/{total}
                     </div>
                   </div>
-                  <div style={{ fontSize: 10.5, color: T.muted, marginTop: 4 }}>
-                    {pack.tier} · Q {pack.q.toFixed(1)} · H {(p.purchaseHype ?? pack.h).toFixed(1)}
-                    {p.penaltyApplied && <span style={{ color: T.gold, marginLeft: 4 }}>· reduced hype</span>}
+                  <div style={{
+                    fontFamily: FONTS.serif,
+                    fontVariationSettings: "'opsz' 14, 'wght' 400",
+                    fontStyle: 'italic',
+                    fontSize: 11.5, color: T.muted, marginBottom: 8,
+                  }}>
+                    {pack.tier} pack · airings remain
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <span className="mono" style={{
+                      fontSize: 9.5, color: T.qEnd, fontWeight: 700,
+                      padding: '2px 7px', borderRadius: 3,
+                      background: T.qEnd + '18', border: `1px solid ${T.qEnd}55`,
+                      letterSpacing: '.06em',
+                    }}>Q {pack.q.toFixed(1)}</span>
+                    <span className="mono" style={{
+                      fontSize: 9.5, color: T.gold, fontWeight: 700,
+                      padding: '2px 7px', borderRadius: 3,
+                      background: T.gold + '14', border: `1px solid ${T.gold}66`,
+                      letterSpacing: '.06em',
+                    }}>H {(p.purchaseHype ?? pack.h).toFixed(1)}{p.penaltyApplied && ' ↓'}</span>
                   </div>
                 </div>
               )
@@ -2634,83 +3550,148 @@ function MoviePackBlock({ station, year, monthIdx, onBuy }) {
       )}
 
       {/* Available catalog */}
-      <div style={{ fontSize: 10, color: T.muted, marginBottom: 6 }}>AVAILABLE TO LICENSE</div>
-      <div style={{ display: 'grid', gap: 6 }}>
-        {catalog.map(pack => {
-          const isOwned = ownedIds.has(pack.id)
-          const hypeInfo = moviePackPurchaseHype(station, pack.id, year, monthIdx)
-          const lastConsumed = findLastConsumedPack(station, pack.id)
-          const affordable = station.cash >= pack.cost
-          const tierColor = pack.tier === 'Legendary' ? T.gold
-                           : pack.tier === 'Epic' ? T.purple
-                           : pack.tier === 'Rare' ? T.teal
-                           : pack.tier === 'Uncommon' ? T.green
-                           : T.muted
-
-          let buttonLabel, buttonDisabled
-          if (isOwned) {
-            buttonLabel = 'ON SHELF'
-            buttonDisabled = true
-          } else if (!affordable) {
-            buttonLabel = `Need ${fmtM(pack.cost)}`
-            buttonDisabled = true
-          } else if (hypeInfo.penaltyApplied) {
-            buttonLabel = `Buy ${fmtM(pack.cost)} (−hype)`
-            buttonDisabled = false
-          } else {
-            buttonLabel = `Buy ${fmtM(pack.cost)}`
-            buttonDisabled = false
-          }
-
-          return (
-            <div key={pack.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '9px 11px',
-              background: isOwned ? 'rgba(91, 214, 135, .04)' : T.surface,
-              border: `1px solid ${isOwned ? T.green + '33' : T.border}`,
-              borderLeft: `3px solid ${tierColor}`,
-              borderRadius: 5,
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 3 }}>
-                  {pack.name}
-                </div>
-                <div style={{ fontSize: 10.5, color: T.muted, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ color: tierColor }}>{pack.tier}</span>
-                  <span>· Q {pack.q.toFixed(1)}</span>
-                  <span>· H {hypeInfo.hype.toFixed(1)}{hypeInfo.penaltyApplied && <span style={{ color: T.gold }}> ↓</span>}</span>
-                  <span>· {pack.packSize || 3} airings</span>
-                  {hypeInfo.penaltyApplied && (
-                    <span style={{ color: T.gold }}>
-                      · cooldown: {hypeInfo.monthsUntilRestore} mo
-                    </span>
-                  )}
-                  {!isOwned && !hypeInfo.penaltyApplied && lastConsumed && (
-                    <span style={{ color: T.muted, fontStyle: 'italic' }}>· previously aired</span>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={buttonDisabled ? undefined : () => onBuy(pack.id)}
-                disabled={buttonDisabled}
-                style={{
-                  background: buttonDisabled ? T.card : tierColor,
-                  color: buttonDisabled ? T.muted : T.bg,
-                  border: 'none', borderRadius: 4,
-                  padding: '6px 11px',
-                  fontFamily: 'Anton, sans-serif',
-                  fontSize: 11.5, letterSpacing: '.06em',
-                  cursor: buttonDisabled ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {buttonLabel}
-              </button>
-            </div>
-          )
-        })}
+      <SectionHead title="Available to license" meta={`${availableCount} ${availableCount === 1 ? 'pack' : 'packs'}`} />
+      <div style={{ display: 'grid', gap: 8 }}>
+        {catalog.map(pack => (
+          <MoviePackRow
+            key={pack.id}
+            pack={pack}
+            owned={ownedIds.has(pack.id)}
+            station={station}
+            year={year}
+            monthIdx={monthIdx}
+            onBuy={onBuy}
+          />
+        ))}
       </div>
     </div>
+  )
+}
+
+function MoviePackRow({ pack, owned, station, year, monthIdx, onBuy }) {
+  const [hover, setHover] = useState(false)
+  const hypeInfo = moviePackPurchaseHype(station, pack.id, year, monthIdx)
+  const lastConsumed = findLastConsumedPack(station, pack.id)
+  const affordable = station.cash >= pack.cost
+  const ts = tierStyle(pack.tier)
+
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '12px 14px',
+        background: owned
+          ? `linear-gradient(180deg, ${T.green}10 0%, ${T.green}04 100%)`
+          : (hover && affordable
+              ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+              : `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`),
+        border: `1px solid ${owned ? T.green + '44' : (hover && affordable ? ts.b : T.border)}`,
+        borderLeft: `3px solid ${ts.c}`,
+        borderRadius: 5,
+        transition: 'background .15s, border-color .15s',
+        boxShadow: hover && affordable && !owned ? '0 4px 16px rgba(0,0,0,.25)' : 'none',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 24, 'wght' 600",
+          fontSize: 15, color: T.text, letterSpacing: '-.005em',
+          marginBottom: 3,
+        }}>
+          {pack.name}
+        </div>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic',
+          fontSize: 11.5, color: T.muted,
+        }}>
+          {pack.tier} pack · {pack.packSize || 3} airings
+          {hypeInfo.penaltyApplied && ` · cooldown: ${hypeInfo.monthsUntilRestore} mo`}
+          {!owned && !hypeInfo.penaltyApplied && lastConsumed && ' · previously aired'}
+        </div>
+      </div>
+      {/* Q/H */}
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <span className="mono" style={{
+          fontSize: 9.5, color: T.qEnd, fontWeight: 700,
+          padding: '2px 7px', borderRadius: 3,
+          background: T.qEnd + '18', border: `1px solid ${T.qEnd}55`,
+          letterSpacing: '.06em',
+        }}>Q {pack.q.toFixed(1)}</span>
+        <span className="mono" style={{
+          fontSize: 9.5, color: T.gold, fontWeight: 700,
+          padding: '2px 7px', borderRadius: 3,
+          background: T.gold + '14', border: `1px solid ${T.gold}66`,
+          letterSpacing: '.06em',
+        }}>H {hypeInfo.hype.toFixed(1)}{hypeInfo.penaltyApplied && ' ↓'}</span>
+      </div>
+      {/* Tier pill */}
+      <span className="mono" style={{
+        fontSize: 9.5, color: ts.c, fontWeight: 700,
+        padding: '3px 9px', borderRadius: 3,
+        background: ts.bg, border: `1px solid ${ts.b}`,
+        letterSpacing: '.1em', textTransform: 'uppercase', flexShrink: 0,
+      }}>{pack.tier}</span>
+      {/* Action */}
+      <MoviePackBuyButton
+        owned={owned}
+        affordable={affordable}
+        cost={pack.cost}
+        penalty={hypeInfo.penaltyApplied}
+        onClick={() => onBuy(pack.id)}
+      />
+    </div>
+  )
+}
+
+function MoviePackBuyButton({ owned, affordable, cost, penalty, onClick }) {
+  const [hover, setHover] = useState(false)
+  if (owned) {
+    return (
+      <span className="mono" style={{
+        fontSize: 9.5, color: T.green, letterSpacing: '.14em',
+        textTransform: 'uppercase', flexShrink: 0, fontWeight: 700,
+      }}>On shelf</span>
+    )
+  }
+  if (!affordable) {
+    return (
+      <button disabled style={{
+        background: T.surface, color: T.muted,
+        border: `1px dashed ${T.border}`,
+        padding: '7px 14px', borderRadius: 4,
+        fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', fontWeight: 700,
+        cursor: 'not-allowed', flexShrink: 0,
+      }}>
+        Need {fmtM(cost)}
+      </button>
+    )
+  }
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: hover ? T.accent : 'transparent',
+        color: hover ? T.bg : T.accent,
+        border: `1px solid ${T.accent}`,
+        padding: '7px 14px', borderRadius: 4,
+        fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', fontWeight: 700,
+        cursor: 'pointer', flexShrink: 0,
+        transition: 'background .15s, color .15s',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+        lineHeight: 1.1,
+      }}
+    >
+      <span>{penalty ? 'Buy −H' : 'Buy'}</span>
+      <span className="mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0 }}>
+        {fmtM(cost)}
+      </span>
+    </button>
   )
 }
