@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { T } from '../theme.js'
+import { T, FONTS, tierStyle } from '../theme.js'
 import {
   CATEGORIES, MARKETS, MARKETING_TIERS, IPS, SPORTS_LEAGUES, MONTHS,
   leagueAvailableInYear, leagueYearsUntilReturn,
@@ -40,36 +40,75 @@ export function OperationsScreen(props) {
   const { onBack } = props
   const [sub, setSub] = useState('status')
 
+  // Active sub-tab label for the eyebrow — mirrors Programming's pattern
+  // "Operations · Staff" / "Operations · Talent" etc, so the player always
+  // knows where they are within the section.
+  const activeTab = SUB_TABS.find(t => t.id === sub)
+
   return (
-    <div className="view-wrap" style={{ maxWidth: 1000, margin: '0 auto', padding: 18 }}>
-      <button onClick={onBack} style={{
-        background: 'transparent', border: `1px solid ${T.border}`,
-        color: T.muted, padding: '8px 14px', borderRadius: 5,
-        fontSize: 11, fontWeight: 600, marginBottom: 16, cursor: 'pointer',
-      }}>← Back</button>
+    <div className="view-wrap" style={{ maxWidth: 1280, margin: '0 auto', padding: '0 32px 48px' }}>
 
-      <SectionTitle>Operations</SectionTitle>
+      {/* Back link — restyled as a quiet text link rather than an outlined button.
+          It's a meta-action, doesn't need to scream. */}
+      <div style={{ paddingTop: 24 }}>
+        <button onClick={onBack} style={{
+          background: 'transparent', border: 'none',
+          color: T.muted, padding: '4px 0', cursor: 'pointer',
+          fontSize: 11, fontWeight: 500, letterSpacing: '.08em',
+          textTransform: 'uppercase', display: 'inline-flex',
+          alignItems: 'center', gap: 6,
+        }}>
+          <span style={{ fontSize: 14 }}>←</span> Back
+        </button>
+      </div>
 
-      {/* Sub-tab bar */}
+      {/* ─── HERO ───
+          Same pattern as Programming: gold rule + accent eyebrow + Fraunces
+          serif title + sans subhead. The eyebrow includes the active sub-tab
+          so the player has clear location context. */}
+      <div style={{ position: 'relative', padding: '24px 0 24px' }}>
+        <div style={{
+          width: 36, height: 2,
+          background: `linear-gradient(90deg, ${T.accent} 0%, transparent 100%)`,
+          marginBottom: 14,
+        }} />
+        <div style={{
+          fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
+          textTransform: 'uppercase', color: T.accent, marginBottom: 14,
+        }}>
+          Operations · {activeTab?.label || 'Suite'}
+        </div>
+        <h1 className="editorial" style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 144, 'wght' 600",
+          fontSize: 52, lineHeight: 0.95, letterSpacing: '-.025em',
+          color: T.text, marginBottom: 12,
+        }}>
+          Operations
+        </h1>
+        <div style={{
+          fontSize: 14, color: T.muted, lineHeight: 1.55, maxWidth: 540,
+        }}>
+          Network status, talent, content rights, staff structure, and marketing.
+          Every signing and every campaign launches from here.
+        </div>
+      </div>
+
+      {/* ─── SUB-TABS ───
+          Match the v3 mock: small caps with .12em letterspace, gold bullet
+          square on the active tab, gold bottom rule on active. Hover state
+          for the inactive ones (background tint + text brighten). */}
       <div style={{
-        display: 'flex', gap: 4, marginBottom: 18,
+        display: 'flex', gap: 4, marginBottom: 32, marginTop: 16,
         borderBottom: `1px solid ${T.border}`,
         overflowX: 'auto',
       }}>
         {SUB_TABS.map(t => (
-          <button
-            key={t.id}
+          <OpsSubTab key={t.id}
+            id={t.id} label={t.label}
+            active={sub === t.id}
             onClick={() => setSub(t.id)}
-            style={{
-              background: 'transparent', border: 'none',
-              color: sub === t.id ? T.accent : T.muted,
-              fontFamily: 'Anton, sans-serif', fontSize: 14, letterSpacing: '.1em',
-              padding: '8px 14px', cursor: 'pointer',
-              borderBottom: `2px solid ${sub === t.id ? T.accent : 'transparent'}`,
-              marginBottom: -1,
-              whiteSpace: 'nowrap',
-            }}
-          >{t.label}</button>
+          />
         ))}
       </div>
 
@@ -79,6 +118,42 @@ export function OperationsScreen(props) {
       {sub === 'staff'     && <StaffTab     {...props} />}
       {sub === 'marketing' && <MarketingTab {...props} />}
     </div>
+  )
+}
+
+/** Editorial sub-tab — small caps, gold bullet on active, hover tint.
+ *  Same pattern as Programming's subtab buttons. */
+function OpsSubTab({ id, label, active, onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={onClick}
+      style={{
+        background: !active && hover ? 'rgba(255, 255, 255, 0.025)' : 'transparent',
+        border: 'none',
+        color: active ? T.text : (hover ? T.text : T.muted),
+        fontFamily: FONTS.sans,
+        fontSize: 11, fontWeight: active ? 700 : 600,
+        letterSpacing: '.12em', textTransform: 'uppercase',
+        padding: '12px 14px', cursor: 'pointer',
+        borderBottom: `2px solid ${active ? T.accent : 'transparent'}`,
+        marginBottom: -1,
+        whiteSpace: 'nowrap',
+        transition: 'color .15s, background .15s',
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+      }}
+    >
+      {active && (
+        <span style={{
+          display: 'inline-block',
+          width: 5, height: 5, background: T.accent,
+          marginTop: -1,
+        }} />
+      )}
+      {label}
+    </button>
   )
 }
 
@@ -92,39 +167,53 @@ function TalentTab({ station, marketRoster, onHire, onFire, onHireWriter, onFire
   const stars = (station.hiredStars || []).map(h => ({ ...h, talent: findStar(h.talentId) }))
 
   // Unified talent room: writers + stars + creative directors share one cap.
-  // When full, the player can't hire anyone new — so we gray out Sign / Hire
-  // buttons across all three sub-sections and surface a single banner.
   const cap = talentCapacity(station)
   const cnt = talentCount(station)
   const roomFull = cnt >= cap
 
   return (
     <div>
-      {/* Persistent banner when the office is full — explains why nothing's hireable. */}
+      {/* Office-full banner — editorial restyle */}
       {roomFull && (
         <div style={{
-          background: T.red + '15', border: `1px solid ${T.red}55`,
-          borderRadius: 5, padding: '10px 12px', marginBottom: 12,
-          fontSize: 12, color: T.red, lineHeight: 1.5,
+          background: `linear-gradient(180deg, ${T.red}15 0%, ${T.red}08 100%)`,
+          border: `1px solid ${T.red}55`,
+          borderLeft: `3px solid ${T.red}`,
+          borderRadius: 5, padding: '14px 16px', marginBottom: 18,
+          fontSize: 12, color: T.text, lineHeight: 1.5,
         }}>
-          <strong>Office full ({cnt}/{cap}).</strong> Fire someone, hire a Director of Talent (National), or expand to a bigger market before signing anyone new.
+          <div style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '.16em',
+            textTransform: 'uppercase', color: T.red, marginBottom: 4,
+          }}>
+            Office full
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic',
+          }}>
+            All <span style={{ fontStyle: 'normal', fontFamily: FONTS.mono, color: T.red, fontWeight: 600 }}>{cnt}/{cap}</span> seats are taken.
+            Fire someone, hire a Director of Talent (National), or expand to a bigger market before signing anyone new.
+          </div>
         </div>
       )}
 
-      {/* Sub-sub-tab bar */}
+      {/* Sub-sub-tab bar — Producers / Stars / Writers */}
       <div style={{
-        display: 'flex', gap: 0, marginBottom: 14,
+        display: 'flex', gap: 4, marginBottom: 22,
         borderBottom: `1px solid ${T.border}`,
       }}>
-        <SubSubTab id="directors" label="Producers / Directors" active={section} onClick={setSection} />
-        <SubSubTab id="stars"     label="Stars"                  active={section} onClick={setSection} />
-        <SubSubTab id="writers"   label="Writers"                active={section} onClick={setSection} />
+        <OpsSubTab id="directors" label="Producers / Directors" active={section === 'directors'} onClick={() => setSection('directors')} />
+        <OpsSubTab id="stars"     label="Stars"                  active={section === 'stars'}     onClick={() => setSection('stars')} />
+        <OpsSubTab id="writers"   label="Writers"                active={section === 'writers'}   onClick={() => setSection('writers')} />
       </div>
 
       {section === 'directors' && (
         <TalentSubSection
-          rosterTitle="Producers / Directors under contract"
-          marketTitle="Producers / Directors available"
+          rosterTitle="Under contract"
+          marketTitle="Director Market"
+          marketSubtitle="Fresh roster · Refreshes monthly"
           items={dirs}
           pool={marketRoster.directors}
           role="director"
@@ -136,8 +225,9 @@ function TalentTab({ station, marketRoster, onHire, onFire, onHireWriter, onFire
       )}
       {section === 'stars' && (
         <TalentSubSection
-          rosterTitle="Stars under contract"
-          marketTitle="Stars available"
+          rosterTitle="Under contract"
+          marketTitle="Star Market"
+          marketSubtitle="Fresh roster · Refreshes monthly"
           items={stars}
           pool={marketRoster.stars}
           role="star"
@@ -172,25 +262,171 @@ function TalentTab({ station, marketRoster, onHire, onFire, onHireWriter, onFire
   )
 }
 
-function TalentSubSection({ rosterTitle, marketTitle, items, pool, role, station, roomFull, onHireOpen, onFireOpen }) {
+/** TalentSubSection — wraps a roster block + a market block with
+ *  editorial section heads (gradient hairline, serif title, mono meta). */
+function TalentSubSection({ rosterTitle, marketTitle, marketSubtitle, items, pool, role, station, roomFull, onHireOpen, onFireOpen }) {
   return (
     <>
-      <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-        {rosterTitle.toUpperCase()}
-      </div>
-      <RosterGroup title="" items={items} role={role} onFire={onFireOpen} />
+      {/* Roster section head */}
+      <SectionHead title={rosterTitle} meta={`${items.length} ${items.length === 1 ? 'contract' : 'contracts'}`} />
+
+      <RosterGroup items={items} role={role} onFire={onFireOpen} />
+
       {items.length === 0 && (
-        <div style={{ padding: 14, fontSize: 12, color: T.muted, fontStyle: 'italic',
-                      background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 5,
-                      marginBottom: 16 }}>
-          None under contract.
+        <EmptyRoster role={role} />
+      )}
+
+      {/* Market section head */}
+      <div style={{ marginTop: 36 }}>
+        <SectionHead title={marketTitle} meta={marketSubtitle} />
+      </div>
+
+      <MarketGroup pool={pool || []} role={role} roomFull={roomFull} onHire={onHireOpen} />
+    </>
+  )
+}
+
+/** Editorial section head — Fraunces title left, mono meta right,
+ *  gradient gold hairline below. Reused across sub-tabs. */
+function SectionHead({ title, meta }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+      marginBottom: 18, paddingBottom: 10, position: 'relative',
+    }}>
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 144, 'wght' 500",
+        fontSize: 24, letterSpacing: '-.01em', color: T.text,
+      }}>
+        {title}
+      </div>
+      {meta && (
+        <div style={{
+          fontFamily: FONTS.mono, fontSize: 10,
+          color: T.muted, letterSpacing: '.08em',
+          textTransform: 'uppercase',
+        }}>
+          {meta}
         </div>
       )}
-      <div style={{ marginTop: 22, fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-        {marketTitle.toUpperCase()}
+      <div className="gradient-rule" style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+      }} />
+    </div>
+  )
+}
+
+/** EmptyRoster — friendly empty state when nothing under contract. */
+function EmptyRoster({ role }) {
+  const label = role === 'director' ? 'directors'
+              : role === 'star'     ? 'stars'
+              :                       'writers'
+  return (
+    <div style={{
+      padding: '32px 24px',
+      background: T.surface, border: `1px dashed ${T.borderHi}`,
+      borderRadius: 6, textAlign: 'center',
+      marginBottom: 12,
+    }}>
+      <div style={{
+        fontFamily: FONTS.serif,
+        fontVariationSettings: "'opsz' 36, 'wght' 500",
+        fontStyle: 'italic',
+        fontSize: 16, color: T.textDim, marginBottom: 4,
+      }}>
+        No {label} under contract
       </div>
-      <MarketGroup title="" pool={pool || []} role={role} roomFull={roomFull} onHire={onHireOpen} />
-    </>
+      <div style={{ fontSize: 12, color: T.muted }}>
+        Browse the market below to find one.
+      </div>
+    </div>
+  )
+}
+
+/** WriterCard — editorial vertical card for the writer-specific shape
+ *  (skill % + salary + status, no Q/H since writers don't air directly).
+ *  Same visual vocabulary as TalentCardRow but vertical: name on top,
+ *  tier+specialty pills, stats row, action button. */
+function WriterCard({ w, tierName, skill, salaryLabel, statusLabel, statusColor, action, dim }) {
+  const [hover, setHover] = useState(false)
+  const cat = CATEGORIES[w.specialty]
+  const ts = tierStyle(tierName)
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: hover
+          ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+          : `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+        border: `1px solid ${hover ? ts.b : T.border}`,
+        borderLeft: `3px solid ${ts.c}`,
+        borderRadius: 5,
+        padding: 14,
+        opacity: dim ? 0.4 : 1,
+        transition: 'background .15s, border-color .15s',
+        boxShadow: hover ? '0 4px 16px rgba(0,0,0,.25)' : 'none',
+      }}
+    >
+      {/* Header — name + tier pill on the right */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 36, 'wght' 600",
+            fontSize: 17, letterSpacing: '-.005em',
+            color: T.text, lineHeight: 1.15,
+          }}>
+            {w.name}
+          </div>
+          <div style={{
+            fontFamily: FONTS.serif,
+            fontVariationSettings: "'opsz' 14, 'wght' 400",
+            fontStyle: 'italic', fontSize: 12,
+            color: T.muted, marginTop: 3,
+          }}>
+            <span style={{
+              fontStyle: 'normal', color: T.textDim,
+              fontFamily: FONTS.sans, fontWeight: 500, fontSize: 11,
+            }}>
+              {cat?.label || w.specialty} writer
+            </span>
+          </div>
+        </div>
+        <span style={{
+          fontFamily: FONTS.sans, fontSize: 9, fontWeight: 700,
+          letterSpacing: '.14em', textTransform: 'uppercase',
+          padding: '3px 8px', borderRadius: 2,
+          color: ts.c, border: `1px solid ${ts.b}`, background: ts.bg,
+          whiteSpace: 'nowrap',
+        }}>{tierName}</span>
+      </div>
+
+      {/* Stats row — skill / salary / status */}
+      <div style={{ display: 'flex', gap: 18, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+        <WriterStat label="Skill"  value={`${(skill * 100).toFixed(0)}`} />
+        <WriterStat label="Salary" value={salaryLabel} />
+        {statusLabel && <WriterStat label="Status" value={statusLabel} color={statusColor} />}
+      </div>
+
+      {action}
+    </div>
+  )
+}
+
+function WriterStat({ label, value, color }) {
+  return (
+    <div style={{ flex: 1 }}>
+      <div style={{
+        fontSize: 9.5, letterSpacing: '.1em', textTransform: 'uppercase',
+        color: T.muted, fontWeight: 600, marginBottom: 3,
+      }}>{label}</div>
+      <div style={{
+        fontFamily: FONTS.mono, fontSize: 12, fontWeight: 600,
+        color: color || T.text, letterSpacing: 0,
+      }}>{value}</div>
+    </div>
   )
 }
 
@@ -203,19 +439,14 @@ function WritersTalentSection({ station, marketWriters, roomFull, onHireWriter, 
 
   return (
     <>
-      <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-        WRITERS UNDER CONTRACT ({hired.length})
-      </div>
+      <SectionHead title="Under contract" meta={`${hired.length} ${hired.length === 1 ? 'writer' : 'writers'}`} />
+
       {hired.length === 0 ? (
-        <div style={{ padding: 14, fontSize: 12, color: T.muted, fontStyle: 'italic',
-                      background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 5,
-                      marginBottom: 16 }}>
-          No writers employed.
-        </div>
+        <EmptyRoster role="writer" />
       ) : (
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8,
-          marginBottom: 16,
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10,
+          marginBottom: 18,
         }}>
           {hired.map(h => {
             const w = findWriter(h.talentId)
@@ -224,121 +455,69 @@ function WritersTalentSection({ station, marketWriters, roomFull, onHireWriter, 
             const isBusy = draftCount > 0
             const isFree = !!h.freeStarter
             return (
-              <div key={h.talentId} style={{
-                background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 5,
-                padding: 10,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{w.name}</div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                      <HTag tier={w.tier} />
-                      <span style={{
-                        fontSize: 10, color: CATEGORIES[w.specialty]?.color || T.muted,
-                        background: (CATEGORIES[w.specialty]?.color || T.muted) + '22',
-                        padding: '1px 6px', borderRadius: 3, letterSpacing: '.05em',
-                      }}>
-                        {CATEGORIES[w.specialty]?.icon} {CATEGORIES[w.specialty]?.label || w.specialty}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11 }}>
-                  <div>
-                    <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>SKILL</div>
-                    <div className="mono" style={{ color: T.text, fontWeight: 600 }}>{(w.skill * 100).toFixed(0)}</div>
-                  </div>
-                  <div>
-                    <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>SALARY</div>
-                    <div className="mono" style={{ color: T.text, fontWeight: 600 }}>
-                      {isFree ? <span style={{ color: T.green }}>FREE</span> : `${(h.perMonthCharge || w.cost || 0).toFixed(1)}M/mo`}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>STATUS</div>
-                    <div className="mono" style={{ color: isBusy ? T.gold : T.green, fontWeight: 600 }}>
-                      {isBusy ? `DRAFTING (${draftCount})` : 'IDLE'}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setConfirmFire({ w, h })}
-                  disabled={isBusy}
-                  style={{
-                    marginTop: 9, padding: '6px 10px', width: '100%',
-                    background: isBusy ? T.card : 'transparent',
-                    border: `1px solid ${isBusy ? T.border : T.red}55`,
-                    color: isBusy ? T.muted : T.red,
-                    borderRadius: 4, fontSize: 11, fontWeight: 600,
-                    cursor: isBusy ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {isBusy ? 'BUSY' : 'Release contract'}
-                </button>
-              </div>
+              <WriterCard
+                key={h.talentId}
+                w={w}
+                tierName={w.tier}
+                skill={w.skill}
+                salaryLabel={isFree ? <span style={{ color: T.green }}>FREE</span> : `$${(h.perMonthCharge || w.cost || 0).toFixed(1)}M/mo`}
+                statusLabel={isBusy ? `DRAFTING (${draftCount})` : 'IDLE'}
+                statusColor={isBusy ? T.gold : T.green}
+                action={
+                  <button
+                    className={isBusy ? '' : 'danger-btn'}
+                    onClick={() => !isBusy && setConfirmFire({ w, h })}
+                    disabled={isBusy}
+                    style={isBusy ? {
+                      marginTop: 10, padding: '6px 10px', width: '100%',
+                      background: T.card, border: `1px solid ${T.border}`,
+                      color: T.muted, borderRadius: 4,
+                      fontSize: 11, fontWeight: 600, cursor: 'not-allowed',
+                      letterSpacing: '.08em',
+                    } : {
+                      marginTop: 10, width: '100%',
+                    }}
+                  >
+                    {isBusy ? 'BUSY' : 'Release contract'}
+                  </button>
+                }
+              />
             )
           })}
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: T.muted, letterSpacing: '.1em', marginBottom: 8 }}>
-        AVAILABLE TO HIRE
+      <div style={{ marginTop: 36 }}>
+        <SectionHead title="Writers Market" meta="Refreshes monthly" />
       </div>
+
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8,
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10,
       }}>
         {marketWriters.map(w => {
           const alreadyHired = hired.some(h => h.talentId === w.id)
           const tooExpensive = station.cash < (w.cost || 0)
           const canHire = !alreadyHired && !tooExpensive && !roomFull
-          const label = alreadyHired
-            ? 'HIRED'
-            : roomFull
-            ? 'OFFICE FULL'
-            : tooExpensive
-            ? 'TOO EXPENSIVE'
+          const label = alreadyHired ? 'HIRED'
+            : roomFull ? 'OFFICE FULL'
+            : tooExpensive ? 'TOO EXPENSIVE'
             : 'HIRE'
           return (
-            <div key={w.id} style={{
-              background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5,
-              padding: 10, opacity: alreadyHired ? 0.4 : 1,
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{w.name}</div>
-              <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                <HTag tier={w.tier} />
-                <span style={{
-                  fontSize: 10, color: CATEGORIES[w.specialty]?.color || T.muted,
-                  background: (CATEGORIES[w.specialty]?.color || T.muted) + '22',
-                  padding: '1px 6px', borderRadius: 3, letterSpacing: '.05em',
-                }}>
-                  {CATEGORIES[w.specialty]?.icon} {CATEGORIES[w.specialty]?.label || w.specialty}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11 }}>
-                <div>
-                  <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>SKILL</div>
-                  <div className="mono" style={{ color: T.text, fontWeight: 600 }}>{(w.skill * 100).toFixed(0)}</div>
-                </div>
-                <div>
-                  <div style={{ color: T.muted, fontSize: 9, letterSpacing: '.07em' }}>SALARY</div>
-                  <div className="mono" style={{ color: T.text, fontWeight: 600 }}>${(w.cost || 0).toFixed(1)}M/mo</div>
-                </div>
-              </div>
-              <button
-                onClick={() => canHire && onHireWriter(w)}
-                disabled={!canHire}
-                title={roomFull ? 'Office full — fire someone or expand market first.' : undefined}
-                style={{
-                  marginTop: 9, padding: '6px 10px', width: '100%',
-                  background: canHire ? T.accent : T.card,
-                  color: canHire ? T.bg : T.muted,
-                  border: 'none', borderRadius: 4,
-                  fontSize: 11, fontWeight: 700, cursor: canHire ? 'pointer' : 'not-allowed',
-                }}
-              >
-                {label}
-              </button>
-            </div>
+            <WriterCard
+              key={w.id}
+              w={w}
+              tierName={w.tier}
+              skill={w.skill}
+              salaryLabel={`$${(w.cost || 0).toFixed(1)}M/mo`}
+              dim={alreadyHired}
+              action={
+                <SignButton
+                  priceLabel={canHire ? `$${(w.cost || 0).toFixed(1)}M` : null}
+                  disabled={!canHire}
+                  onClick={() => canHire && onHireWriter(w)}
+                />
+              }
+            />
           )
         })}
       </div>
@@ -354,7 +533,11 @@ function WritersTalentSection({ station, marketWriters, roomFull, onHireWriter, 
             background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: 6,
             padding: 18, maxWidth: 360, width: '90%',
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 8 }}>
+            <div style={{
+              fontFamily: FONTS.serif,
+              fontVariationSettings: "'opsz' 36, 'wght' 600",
+              fontSize: 20, color: T.text, marginBottom: 10,
+            }}>
               Release {confirmFire.w.name}?
             </div>
             <div style={{ fontSize: 12, color: T.muted, marginBottom: 14, lineHeight: 1.5 }}>
@@ -385,48 +568,207 @@ function WritersTalentSection({ station, marketWriters, roomFull, onHireWriter, 
   )
 }
 
-function RosterGroup({ title, items, role, onFire }) {
+/** TalentCardRow — shared layout for roster + market entries.
+ *
+ *  5-column grid: avatar / info (name + slug) / stats (Q+H bars) / tier pill / right action.
+ *  Tier-colored left stripe + ring on the avatar. Cards lift on hover with a
+ *  tier-matched border tint and a subtle drop shadow.
+ *
+ *  Right side is consumer-defined via `right` slot — pass in either a
+ *  contract-status block (roster) or a Sign button (market).
+ */
+function TalentCardRow({ talent, tier, q, h, costLabel, right, dim }) {
+  const [hover, setHover] = useState(false)
+  const cat = CATEGORIES[talent.specialty]
+  const ts = tierStyle(tier)
+
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '44px 1fr auto auto auto',
+        alignItems: 'center',
+        gap: 14,
+        padding: '14px 16px 14px 18px',
+        background: hover
+          ? `linear-gradient(180deg, ${T.cardHiGradTop} 0%, ${T.cardHiGradBot} 100%)`
+          : `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`,
+        border: `1px solid ${hover ? ts.b : T.border}`,
+        borderLeft: `3px solid ${ts.c}`,
+        borderRadius: 5,
+        marginBottom: 8,
+        cursor: 'default',
+        opacity: dim ? 0.55 : 1,
+        transition: 'background .15s, border-color .15s, transform .05s',
+        boxShadow: hover ? '0 4px 16px rgba(0,0,0,.25)' : 'none',
+      }}
+    >
+      {/* Avatar — specialty icon, tier-colored ring */}
+      <div style={{
+        width: 44, height: 44, borderRadius: '50%',
+        background: `linear-gradient(135deg, #2c2440 0%, #1a1428 100%)`,
+        border: `1.5px solid ${ts.b}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {cat ? <CategoryIcon categoryId={talent.specialty} size={20} color={ts.c} /> : null}
+      </div>
+
+      {/* Info block — Fraunces name + italic serif slugline */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 36, 'wght' 600",
+          fontSize: 17, letterSpacing: '-.005em',
+          color: T.text, lineHeight: 1.15, marginBottom: 4,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
+          {talent.name}
+        </div>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic', fontSize: 12, color: T.muted,
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <span style={{
+            fontStyle: 'normal', color: T.textDim,
+            fontFamily: FONTS.sans, fontWeight: 500, fontSize: 11,
+          }}>
+            {cat?.label || talent.specialty}
+          </span>
+          {costLabel && (
+            <>
+              <span style={{ width: 3, height: 3, borderRadius: '50%', background: T.mutedDim, flexShrink: 0 }} />
+              <span>{costLabel}</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Stats — Q+H label-above-bar with right-aligned mono value */}
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+        <TalentStat label="Quality" value={q} kind="q" />
+        <TalentStat label="Hype"    value={h} kind="h" />
+      </div>
+
+      {/* Tier pill */}
+      <span style={{
+        fontFamily: FONTS.sans, fontSize: 9, fontWeight: 700,
+        letterSpacing: '.14em', textTransform: 'uppercase',
+        padding: '3px 8px', borderRadius: 2,
+        color: ts.c,
+        border: `1px solid ${ts.b}`,
+        background: ts.bg,
+        whiteSpace: 'nowrap',
+      }}>
+        {tier}
+      </span>
+
+      {/* Right slot — Sign / Fire / contract status */}
+      <div>{right}</div>
+    </div>
+  )
+}
+
+/** TalentStat — Q or H stat block. Label above, value right-aligned,
+ *  gradient-fill bar below. Matches the v3 proposal exactly. */
+function TalentStat({ label, value, kind }) {
+  const pct = Math.min(100, Math.max(0, value * 10))
+  const grad = kind === 'q'
+    ? `linear-gradient(90deg, ${T.qStart} 0%, ${T.qEnd} 100%)`
+    : `linear-gradient(90deg, ${T.hStart} 0%, ${T.hEnd} 100%)`
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 76 }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+        fontSize: 9.5, letterSpacing: '.1em', textTransform: 'uppercase',
+        color: T.muted, fontWeight: 600,
+      }}>
+        <span>{label}</span>
+        <span style={{
+          fontFamily: FONTS.mono, color: T.text, fontWeight: 600,
+          letterSpacing: 0, fontSize: 11,
+        }}>+{value.toFixed(1)}</span>
+      </div>
+      <div style={{
+        width: '100%', height: 3,
+        background: 'rgba(255,255,255,0.05)',
+        borderRadius: 2, overflow: 'hidden',
+      }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: grad, borderRadius: 2 }} />
+      </div>
+    </div>
+  )
+}
+
+/** Sign button — outline that fills with accent on hover. */
+function SignButton({ priceLabel, disabled, onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        background: !disabled && hover ? 'rgba(240, 179, 94, 0.12)' : 'transparent',
+        border: `1px solid ${disabled ? T.border : 'rgba(240, 179, 94, 0.45)'}`,
+        color: disabled ? T.muted : T.accent,
+        padding: '9px 18px',
+        fontFamily: FONTS.sans, fontWeight: 700,
+        fontSize: 9.5, letterSpacing: '.14em', textTransform: 'uppercase',
+        borderRadius: 3,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background .15s, border-color .15s, color .15s',
+        minWidth: 84, gap: 2,
+      }}
+    >
+      <span>{disabled ? 'Full' : 'Sign'}</span>
+      {priceLabel && (
+        <span style={{
+          fontFamily: FONTS.mono, fontSize: 12, letterSpacing: 0,
+          color: disabled ? T.muted : T.text, fontWeight: 600,
+        }}>{priceLabel}</span>
+      )}
+    </button>
+  )
+}
+
+function RosterGroup({ items, role, onFire }) {
   if (items.length === 0) return null
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, color: T.text, fontWeight: 600, marginBottom: 6 }}>{title}</div>
       {items.map(item => {
         const t = item.talent
         if (!t) return null
-        const cat = CATEGORIES[t.specialty]
         return (
-          <div key={t.id} style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: 10, marginBottom: 5,
-            background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 5,
-          }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
-              <div style={{ fontSize: 10, color: T.muted }}>
-                {cat?.icon} {cat?.label} · Q +{t.q.toFixed(1)} H +{t.h.toFixed(1)}
-              </div>
-            </div>
-            <HTag tier={t.tier} />
-            <div style={{ textAlign: 'right', fontFamily: 'JetBrains Mono', fontSize: 10,
-                          color: item.permanent ? T.gold : T.green, fontWeight: 600 }}>
-              {item.permanent ? 'PERMANENT' : `${item.monthsLeft} mo`}
-            </div>
-            <button onClick={() => onFire(role, t.id, t)} style={{
-              background: 'transparent', border: `1px solid ${T.red}55`,
-              color: T.red, padding: '5px 10px', borderRadius: 4,
-              fontSize: 10, fontWeight: 700, cursor: 'pointer',
-            }}>Fire</button>
-          </div>
+          <TalentCardRow
+            key={t.id}
+            talent={t}
+            tier={t.tier}
+            q={t.q}
+            h={t.h}
+            costLabel={item.permanent
+              ? 'Permanent contract'
+              : `${item.monthsLeft} ${item.monthsLeft === 1 ? 'month' : 'months'} left`}
+            right={
+              <button
+                className="danger-btn"
+                onClick={() => onFire(role, t.id, t)}
+              >Fire</button>
+            }
+          />
         )
       })}
     </div>
   )
 }
 
-function MarketGroup({ title, pool, role, roomFull, onHire }) {
+function MarketGroup({ pool, role, roomFull, onHire }) {
   // Filters live in component state so the player can narrow a large pool.
-  // Default = "all" for both. With ~100 candidates per role at full game,
-  // the filters are how you find the specialist you want without scrolling.
   const [specialtyFilter, setSpecialtyFilter] = useState('all')
   const [tierFilter, setTierFilter] = useState('all')
 
@@ -441,132 +783,224 @@ function MarketGroup({ title, pool, role, roomFull, onHire }) {
     return true
   })
 
+  const TIERS = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary']
+
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, color: T.text, fontWeight: 600, marginBottom: 6 }}>{title}</div>
-
-      {/* Filter row */}
+      {/* Filter row — no surface, no box. Sits flat per the v3 design. */}
       <div style={{
-        display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10,
-        flexWrap: 'wrap',
+        display: 'flex', alignItems: 'center', gap: 24,
+        marginBottom: 16, flexWrap: 'wrap',
       }}>
-        <select
-          value={specialtyFilter}
-          onChange={e => setSpecialtyFilter(e.target.value)}
-          style={{
-            background: T.bg, color: T.text,
-            border: `1px solid ${T.border}`, borderRadius: 4,
-            padding: '5px 8px', fontSize: 11,
-          }}
-        >
-          <option value="all">All specialties</option>
-          {specialtiesInPool.map(s => (
-            <option key={s} value={s}>
-              {CATEGORIES[s]?.icon || ''} {CATEGORIES[s]?.label || s}
-            </option>
-          ))}
-        </select>
-        <select
-          value={tierFilter}
-          onChange={e => setTierFilter(e.target.value)}
-          style={{
-            background: T.bg, color: T.text,
-            border: `1px solid ${T.border}`, borderRadius: 4,
-            padding: '5px 8px', fontSize: 11,
-          }}
-        >
-          <option value="all">All tiers</option>
-          <option value="Common">Common</option>
-          <option value="Uncommon">Uncommon</option>
-          <option value="Rare">Rare</option>
-          <option value="Epic">Epic</option>
-          <option value="Legendary">Legendary</option>
-        </select>
-        <div style={{ fontSize: 10, color: T.muted, marginLeft: 'auto' }}>
-          {filteredPool.length} of {pool.length} shown
+        {/* Specialty dropdown — custom-styled */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            fontSize: 9.5, fontWeight: 700, letterSpacing: '.16em',
+            textTransform: 'uppercase', color: T.muted,
+          }}>Specialty</span>
+          <div style={{ position: 'relative' }}>
+            <select
+              value={specialtyFilter}
+              onChange={e => setSpecialtyFilter(e.target.value)}
+              style={{
+                appearance: 'none',
+                background: 'transparent',
+                border: `1px solid ${T.border}`,
+                color: T.text,
+                padding: '7px 30px 7px 12px',
+                fontFamily: FONTS.sans, fontSize: 12, fontWeight: 500,
+                borderRadius: 4, cursor: 'pointer',
+                minWidth: 150,
+                transition: 'border-color .15s, background .15s',
+              }}
+            >
+              <option value="all">All specialties</option>
+              {specialtiesInPool.map(s => (
+                <option key={s} value={s}>
+                  {CATEGORIES[s]?.label || s}
+                </option>
+              ))}
+            </select>
+            {/* CSS chevron — replaces native dropdown arrow */}
+            <div style={{
+              position: 'absolute',
+              right: 11, top: '50%',
+              width: 7, height: 7,
+              borderRight: `1.5px solid ${T.muted}`,
+              borderBottom: `1.5px solid ${T.muted}`,
+              transform: 'translateY(-70%) rotate(45deg)',
+              pointerEvents: 'none',
+            }} />
+          </div>
+        </div>
+
+        {/* Tier segmented pills */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            fontSize: 9.5, fontWeight: 700, letterSpacing: '.16em',
+            textTransform: 'uppercase', color: T.muted,
+          }}>Tier</span>
+          <div style={{
+            display: 'flex',
+            background: T.surface,
+            border: `1px solid ${T.border}`,
+            borderRadius: 5,
+            padding: 2, gap: 2,
+          }}>
+            <SegPill label="All"      active={tierFilter === 'all'}      onClick={() => setTierFilter('all')} />
+            {TIERS.map(tier => (
+              <SegPill key={tier} label={tier}
+                active={tierFilter === tier}
+                onClick={() => setTierFilter(tier)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div style={{
+          marginLeft: 'auto',
+          fontFamily: FONTS.mono, fontSize: 10.5,
+          color: T.muted, letterSpacing: '.02em',
+        }}>
+          <span style={{ color: T.text, fontWeight: 600 }}>{filteredPool.length}</span>
+          {' '}of {pool.length} candidates
         </div>
       </div>
 
+      {/* Pool — either cards or empty state */}
       {filteredPool.length === 0 ? (
         <div style={{
-          padding: 12, fontSize: 11, color: T.muted, fontStyle: 'italic',
-          textAlign: 'center',
-          background: T.cardHi, border: `1px solid ${T.border}`, borderRadius: 4,
+          textAlign: 'center', padding: '48px 24px',
+          background: T.surface,
+          border: `1px dashed ${T.borderHi}`, borderRadius: 6,
         }}>
-          No one matches those filters. Try widening them, or come back next month — new talent surfaces over time.
+          <div style={{ fontSize: 32, opacity: 0.5, marginBottom: 12 }}>📭</div>
+          <div style={{
+            fontFamily: FONTS.serif, fontSize: 18,
+            color: T.text, marginBottom: 8,
+          }}>No candidates match these filters</div>
+          <div style={{
+            fontSize: 12, color: T.muted, maxWidth: 320,
+            margin: '0 auto 16px', lineHeight: 1.5,
+          }}>
+            Try widening one of the filters, or wait until next month — the roster refreshes with fresh talent.
+          </div>
+          <button
+            onClick={() => { setSpecialtyFilter('all'); setTierFilter('all') }}
+            style={{
+              background: 'transparent', color: T.accent,
+              border: `1px solid ${T.accent}`,
+              padding: '7px 16px', fontSize: 11, fontWeight: 600,
+              letterSpacing: '.08em', textTransform: 'uppercase',
+              borderRadius: 3, cursor: 'pointer',
+            }}
+          >Clear filters</button>
         </div>
       ) : (
-        // Show up to 30 (was 12 unfiltered); filter is the primary control now.
-        filteredPool.slice(0, 30).map(t => {
-          const cat = CATEGORIES[t.specialty]
-          const canSign = !roomFull
-          return (
-            <div key={t.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: 10, marginBottom: 5,
-              background: T.card, border: `1px solid ${T.border}`, borderRadius: 5,
-              opacity: canSign ? 1 : 0.6,
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
-                <div style={{ fontSize: 10, color: T.muted }}>
-                  {cat?.icon} {cat?.label} · Q +{t.q.toFixed(1)} H +{t.h.toFixed(1)} · ${t.cost.toFixed(1)}M/mo
-                </div>
-              </div>
-              <HTag tier={t.tier} />
-              <button
-                onClick={() => canSign && onHire(role, t)}
-                disabled={!canSign}
-                title={canSign ? undefined : 'Office full — fire someone or expand market first.'}
-                style={{
-                  background: canSign ? T.accent : T.card,
-                  color: canSign ? T.bg : T.muted,
-                  padding: '6px 12px',
-                  border: canSign ? 'none' : `1px solid ${T.border}`,
-                  borderRadius: 4,
-                  fontSize: 11, fontWeight: 700,
-                  cursor: canSign ? 'pointer' : 'not-allowed',
-                }}
-              >{canSign ? 'Sign' : 'OFFICE FULL'}</button>
-            </div>
-          )
-        })
+        // Show up to 30 (filter is the primary narrowing control)
+        filteredPool.slice(0, 30).map(t => (
+          <TalentCardRow
+            key={t.id}
+            talent={t}
+            tier={t.tier}
+            q={t.q}
+            h={t.h}
+            costLabel={`$${t.cost.toFixed(1)}M/mo`}
+            dim={roomFull}
+            right={
+              <SignButton
+                priceLabel={`$${t.cost.toFixed(1)}M`}
+                disabled={roomFull}
+                onClick={() => !roomFull && onHire(role, t)}
+              />
+            }
+          />
+        ))
       )}
     </div>
+  )
+}
+
+/** Segmented pill — gold-filled when active, transparent ghost when not. */
+function SegPill({ label, active, onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={onClick}
+      style={{
+        fontFamily: FONTS.sans, fontSize: 10.5, fontWeight: 600,
+        letterSpacing: '.06em',
+        color: active ? '#1a0f08' : (hover ? T.text : T.muted),
+        background: active ? T.accent : (hover ? 'rgba(255, 255, 255, 0.04)' : 'transparent'),
+        border: 'none', padding: '6px 12px',
+        borderRadius: 3, cursor: 'pointer',
+        transition: 'background .15s, color .15s',
+      }}
+    >{label}</button>
   )
 }
 
 function HireModal({ role, t, cash, onConfirm, onCancel }) {
   return (
     <ModalOverlay onClose={onCancel}>
-      <div style={{ padding: 18 }}>
-        <div className="bebas" style={{ fontSize: 18, color: T.accent, marginBottom: 4 }}>
-          Sign {t.name}
+      <div style={{ padding: 24, maxWidth: 480, width: '100%' }}>
+        <div style={{
+          fontSize: 10, fontWeight: 600, letterSpacing: '.16em',
+          textTransform: 'uppercase', color: T.accent, marginBottom: 6,
+        }}>
+          Sign contract · {t.tier}
         </div>
-        <div style={{ fontSize: 11, color: T.muted, marginBottom: 14 }}>
-          Base cost: ${t.cost.toFixed(1)}M / month
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 144, 'wght' 600",
+          fontSize: 28, letterSpacing: '-.015em',
+          color: T.text, marginBottom: 6, lineHeight: 1.05,
+        }}>
+          {t.name}
+        </div>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic', fontSize: 12.5,
+          color: T.muted, marginBottom: 18,
+        }}>
+          Base cost{' '}
+          <span style={{ fontStyle: 'normal', fontFamily: FONTS.mono, color: T.text }}>
+            ${t.cost.toFixed(1)}M / month
+          </span>
         </div>
         <div style={{ display: 'grid', gap: 8 }}>
           {CONTRACT_TYPES.map(ct => {
             const cost = contractCost(t, ct.id)
             const affordable = cash >= cost
-            const label = ct.months === -1 ? `$${cost.toFixed(1)}M/mo (each month)` : `$${cost.toFixed(1)}M upfront`
+            const priceLabel = ct.months === -1 ? `$${cost.toFixed(1)}M/mo` : `$${cost.toFixed(1)}M upfront`
             return (
               <button key={ct.id} disabled={!affordable} onClick={() => onConfirm(ct.id)}
                 style={{
-                  textAlign: 'left', padding: '11px 13px',
-                  background: affordable ? T.cardHi : T.surface,
+                  textAlign: 'left', padding: '12px 14px',
+                  background: affordable
+                    ? `linear-gradient(180deg, ${T.cardGradTop} 0%, ${T.cardGradBot} 100%)`
+                    : T.surface,
                   border: `1px solid ${affordable ? T.borderHi : T.border}`,
                   borderRadius: 5, cursor: affordable ? 'pointer' : 'not-allowed',
-                  opacity: affordable ? 1 : 0.5, color: T.text,
+                  opacity: affordable ? 1 : 0.45, color: T.text,
+                  transition: 'border-color .15s, background .15s',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{ct.label}</span>
-                  <span style={{ fontFamily: 'JetBrains Mono', fontSize: 11,
-                                 color: ct.months === -1 ? T.gold : T.green }}>{label}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                  <span style={{
+                    fontFamily: FONTS.serif,
+                    fontVariationSettings: "'opsz' 36, 'wght' 600",
+                    fontSize: 15, color: T.text,
+                  }}>{ct.label}</span>
+                  <span style={{
+                    fontFamily: FONTS.mono, fontSize: 11, fontWeight: 600,
+                    color: ct.months === -1 ? T.gold : T.green,
+                  }}>{priceLabel}</span>
                 </div>
-                <div style={{ fontSize: 10, color: T.muted }}>{ct.desc}</div>
+                <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4 }}>{ct.desc}</div>
               </button>
             )
           })}
@@ -579,21 +1013,46 @@ function HireModal({ role, t, cash, onConfirm, onCancel }) {
 function FireConfirm({ role, id, t, onConfirm, onCancel }) {
   return (
     <ModalOverlay onClose={onCancel}>
-      <div style={{ padding: 18 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Fire {t.name}?</div>
-        <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>
-          You'll pay a severance penalty. Permanent contracts cost {5}× one month's pay.
+      <div style={{ padding: 24, maxWidth: 420, width: '100%' }}>
+        <div style={{
+          fontSize: 10, fontWeight: 600, letterSpacing: '.16em',
+          textTransform: 'uppercase', color: T.red, marginBottom: 6,
+        }}>
+          Confirm release
+        </div>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 144, 'wght' 600",
+          fontSize: 24, letterSpacing: '-.01em',
+          color: T.text, marginBottom: 10, lineHeight: 1.1,
+        }}>
+          Fire {t.name}?
+        </div>
+        <div style={{
+          fontFamily: FONTS.serif,
+          fontVariationSettings: "'opsz' 14, 'wght' 400",
+          fontStyle: 'italic', fontSize: 13,
+          color: T.muted, marginBottom: 20, lineHeight: 1.5,
+        }}>
+          You'll pay a severance penalty. Permanent contracts cost{' '}
+          <span style={{ fontStyle: 'normal', fontFamily: FONTS.mono, color: T.red, fontWeight: 600 }}>5×</span>{' '}
+          one month's pay.
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={onConfirm} style={{
-            flex: 1, padding: '10px 14px', background: T.red, color: T.bg,
-            border: 'none', borderRadius: 5, fontWeight: 700, cursor: 'pointer',
-          }}>Fire</button>
           <button onClick={onCancel} style={{
-            flex: 1, padding: '10px 14px', background: 'transparent',
-            border: `1px solid ${T.border}`, color: T.muted,
-            borderRadius: 5, fontWeight: 600, cursor: 'pointer',
+            flex: 1, padding: '10px 14px',
+            background: 'transparent', border: `1px solid ${T.border}`,
+            color: T.text, borderRadius: 4,
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            letterSpacing: '.04em',
           }}>Keep</button>
+          <button onClick={onConfirm} style={{
+            flex: 2, padding: '10px 14px',
+            background: T.red, color: T.text,
+            border: 'none', borderRadius: 4,
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            letterSpacing: '.08em', textTransform: 'uppercase',
+          }}>Fire</button>
         </div>
       </div>
     </ModalOverlay>
