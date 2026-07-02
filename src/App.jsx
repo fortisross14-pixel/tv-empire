@@ -112,6 +112,10 @@ import { ReviewModal } from './components/ReviewModal'
 import { FinancialsScreen } from './components/FinancialsScreen'
 import { TutorialPanel } from './components/TutorialPanel'
 import { TutorialPointer } from './components/TutorialPointer'
+import { RetroHeader } from './components/RetroHeader'
+import { Floorplan } from './components/Floorplan'
+import { ProgrammingRoom } from './components/ProgrammingRoom'
+import { StudioRoom } from './components/StudioRoom'
 import { currentTutorialStep, isNavAllowed, isContinueLocked, TUTORIAL_STEPS } from './tutorial.js'
 import { play as playSound, initOnGesture, isMuted, toggleMuted } from './audio'
 import { Icon } from './icons.jsx'
@@ -1700,33 +1704,48 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-    <div style={{ minHeight: '100vh', background: T.bg, color: T.text, paddingBottom: 40 }}>
-      <TopBar
+    <div style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', paddingBottom: 40 }}>
+      <RetroHeader
         game={game}
         view={view}
-        setView={setView}
         onAdvanceMonth={advanceMonth}
         cashBlocker={cashBlocker}
         nextMonthCost={nextMonthCost}
-        onContinueResults={continueAfterResults}
-        onContinueAwards={newYear}
         muted={muted}
         onToggleMute={onToggleMute}
         onOpenSettings={() => setSettingsOpen(true)}
+        onGoFloorplan={() => setView('plan')}
       />
 
       {game.phase === 'plan' && view === 'plan' && (
-        <PlanView
+        <Floorplan
           game={game}
           runsBySlot={runsBySlot}
-          nextMonthCost={nextMonthCost}
-          permanentCharge={permanentCharge}
-          cashBlocker={cashBlocker}
+          onGoTo={setView}
+          onAdvanceMonth={advanceMonth}
+        />
+      )}
+
+      {game.phase === 'plan' && view === 'schedule' && (
+        <ProgrammingRoom
+          game={game}
+          runsBySlot={runsBySlot}
           onOpenSlot={openSlot}
           onCancelRun={cancelRun}
-          onAdvanceMonth={advanceMonth}
           onAssignSchedDirector={onAssignSchedDirector}
           onCancelSchedDirector={onCancelSchedDirector}
+          onBack={() => setView('plan')}
+        />
+      )}
+
+      {game.phase === 'plan' && (view === 'studio-alpha' || view === 'studio-beta' || view === 'studio-gamma') && (
+        <StudioRoom
+          studioIdx={view === 'studio-alpha' ? 0 : view === 'studio-beta' ? 1 : 2}
+          game={game}
+          onBeginProgram={onBeginProgram}
+          onCancelProgram={onCancelProgram}
+          onGoTo={setView}
+          onBack={() => setView('plan')}
         />
       )}
 
@@ -1837,7 +1856,7 @@ export default function App() {
         />
       )}
 
-      {editingSlotIdx !== null && game.phase === 'plan' && view === 'plan' && (
+      {editingSlotIdx !== null && game.phase === 'plan' && view === 'schedule' && (
         <SlotScheduler
           slotTypeId={game.station.slotIds[editingSlotIdx]}
           cycleIdx={game.monthIdx}

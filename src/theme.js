@@ -111,3 +111,46 @@ export const DEFAULT_BRAND = BRAND_PRESETS[0]
 export function findBrand(brandId) {
   return BRAND_PRESETS.find(b => b.id === brandId) || DEFAULT_BRAND
 }
+
+// ─── RETRO BROADCAST PALETTE (Stage AO) ────────────────────────────────
+// The retro shell uses its own palette — brass/gold/red on deep navy with
+// wood-paneled floor. Editorial tokens above are retained for room-modal
+// screens that haven't been redesigned yet.
+export const R = {
+  // canvas
+  bg:        '#0f172a',   // deep navy
+  bgDeep:    '#0a1122',   // even deeper (behind panels)
+
+  // panel surfaces (dark blue-slate)
+  panel:     '#1e2937',   // primary panel bg
+  panelHi:   '#334155',   // hover state
+  panelLo:   '#0f172a',   // recessed inside a panel
+
+  // borders
+  border:    '#64748b',   // dim borders
+  borderHi:  '#f0c14b',   // active/gold border
+
+  // signature colors
+  gold:      '#f0c14b',   // brass / dollar / highlight
+  goldDim:   '#b8860b',   // shadow side of brass
+  red:       '#c41e3a',   // CTAs, "on air"
+  redDim:    '#9f1a30',
+
+  // wood floor
+  wood:      '#3f2a1f',   // primary wood plank
+  woodHi:    '#5c4033',   // frame accent
+  woodDeep:  '#2c1d15',
+
+  // stat colors (from POC)
+  cash:      '#34d399',   // emerald — money
+  viewers:   '#38bdf8',   // sky — viewers
+  rank:      '#fbbf24',   // amber — ranking
+  text:      '#e2e8f0',
+  textDim:   '#94a3b8',
+  textMuted: '#64748b',
+
+  // brass plaque gradient stops
+  brass1:    '#b8860b',
+  brass2:    '#8b6914',
+  brass3:    '#5c3317',
+}
