@@ -94,7 +94,7 @@ export function Floorplan({
                 onClick={() => onGoTo('schedule')}
                 sublines={[
                   { text: 'Weekly Grid', color: R.textDim, size: 11 },
-                  { text: `${countScheduledSlots(runsBySlot)}/${runsBySlot ? runsBySlot.length : 0}`, color: R.viewers, size: 24, bold: true },
+                  { text: `${countScheduledSlots(runsBySlot)}/${(station.slotIds || []).length}`, color: R.viewers, size: 24, bold: true },
                   { text: 'slots programmed', color: '#7dd3fc', size: 9 },
                 ]}
                 statusChip={{
@@ -389,7 +389,10 @@ function talentCount(station) {
 
 function countScheduledSlots(runsBySlot) {
   if (!runsBySlot) return 0
-  return runsBySlot.filter(r => r && r.programId).length
+  // runsBySlot is a plain object keyed by slot index (from App.jsx useMemo),
+  // NOT an array — use Object.values to iterate.
+  const vals = Array.isArray(runsBySlot) ? runsBySlot : Object.values(runsBySlot)
+  return vals.filter(r => r && r.programId).length
 }
 
 function countAvailableResearch(research) {
