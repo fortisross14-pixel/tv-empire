@@ -39,7 +39,13 @@ export function StudioRoom({
 
   const programs = station.programs || []
   const producing = programs.filter(p => p.status === 'producing')
-  const production = producing[studioIdx] || null  // this studio's production
+  // Find production bound to this studio (Stage AR2). Fall back to array
+  // index only if no producing program has a studioIdx yet — belt-and-
+  // suspenders for a save that didn't run through hydrate for some reason.
+  const production =
+    producing.find(p => p.studioIdx === studioIdx)
+    || (producing.every(p => typeof p.studioIdx !== 'number') ? producing[studioIdx] : null)
+    || null
   const label = STUDIO_LABELS[studioIdx] || `Studio ${studioIdx + 1}`
   const accent = STUDIO_ACCENTS[studioIdx] || R.gold
 
@@ -116,7 +122,12 @@ export function StudioRoom({
           research={game.research}
           year={game.year}
           monthIdx={game.monthIdx}
-          onBegin={(opts) => { onBeginProgram(opts); setShowBuilder(false) }}
+          onBegin={(opts) => {
+            // Stage AR2: tag the production with this studio's index so it
+            // opens here, not in the first idle slot.
+            onBeginProgram({ ...opts, studioIdx })
+            setShowBuilder(false)
+          }}
           onClose={() => setShowBuilder(false)}
         />
       )}
@@ -487,7 +498,10 @@ function OtherStudiosPanel({ currentIdx, producing, onGoTo }) {
         {others.map(i => {
           const label = STUDIO_LABELS[i] || `Studio ${i + 1}`
           const accent = STUDIO_ACCENTS[i]
-          const prod = producing[i]
+          // Stage AR2: find by studioIdx binding, not array index
+          const prod =
+            producing.find(p => p.studioIdx === i)
+            || (producing.every(p => typeof p.studioIdx !== 'number') ? producing[i] : null)
           return (
             <button
               key={i}

@@ -1054,6 +1054,39 @@ export function beginProgram(station, research, year, opts) {
     if (s?.tier) scriptTier = s.tier
   }
 
+  // ── Studio assignment (Stage AR2) ────────────────────────────────────
+  // Only programs that will enter 'producing' status need a studio.
+  // Movies (method === 'instant') go directly to shelf and don't occupy one.
+  // If the caller passed an explicit `opts.studioIdx`, honor it (validate
+  // that the studio is free); otherwise pick the first idle studio.
+  // If all studios are occupied, bail with a clear error.
+  const STUDIO_COUNT = 3
+  let assignedStudioIdx = null
+  const willProduce = prodMonths > 0
+  if (willProduce) {
+    const existingProducing = (station.programs || []).filter(p => p.status === 'producing')
+    const usedStudios = new Set(
+      existingProducing
+        .map(p => p.studioIdx)
+        .filter(i => typeof i === 'number' && i >= 0 && i < STUDIO_COUNT)
+    )
+    if (typeof opts.studioIdx === 'number' && opts.studioIdx >= 0 && opts.studioIdx < STUDIO_COUNT) {
+      if (usedStudios.has(opts.studioIdx)) {
+        const labels = ['Studio Alpha', 'Studio Beta', 'Studio Gamma']
+        return { station, error: `${labels[opts.studioIdx]} is already occupied — pick a different studio or cancel that production` }
+      }
+      assignedStudioIdx = opts.studioIdx
+    } else {
+      // Auto-assign: first idle studio
+      for (let i = 0; i < STUDIO_COUNT; i++) {
+        if (!usedStudios.has(i)) { assignedStudioIdx = i; break }
+      }
+      if (assignedStudioIdx === null) {
+        return { station, error: 'All studios occupied — cancel a production or wait for one to finish' }
+      }
+    }
+  }
+
   const program = {
     id: uid(),
     name: opts.name.trim(),
@@ -1082,6 +1115,7 @@ export function beginProgram(station, research, year, opts) {
     // merch revenue scaled by quality + hype.
     prepareMerch: !!opts.prepareMerch && (scriptTier === 'large' || scriptTier === 'super'),
     status: prodMonths > 0 ? 'producing' : 'shelf',
+    studioIdx: assignedStudioIdx,  // Stage AR2: which studio holds this prod
     prodMonthsRemaining: prodMonths,
     prodMonthsTotal: prodMonths,
     prepCostPaid: prepCost,

@@ -30,6 +30,12 @@ export function Floorplan({
   const readyScripts = scripts.filter(s => s.status === 'ready')
   const draftingScripts = scripts.filter(s => s.status === 'drafting')
   const producingPrograms = programs.filter(p => p.status === 'producing')
+  // Stage AR2: bind productions to their studios by studioIdx. Fall back
+  // to array index for legacy behavior only when nothing has a studioIdx
+  // (i.e. save that skipped hydrate).
+  const producingByStudio = (idx) =>
+    producingPrograms.find(p => p.studioIdx === idx)
+    || (producingPrograms.every(p => typeof p.studioIdx !== 'number') ? producingPrograms[idx] : null)
   const airingPrograms = programs.filter(p => p.status === 'airing')
   const shelfPrograms = programs.filter(p => p.status === 'shelf')
 
@@ -71,7 +77,7 @@ export function Floorplan({
               <Room
                 iconClass="fa-solid fa-user-tie"
                 label="CEO Suite"
-                onClick={() => onGoTo('financials')}
+                onClick={() => onGoTo('ceo')}
                 sublines={[
                   { text: 'Strategy · Finance', color: R.textDim },
                   { text: fmtM(station.cash || 0), color: R.cash, size: 20, mono: true },
@@ -121,21 +127,21 @@ export function Floorplan({
             }}>
               <StudioRoom
                 name="Studio Alpha"
-                producing={producingPrograms[0]}
+                producing={producingByStudio(0)}
                 shelfCount={shelfPrograms.length}
                 airingCount={airingPrograms.length}
                 onClick={() => onGoTo('studio-alpha')}
               />
               <StudioRoom
                 name="Studio Beta"
-                producing={producingPrograms[1]}
+                producing={producingByStudio(1)}
                 shelfCount={shelfPrograms.length}
                 airingCount={airingPrograms.length}
                 onClick={() => onGoTo('studio-beta')}
               />
               <StudioRoom
                 name="Studio Gamma"
-                producing={producingPrograms[2]}
+                producing={producingByStudio(2)}
                 shelfCount={shelfPrograms.length}
                 airingCount={airingPrograms.length}
                 onClick={() => onGoTo('studio-gamma')}
@@ -216,6 +222,7 @@ export function Floorplan({
             game={game}
             onOpenMarket={() => onGoTo('market')}
             onOpenHistory={() => onGoTo('history')}
+            onOpenContent={() => onGoTo('content')}
           />
         </aside>
       </div>

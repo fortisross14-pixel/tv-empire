@@ -10,7 +10,7 @@ import { MARKETS } from '../constants.js'
  *   2. PROGRAM LIBRARY — quick counts of the station's IP catalog.
  *      Click → opens History screen.
  */
-export function RivalsPanel({ game, onOpenMarket, onOpenHistory }) {
+export function RivalsPanel({ game, onOpenMarket, onOpenHistory, onOpenContent }) {
   const station = game?.station
   const competitors = game?.competitors || []
 
@@ -18,6 +18,10 @@ export function RivalsPanel({ game, onOpenMarket, onOpenHistory }) {
     { name: station?.name || 'You', fame: station?.fame || 0, isYou: true },
     ...competitors.map(c => ({ name: c.name, fame: c.fame || 0, isYou: false })),
   ].sort((a, b) => b.fame - a.fame)
+
+  // Total field fame for market-share calculation. Guard against divide-by-zero.
+  const totalFame = allNetworks.reduce((sum, n) => sum + n.fame, 0)
+  allNetworks.forEach(n => { n._totalFame = totalFame })
 
   const yourRank = allNetworks.findIndex(n => n.isYou) + 1
   const marketLabel = station ? (MARKETS[station.market]?.label || station.market) : ''
@@ -39,7 +43,7 @@ export function RivalsPanel({ game, onOpenMarket, onOpenHistory }) {
               <span>Rival Networks</span>
             </div>
             <div style={{ fontSize: 10, color: R.textDim, marginTop: 2 }}>
-              {marketLabel} market
+              {marketLabel} · share by fame
             </div>
           </div>
           <button
@@ -102,26 +106,9 @@ export function RivalsPanel({ game, onOpenMarket, onOpenHistory }) {
               <span>Library</span>
             </div>
             <div style={{ fontSize: 10, color: R.textDim, marginTop: 2 }}>
-              Your catalog
+              Content · Archive
             </div>
           </div>
-          <button
-            onClick={onOpenHistory}
-            style={{
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.15)',
-              color: R.textDim,
-              padding: '4px 8px',
-              fontSize: 9,
-              borderRadius: 6,
-              cursor: 'pointer',
-              letterSpacing: 1,
-              textTransform: 'uppercase',
-              fontFamily: 'monospace',
-            }}
-          >
-            Open
-          </button>
         </div>
 
         <LibraryStat
@@ -148,6 +135,54 @@ export function RivalsPanel({ game, onOpenMarket, onOpenHistory }) {
           color={R.textDim}
           iconClass="fa-solid fa-box-archive"
         />
+
+        {/* Two-button footer: Content (scripts/programs manager) + History (past seasons) */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          <button
+            onClick={onOpenContent}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: `1px solid ${R.cash}55`,
+              color: R.cash,
+              padding: '6px 10px',
+              fontSize: 10,
+              borderRadius: 6,
+              cursor: 'pointer',
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+              fontFamily: 'monospace',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = `${R.cash}18`}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <i className="fa-solid fa-scroll" style={{ marginRight: 4 }} />
+            Content
+          </button>
+          <button
+            onClick={onOpenHistory}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: `1px solid ${R.gold}55`,
+              color: R.gold,
+              padding: '6px 10px',
+              fontSize: 10,
+              borderRadius: 6,
+              cursor: 'pointer',
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+              fontFamily: 'monospace',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = `${R.gold}18`}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <i className="fa-solid fa-book" style={{ marginRight: 4 }} />
+            History
+          </button>
+        </div>
       </div>
     </>
   )
@@ -156,6 +191,10 @@ export function RivalsPanel({ game, onOpenMarket, onOpenHistory }) {
 function RivalRow({ rank, network, maxFame }) {
   const pct = maxFame > 0 ? Math.round((network.fame / maxFame) * 100) : 0
   const barColor = network.isYou ? R.gold : R.textMuted
+  // Market share estimate: fame proportion of the total field
+  const share = network._totalFame > 0
+    ? Math.round((network.fame / network._totalFame) * 100)
+    : 0
   return (
     <div style={{
       padding: '7px 10px',
@@ -195,7 +234,7 @@ function RivalRow({ rank, network, maxFame }) {
           fontSize: 11, color: R.rank, fontFamily: 'monospace',
           fontWeight: 700,
         }}>
-          {network.fame.toFixed(1)}
+          {share}%
         </span>
       </div>
       <div style={{

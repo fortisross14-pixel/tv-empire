@@ -116,6 +116,7 @@ import { RetroHeader } from './components/RetroHeader'
 import { Floorplan } from './components/Floorplan'
 import { ProgrammingRoom } from './components/ProgrammingRoom'
 import { StudioRoom } from './components/StudioRoom'
+import { CeoSuite } from './components/CeoSuite'
 import { currentTutorialStep, isNavAllowed, isContinueLocked, TUTORIAL_STEPS } from './tutorial.js'
 import { play as playSound, initOnGesture, isMuted, toggleMuted } from './audio'
 import { Icon } from './icons.jsx'
@@ -225,6 +226,20 @@ function hydrateLoadedGame(g) {
   if (!g.competitorAllShows) g.competitorAllShows = []
   if (!g.ledger) g.ledger = []
   if (!g.awardsByYear) g.awardsByYear = {}
+  // ── Stage AR2: assign studioIdx to legacy producing programs ─────────
+  // Older saves have producing programs without studioIdx. Assign 0/1/2
+  // based on their current order; 4th+ get studioIdx=null (no studio),
+  // they still tick and complete but don't display in a studio room.
+  {
+    const producing = (g.station.programs || []).filter(p => p.status === 'producing')
+    let next = 0
+    for (const p of producing) {
+      if (typeof p.studioIdx !== 'number') {
+        p.studioIdx = next < 3 ? next : null
+        next++
+      }
+    }
+  }
   return g
 }
 
@@ -1745,6 +1760,17 @@ export default function App() {
           onBeginProgram={onBeginProgram}
           onCancelProgram={onCancelProgram}
           onGoTo={setView}
+          onBack={() => setView('plan')}
+        />
+      )}
+
+      {game.phase === 'plan' && view === 'ceo' && (
+        <CeoSuite
+          game={game}
+          nextMonthCost={nextMonthCost}
+          cashBlocker={cashBlocker}
+          onGoTo={setView}
+          onPromote={promoteMarket}
           onBack={() => setView('plan')}
         />
       )}
