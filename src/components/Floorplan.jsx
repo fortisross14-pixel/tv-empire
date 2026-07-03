@@ -67,10 +67,10 @@ export function Floorplan({
           <FloorplanHeader />
 
           <div className="floorplan-frame wood-bg" style={{ padding: 20 }}>
-            {/* Top row: CEO / Programming / Talent Relations */}
+            {/* Top row: strategy + content acquisition (4 rooms) */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: 'repeat(4, 1fr)',
               gap: 14,
               marginBottom: 14,
             }}>
@@ -85,6 +85,21 @@ export function Floorplan({
                 statusChip={{
                   text: 'FISCAL BRIEFING',
                   color: R.cash,
+                }}
+              />
+
+              <Room
+                iconClass="fa-solid fa-feather"
+                label="Writers Room"
+                onClick={() => onGoTo('scripting')}
+                sublines={[
+                  { text: 'Scripts', color: R.textDim, size: 11 },
+                  { text: `${readyScripts.length}`, color: R.gold, size: 24, bold: true },
+                  { text: draftingScripts.length > 0 ? `+ ${draftingScripts.length} drafting` : 'ready to produce', color: '#fcd34d99', size: 9 },
+                ]}
+                statusChip={{
+                  text: 'COMMISSION SCRIPTS',
+                  color: R.gold,
                 }}
               />
 
@@ -118,12 +133,11 @@ export function Floorplan({
               />
             </div>
 
-            {/* Studio row: Alpha / Beta / Gamma */}
+            {/* Bottom row: 3 studios + research lab (4 rooms, uniform) */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: 'repeat(4, 1fr)',
               gap: 14,
-              marginBottom: 14,
             }}>
               <StudioRoom
                 name="Studio Alpha"
@@ -146,71 +160,21 @@ export function Floorplan({
                 airingCount={airingPrograms.length}
                 onClick={() => onGoTo('studio-gamma')}
               />
+              <Room
+                iconClass="fa-solid fa-flask"
+                label="R&D Lab"
+                onClick={() => onGoTo('research')}
+                sublines={[
+                  { text: `${unlockedResearch}`, color: R.cash, size: 26, bold: true },
+                  { text: 'FORMATS UNLOCKED', color: '#34d39999', size: 9 },
+                  ...(availableResearch > 0 ? [{ text: `${availableResearch} available`, color: R.textDim, size: 10 }] : []),
+                ]}
+                statusChip={{
+                  text: researchInProgress(research) ? 'IN PROGRESS' : 'READY TO STUDY',
+                  color: researchInProgress(research) ? R.rank : R.cash,
+                }}
+              />
             </div>
-
-            {/* Bottom row: Research Lab (wide) */}
-            <div
-              onClick={() => onGoTo('research')}
-              className="room-card"
-              style={{
-                display: 'flex', alignItems: 'center',
-                justifyContent: 'space-between',
-                minHeight: 68,
-                padding: '12px 16px',
-                gap: 16,
-                flexDirection: 'row',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div className="brass-plaque" style={{
-                  width: 38, height: 38, padding: 0,
-                  justifyContent: 'center',
-                }}>
-                  <i className="fa-solid fa-flask" style={{ fontSize: 18 }} />
-                </div>
-                <div>
-                  <div className="section-title" style={{ fontSize: 14, color: '#fff' }}>
-                    Research &amp; Development Lab
-                  </div>
-                  <div style={{ fontSize: 11, color: R.textDim, marginTop: 2 }}>
-                    {unlockedResearch} formats unlocked · {availableResearch} available
-                  </div>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{
-                  fontSize: 10, color: R.cash, fontFamily: 'monospace',
-                  letterSpacing: 1.5,
-                }}>
-                  {researchInProgress(research) ? 'IN PROGRESS' : 'READY TO STUDY'}
-                </div>
-                <div style={{ fontSize: 9, color: '#34d39988', marginTop: 2 }}>
-                  CLICK TO RESEARCH
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Below the floor: quick script summary strip */}
-          <div style={{
-            marginTop: 16, padding: '10px 16px',
-            background: 'rgba(15, 23, 42, 0.6)',
-            border: '1px solid rgba(100, 116, 139, 0.3)',
-            borderRadius: 12,
-            display: 'flex', alignItems: 'center', gap: 20,
-            flexWrap: 'wrap',
-          }}>
-            <div style={{
-              fontSize: 10, color: R.gold, letterSpacing: 2,
-              fontFamily: 'monospace', textTransform: 'uppercase',
-            }}>
-              Content pipeline
-            </div>
-            <PipelineStat label="Scripts ready"  value={readyScripts.length} color={R.cash} />
-            <PipelineStat label="In drafting"    value={draftingScripts.length} color={R.viewers} />
-            <PipelineStat label="In production"  value={producingPrograms.length} color={R.rank} />
-            <PipelineStat label="On air"         value={airingPrograms.length} color={R.red} />
-            <PipelineStat label="On shelf"       value={shelfPrograms.length} color={R.textDim} />
           </div>
         </main>
 
@@ -234,31 +198,14 @@ export function Floorplan({
 
 function FloorplanHeader() {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-      marginBottom: 12,
-    }}>
-      <div>
-        <div className="section-title" style={{
-          fontSize: 24, color: '#fff', letterSpacing: 2,
-        }}>
-          Headquarters — Floor 1
-        </div>
-        <div style={{ fontSize: 11, color: R.textDim, marginTop: 2 }}>
-          Click any room to manage · Advance the month when ready
-        </div>
-      </div>
-      <div style={{
-        fontSize: 10, padding: '4px 12px',
-        background: 'rgba(255,255,255,0.05)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 999,
-        display: 'flex', alignItems: 'center', gap: 8,
+    <div style={{ marginBottom: 12 }}>
+      <div className="section-title" style={{
+        fontSize: 24, color: '#fff', letterSpacing: 2,
       }}>
-        <span className="live-dot" />
-        <span style={{ color: R.cash, fontFamily: 'monospace', letterSpacing: 2 }}>
-          LIVE FEED
-        </span>
+        Headquarters
+      </div>
+      <div style={{ fontSize: 11, color: R.textDim, marginTop: 2 }}>
+        Click any room to manage · Advance the month when ready
       </div>
     </div>
   )

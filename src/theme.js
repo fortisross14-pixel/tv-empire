@@ -77,7 +77,11 @@ export const T = {
 // Font stacks — Fraunces for editorial display + Inter for UI + JetBrains for numbers.
 // CSS injection (in App entrypoint) loads these from Google Fonts.
 export const FONTS = {
-  serif: "'Fraunces', Georgia, serif",
+  // Stage AS: aliased to Oswald so all AJ→AN screens inherit the retro
+  // heading feel without touching every fontFamily site individually.
+  // Original was "'Fraunces', Georgia, serif" — kept below as a comment
+  // for reference if we ever want to restore editorial style per-screen.
+  serif: "'Oswald', 'Impact', 'Arial Black', system-ui, sans-serif",
   sans:  "'Inter', -apple-system, system-ui, sans-serif",
   mono:  "'JetBrains Mono', 'SF Mono', Menlo, monospace",
 }

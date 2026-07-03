@@ -103,17 +103,20 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   font-weight: 400;
 }
 .editorial {
-  /* v6 — Fraunces variable serif. Optical-size axis tuned for display.
-     Used by hero titles and program names on migrated screens. */
-  font-family: 'Fraunces', Georgia, serif;
-  font-variation-settings: 'opsz' 96, 'wght' 600;
-  font-weight: 600;
-  letter-spacing: -.015em;
+  /* Stage AS — was Fraunces variable serif; now aliased to Oswald so the
+     retro shell reads consistently across all screens. Old rule kept as
+     comment in case per-screen editorial style is restored later. */
+  font-family: 'Oswald', 'Impact', 'Arial Black', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 .serif {
-  /* Body-weight serif, italic-capable, for sluglines and pull-quotes */
-  font-family: 'Fraunces', Georgia, serif;
-  font-variation-settings: 'opsz' 14, 'wght' 400;
+  /* Stage AS — was Fraunces italic body serif; now falls to Inter so
+     sluglines and captions don't render Oswald-italic (which browsers
+     synthesize with a lean that looks awkward for body text). */
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  font-style: italic;
 }
 .mono {
   font-family: 'JetBrains Mono', monospace;

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
-import { T, FONTS } from '../theme.js'
+import { T, FONTS, R } from '../theme.js'
+import { RetroRoomHero } from './RetroRoomHero.jsx'
 import {
   CATEGORIES, MONTHS, SCRIPT_TIERS, MARKET_ORDER,
 } from '../constants.js'
@@ -25,54 +26,38 @@ export function ContentScreen({
   onBeginScript, onRefreshScript, onArchiveScript, onDeleteScript,
   onBeginProgram, onCancelProgram,
   onBack,
+  initialSub = 'production',    // Stage AS: allow Writers Room to open at Scripts tab
 }) {
-  const [sub, setSub] = useState('production')
+  const [sub, setSub] = useState(initialSub)
   const activeTab = SUB_TABS.find(t => t.id === sub)
 
   return (
-    <div className="view-wrap" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 32px 48px' }}>
-      <BackLink onClick={onBack} />
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 20px 48px' }}>
+      {/* ─── RETRO HERO ─── */}
+      <RetroRoomHero
+        iconClass={sub === 'scripts' ? 'fa-solid fa-feather' : 'fa-solid fa-clapperboard'}
+        eyebrow={`Content · ${activeTab?.label || ''}`}
+        title={sub === 'scripts' ? 'Writers Room' : 'Content'}
+        subtitle={sub === 'scripts'
+          ? 'Commission scripts. Track drafts. Ready pool to produce.'
+          : 'Scripts in development. Productions in the can. What\'s on the shelf, on the air.'}
+        accent={sub === 'scripts' ? R.gold : R.viewers}
+        onBack={onBack}
+      />
 
-      {/* ─── HERO ─── */}
-      <div style={{ position: 'relative', padding: '24px 0 24px' }}>
-        <div style={{
-          width: 36, height: 2,
-          background: `linear-gradient(90deg, ${T.accent} 0%, transparent 100%)`,
-          marginBottom: 14,
-        }} />
-        <div style={{
-          fontSize: 10, fontWeight: 600, letterSpacing: '.2em',
-          textTransform: 'uppercase', color: T.accent, marginBottom: 14,
-        }}>
-          Content · {activeTab?.label}
-        </div>
-        <h1 className="editorial" style={{
-          fontFamily: FONTS.serif,
-          fontVariationSettings: "'opsz' 144, 'wght' 600",
-          fontSize: 52, lineHeight: 0.95, letterSpacing: '-.025em',
-          color: T.text, marginBottom: 12,
-        }}>
-          Content
-        </h1>
-        <div style={{
-          fontFamily: FONTS.serif,
-          fontVariationSettings: "'opsz' 14, 'wght' 400",
-          fontStyle: 'italic',
-          fontSize: 14, color: T.textDim, lineHeight: 1.55, maxWidth: 540,
-        }}>
-          Scripts in development. Productions in the can. What's on the shelf, on the air, and in the books.
-        </div>
-      </div>
-
-      {/* Sub-tabs */}
+      {/* Sub-tabs — retro style */}
       <div style={{
-        display: 'flex', gap: 4, marginBottom: 28, marginTop: 16,
-        borderBottom: `1px solid ${T.border}`,
-        overflowX: 'auto',
+        display: 'flex', gap: 6, marginBottom: 24,
+        padding: 4,
+        background: 'rgba(15, 23, 42, 0.6)',
+        border: `1px solid ${R.border}44`,
+        borderRadius: 10,
+        maxWidth: 400,
       }}>
         {SUB_TABS.map(t => (
-          <ContentSubTab key={t.id}
+          <RetroSubTab key={t.id}
             label={t.label}
+            iconClass={t.id === 'scripts' ? 'fa-solid fa-feather' : 'fa-solid fa-clapperboard'}
             active={sub === t.id}
             onClick={() => setSub(t.id)}
           />
@@ -105,23 +90,7 @@ export function ContentScreen({
 }
 
 /** Quiet "← Back" text-link. Same as Operations. */
-function BackLink({ onClick }) {
-  return (
-    <div style={{ paddingTop: 24 }}>
-      <button onClick={onClick} style={{
-        background: 'transparent', border: 'none',
-        color: T.muted, padding: '4px 0', cursor: 'pointer',
-        fontSize: 11, fontWeight: 500, letterSpacing: '.08em',
-        textTransform: 'uppercase', display: 'inline-flex',
-        alignItems: 'center', gap: 6,
-      }}>
-        <span style={{ fontSize: 14 }}>←</span> Back
-      </button>
-    </div>
-  )
-}
-
-function ContentSubTab({ label, active, onClick }) {
+function RetroSubTab({ label, iconClass, active, onClick }) {
   const [hover, setHover] = useState(false)
   return (
     <button
@@ -129,34 +98,25 @@ function ContentSubTab({ label, active, onClick }) {
       onMouseLeave={() => setHover(false)}
       onClick={onClick}
       style={{
-        background: hover && !active ? 'rgba(255,255,255,.025)' : 'transparent',
-        border: 'none',
-        color: active ? T.text : (hover ? T.text : T.muted),
-        fontFamily: FONTS.sans,
-        fontSize: 11, fontWeight: active ? 700 : 600,
-        letterSpacing: '.12em', textTransform: 'uppercase',
-        padding: '11px 16px', cursor: 'pointer',
-        position: 'relative',
-        whiteSpace: 'nowrap',
-        transition: 'color .15s, background .15s',
+        flex: 1,
+        background: active
+          ? `linear-gradient(to bottom, ${R.gold}22, ${R.gold}0a)`
+          : (hover ? 'rgba(255,255,255,0.04)' : 'transparent'),
+        border: `1px solid ${active ? R.gold + '77' : 'transparent'}`,
+        color: active ? R.gold : (hover ? R.text : R.textDim),
+        fontFamily: 'Oswald, Impact, system-ui',
+        fontSize: 12, fontWeight: 700,
+        letterSpacing: 1.5, textTransform: 'uppercase',
+        padding: '9px 14px',
+        borderRadius: 8,
+        cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        gap: 8,
+        transition: 'all 0.15s',
       }}
     >
-      {active && (
-        <span style={{
-          display: 'inline-block',
-          width: 5, height: 5,
-          background: T.accent,
-          marginRight: 8, marginBottom: 1,
-          verticalAlign: 'middle',
-        }} />
-      )}
-      {label}
-      {active && (
-        <div style={{
-          position: 'absolute', left: 0, right: 0, bottom: -1, height: 2,
-          background: T.accent,
-        }} />
-      )}
+      <i className={iconClass} style={{ fontSize: 12 }} />
+      <span>{label}</span>
     </button>
   )
 }
@@ -1153,21 +1113,16 @@ function EditorialModal({ children, onClose, title }) {
         {title && (
           <>
             <div style={{
-              width: 32, height: 2,
-              background: `linear-gradient(90deg, ${T.accent} 0%, transparent 100%)`,
-              marginBottom: 12,
-            }} />
-            <div style={{
               fontSize: 9.5, fontWeight: 600, letterSpacing: '.2em',
-              textTransform: 'uppercase', color: T.accent, marginBottom: 10,
+              textTransform: 'uppercase', color: '#f0c14b', marginBottom: 6,
             }}>
-              Modal
+              <i className="fa-solid fa-feather" style={{ marginRight: 6 }} />
+              Script
             </div>
             <h2 style={{
-              fontFamily: FONTS.serif,
-              fontVariationSettings: "'opsz' 144, 'wght' 600",
-              fontSize: 26, lineHeight: 1.05, letterSpacing: '-.02em',
-              color: T.text, marginBottom: 20,
+              fontFamily: 'Oswald, Impact, system-ui',
+              fontSize: 24, fontWeight: 700, lineHeight: 1.05, letterSpacing: 1,
+              color: '#fff', marginBottom: 20, textTransform: 'uppercase',
             }}>
               {title}
             </h2>

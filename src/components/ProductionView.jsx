@@ -262,17 +262,16 @@ export function ProductionView({
           <div>
             <div style={{
               fontSize: 9.5, fontWeight: 600, letterSpacing: '.2em',
-              textTransform: 'uppercase', color: T.accent,
+              textTransform: 'uppercase', color: '#f0a347',
             }}>
               Production
             </div>
             <h2 style={{
-              fontFamily: FONTS.serif,
-              fontVariationSettings: "'opsz' 144, 'wght' 600",
-              fontSize: 22, lineHeight: 1.05, letterSpacing: '-.015em',
-              color: T.text, marginTop: 2,
+              fontFamily: 'Oswald, Impact, system-ui',
+              fontSize: 24, fontWeight: 700, lineHeight: 1.05, letterSpacing: 1,
+              color: '#fff', marginTop: 4, textTransform: 'uppercase',
             }}>
-              New production
+              New Production
             </h2>
           </div>
           <button onClick={onClose} style={{

@@ -1804,7 +1804,7 @@ export default function App() {
         />
       )}
 
-      {game.phase === 'plan' && view === 'content' && (
+      {game.phase === 'plan' && (view === 'content' || view === 'scripting') && (
         <ContentScreen
           station={game.station}
           marketRoster={game.marketRoster}
@@ -1820,6 +1820,7 @@ export default function App() {
           onBeginProgram={onBeginProgram}
           onCancelProgram={onCancelProgram}
           onBack={() => setView('plan')}
+          initialSub={view === 'scripting' ? 'scripts' : 'production'}
         />
       )}
 
