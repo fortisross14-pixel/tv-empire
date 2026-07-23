@@ -14,6 +14,7 @@ import {
   getUnlocks,
 } from '../engine.js'
 import { ProductionView } from './ProductionView.jsx'
+import { ProgramArt } from './ProgramArt.jsx'
 
 const SUB_TABS = [
   { id: 'production', label: 'Production' },
@@ -350,6 +351,7 @@ function ProgramCard({ program: p, onCancel }) {
       borderRadius: 5,
       display: 'flex', flexDirection: 'column',
     }}>
+      <ProgramArt program={p} compact style={{ height: 108, marginBottom: 12 }} />
       {/* Header — name + status pill */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',

@@ -2,6 +2,7 @@ import { R } from '../theme.js'
 import { fmtM } from '../engine.js'
 import { TalentLounge } from './TalentLounge.jsx'
 import { RivalsPanel } from './RivalsPanel.jsx'
+import { ProgramArt } from './ProgramArt.jsx'
 
 /**
  * Floorplan — the new home screen.
@@ -271,6 +272,7 @@ function StudioRoom({ name, producing, shelfCount, airingCount, onClick }) {
       <div className="room-card-inner" style={{ gap: 8 }}>
         {producing ? (
           <>
+            <ProgramArt program={producing} compact showTitle={false} style={{ width: '100%', height: 68 }} />
             <div style={{
               fontSize: 12, color: '#fff', fontWeight: 700, lineHeight: 1.2,
               padding: '0 4px', textAlign: 'center',

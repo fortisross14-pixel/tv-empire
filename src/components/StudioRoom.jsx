@@ -5,6 +5,7 @@ import {
   findDirector, findStar, findMovie, findLeague, fmtM,
 } from '../engine.js'
 import { ProductionView } from './ProductionView.jsx'
+import { ProgramArt } from './ProgramArt.jsx'
 
 /**
  * StudioRoom — dedicated screen for one studio.
@@ -237,14 +238,20 @@ function ProductionCard({ production: p, accent, station, research, onCancel }) 
         In Production · {slugline}
       </div>
 
-      {/* Program title */}
-      <div style={{
-        fontSize: 32, fontWeight: 900, color: '#fff', lineHeight: 1.05,
-        letterSpacing: -0.5, marginBottom: 16,
-        fontFamily: 'Oswald, Impact, system-ui',
-        position: 'relative', zIndex: 2,
-      }}>
-        {p.name}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 34%) 1fr', gap: 20, alignItems: 'stretch', marginBottom: 20, position: 'relative', zIndex: 2 }} className="production-hero-grid">
+        <ProgramArt program={p} style={{ minHeight: 190 }} />
+        <div style={{ alignSelf: 'center' }}>
+          <div style={{
+            fontSize: 32, fontWeight: 900, color: '#fff', lineHeight: 1.05,
+            letterSpacing: -0.5, marginBottom: 10,
+            fontFamily: 'Oswald, Impact, system-ui',
+          }}>
+            {p.name}
+          </div>
+          <div style={{ color: R.textDim, fontSize: 12, lineHeight: 1.5 }}>
+            A visible production identity now follows this show from the studio floor to the content library and schedule.
+          </div>
+        </div>
       </div>
 
       {/* Progress bar */}
