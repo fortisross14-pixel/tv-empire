@@ -1,363 +1,293 @@
 import { R } from '../theme.js'
-import { fmtM } from '../engine.js'
+import { fmtM, findStar, findDirector } from '../engine.js'
+import { CATEGORIES } from '../constants.js'
 import { TalentLounge } from './TalentLounge.jsx'
 import { RivalsPanel } from './RivalsPanel.jsx'
 import { ProgramArt } from './ProgramArt.jsx'
 
 /**
- * Floorplan — the new home screen.
+ * Headquarters / studio campus.
  *
- * Replaces PlanView as what the player sees when view === 'plan'.
- * Rooms are clickable; each opens the corresponding existing screen by
- * changing the `view` state:
- *   CEO Suite         → financials
- *   Programming       → schedule (renders old PlanView)
- *   Talent Relations  → operations
- *   Studio Alpha/Beta/Gamma → content (ContentScreen)
- *   Research Lab      → research
- *   [Right sidebar]   → market (rivals) / history (library)
+ * This is intentionally a management surface rather than a decorative menu:
+ * - every department is a clickable room
+ * - productions occupy physical sound stages
+ * - the lower pipeline exposes bottlenecks at a glance
+ * - staff/talent appear as visible crew tokens
  */
-export function Floorplan({
-  game,
-  onGoTo,        // (view: string) => void
-  onAdvanceMonth,
-  runsBySlot,
-}) {
+export function Floorplan({ game, onGoTo, onAdvanceMonth, runsBySlot }) {
   const station = game?.station
   if (!station) return null
 
   const programs = station.programs || []
   const scripts = station.scripts || []
-  const readyScripts = scripts.filter(s => s.status === 'ready')
-  const draftingScripts = scripts.filter(s => s.status === 'drafting')
-  const producingPrograms = programs.filter(p => p.status === 'producing')
-  // Stage AR2: bind productions to their studios by studioIdx. Fall back
-  // to array index for legacy behavior only when nothing has a studioIdx
-  // (i.e. save that skipped hydrate).
-  const producingByStudio = (idx) =>
-    producingPrograms.find(p => p.studioIdx === idx)
-    || (producingPrograms.every(p => typeof p.studioIdx !== 'number') ? producingPrograms[idx] : null)
-  const airingPrograms = programs.filter(p => p.status === 'airing')
-  const shelfPrograms = programs.filter(p => p.status === 'shelf')
+  const producing = programs.filter(p => p.status === 'producing')
+  const ready = programs.filter(p => p.status === 'shelf')
+  const airing = programs.filter(p => p.status === 'airing')
+  const writers = station.hiredWriters || []
+  const talent = station.hiredTalent || station.talent || []
+  const executives = Object.values(station.staff || {}).filter(Boolean)
 
-  const research = game?.research
-  const availableResearch = countAvailableResearch(research)
-  const unlockedResearch = countUnlockedResearch(research)
+  const producingByStudio = idx =>
+    producing.find(p => p.studioIdx === idx)
+    || (producing.every(p => typeof p.studioIdx !== 'number') ? producing[idx] : null)
+
+  const scheduled = countScheduledSlots(runsBySlot)
+  const totalSlots = Math.max(1, (station.slotIds || []).length)
+  const readyScripts = scripts.filter(s => s.status === 'ready')
+  const drafting = scripts.filter(s => s.status === 'drafting')
+  const researchActive = (game.research?.inProgress || []).length
 
   return (
-    <div style={{
-      maxWidth: 1600, margin: '0 auto',
-      padding: '20px 20px 40px',
-    }}>
-      {/* Three-column layout: talent lounge / floorplan / rivals+library */}
-      <div className="floorplan-layout" style={{
-        display: 'grid',
-        gridTemplateColumns: '280px 1fr 280px',
-        gap: 20,
-      }}>
-        {/* ─── LEFT: TALENT LOUNGE ─── */}
-        <aside className="floorplan-sidebar">
-          <TalentLounge
-            station={station}
-            onOpenTalent={() => onGoTo('operations')}
-          />
+    <div className="hq-shell">
+      <div className="hq-topbar">
+        <div>
+          <div className="hq-kicker">LIVE MANAGEMENT VIEW</div>
+          <h1 className="hq-title">{station.name || 'TV Empire'} Studios</h1>
+          <div className="hq-subtitle">Build the slate, staff the rooms, and keep every stage moving.</div>
+        </div>
+        <div className="hq-command-strip">
+          <Metric label="Cash" value={fmtM(station.cash || 0)} tone={R.cash} />
+          <Metric label="On air" value={airing.length} tone={R.viewers} />
+          <Metric label="In production" value={producing.length} tone={R.rank} />
+          <Metric label="Schedule" value={`${scheduled}/${totalSlots}`} tone={R.gold} />
+        </div>
+      </div>
+
+      <div className="floorplan-layout hq-layout">
+        <aside className="floorplan-sidebar hq-sidebar">
+          <TalentLounge station={station} onOpenTalent={() => onGoTo('operations')} />
+          <CrewBoard writers={writers.length} talent={talent.length} executives={executives.length} onGoTo={onGoTo} />
         </aside>
 
-        {/* ─── CENTER: FLOOR PLAN ─── */}
-        <main>
-          <FloorplanHeader />
+        <main className="hq-campus-wrap">
+          <div className="hq-campus">
+            <div className="hq-campus-label">STUDIO CAMPUS · CLICK A ROOM TO ENTER</div>
 
-          <div className="floorplan-frame wood-bg" style={{ padding: 20 }}>
-            {/* Top row: strategy + content acquisition (4 rooms) */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: 14,
-              marginBottom: 14,
-            }}>
-              <Room
-                iconClass="fa-solid fa-user-tie"
-                label="CEO Suite"
+            <div className="hq-upper-row">
+              <DepartmentRoom
+                kind="executive"
+                icon="fa-solid fa-user-tie"
+                title="Executive Suite"
+                eyebrow="STRATEGY + FINANCE"
+                primary={fmtM(station.cash || 0)}
+                secondary={`${executives.length} senior leaders`}
+                people={Math.max(1, executives.length)}
                 onClick={() => onGoTo('ceo')}
-                sublines={[
-                  { text: 'Strategy · Finance', color: R.textDim },
-                  { text: fmtM(station.cash || 0), color: R.cash, size: 20, mono: true },
-                ]}
-                statusChip={{
-                  text: 'FISCAL BRIEFING',
-                  color: R.cash,
-                }}
               />
-
-              <Room
-                iconClass="fa-solid fa-feather"
-                label="Writers Room"
+              <DepartmentRoom
+                kind="writers"
+                icon="fa-solid fa-pen-nib"
+                title="Writers' Room"
+                eyebrow="DEVELOPMENT"
+                primary={`${readyScripts.length} ready`}
+                secondary={drafting.length ? `${drafting.length} scripts drafting` : 'No active drafts'}
+                people={Math.max(1, Math.min(6, writers.length))}
+                warning={!writers.length ? 'No writers hired' : null}
                 onClick={() => onGoTo('scripting')}
-                sublines={[
-                  { text: 'Scripts', color: R.textDim, size: 11 },
-                  { text: `${readyScripts.length}`, color: R.gold, size: 24, bold: true },
-                  { text: draftingScripts.length > 0 ? `+ ${draftingScripts.length} drafting` : 'ready to produce', color: '#fcd34d99', size: 9 },
-                ]}
-                statusChip={{
-                  text: 'COMMISSION SCRIPTS',
-                  color: R.gold,
-                }}
               />
-
-              <Room
-                iconClass="fa-solid fa-calendar-days"
-                label="Programming"
+              <DepartmentRoom
+                kind="programming"
+                icon="fa-solid fa-calendar-days"
+                title="Programming Control"
+                eyebrow="SCHEDULE + RATINGS"
+                primary={`${Math.round((scheduled / totalSlots) * 100)}% filled`}
+                secondary={`${scheduled} of ${totalSlots} slots`}
+                people={2}
+                warning={scheduled < totalSlots ? `${totalSlots - scheduled} open slots` : null}
                 onClick={() => onGoTo('schedule')}
-                sublines={[
-                  { text: 'Weekly Grid', color: R.textDim, size: 11 },
-                  { text: `${countScheduledSlots(runsBySlot)}/${(station.slotIds || []).length}`, color: R.viewers, size: 24, bold: true },
-                  { text: 'slots programmed', color: '#7dd3fc', size: 9 },
-                ]}
-                statusChip={{
-                  text: 'CLICK TO EDIT GRID',
-                  color: R.viewers,
-                }}
               />
-
-              <Room
-                iconClass="fa-solid fa-address-book"
-                label="Talent"
-                onClick={() => onGoTo('operations')}
-                sublines={[
-                  { text: `${talentCount(station)}`, color: R.rank, size: 30, bold: true },
-                  { text: 'UNDER CONTRACT', color: '#fcd34d', size: 9 },
-                ]}
-                statusChip={{
-                  text: 'HIRE · FIRE · SIGN',
-                  color: R.rank,
-                }}
-              />
-            </div>
-
-            {/* Bottom row: 3 studios + research lab (4 rooms, uniform) */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: 14,
-            }}>
-              <StudioRoom
-                name="Studio Alpha"
-                producing={producingByStudio(0)}
-                shelfCount={shelfPrograms.length}
-                airingCount={airingPrograms.length}
-                onClick={() => onGoTo('studio-alpha')}
-              />
-              <StudioRoom
-                name="Studio Beta"
-                producing={producingByStudio(1)}
-                shelfCount={shelfPrograms.length}
-                airingCount={airingPrograms.length}
-                onClick={() => onGoTo('studio-beta')}
-              />
-              <StudioRoom
-                name="Studio Gamma"
-                producing={producingByStudio(2)}
-                shelfCount={shelfPrograms.length}
-                airingCount={airingPrograms.length}
-                onClick={() => onGoTo('studio-gamma')}
-              />
-              <Room
-                iconClass="fa-solid fa-flask"
-                label="R&D Lab"
+              <DepartmentRoom
+                kind="research"
+                icon="fa-solid fa-flask"
+                title="Format Lab"
+                eyebrow="R&D + TECHNOLOGY"
+                primary={researchActive ? `${researchActive} active` : 'Lab available'}
+                secondary="Unlock formats and efficiency"
+                people={researchActive ? 3 : 1}
                 onClick={() => onGoTo('research')}
-                sublines={[
-                  { text: `${unlockedResearch}`, color: R.cash, size: 26, bold: true },
-                  { text: 'FORMATS UNLOCKED', color: '#34d39999', size: 9 },
-                  ...(availableResearch > 0 ? [{ text: `${availableResearch} available`, color: R.textDim, size: 10 }] : []),
-                ]}
-                statusChip={{
-                  text: researchInProgress(research) ? 'IN PROGRESS' : 'READY TO STUDY',
-                  color: researchInProgress(research) ? R.rank : R.cash,
-                }}
               />
             </div>
+
+            <div className="hq-corridor">
+              <span>PRODUCTION CORRIDOR</span>
+              <div className="hq-corridor-lights"><i /><i /><i /><i /><i /><i /></div>
+            </div>
+
+            <div className="hq-stage-row">
+              {[0, 1, 2].map(idx => (
+                <SoundStage
+                  key={idx}
+                  index={idx}
+                  program={producingByStudio(idx)}
+                  onClick={() => onGoTo(['studio-alpha', 'studio-beta', 'studio-gamma'][idx])}
+                />
+              ))}
+              <DepartmentRoom
+                kind="talent"
+                icon="fa-solid fa-star"
+                title="Casting & Talent"
+                eyebrow="CONTRACTS + CHEMISTRY"
+                primary={`${talent.length} signed`}
+                secondary="Build casts and lock stars"
+                people={Math.max(1, Math.min(6, talent.length))}
+                onClick={() => onGoTo('operations')}
+              />
+            </div>
+
+            <PipelineBoard
+              scripts={scripts}
+              producing={producing}
+              ready={ready}
+              airing={airing}
+              onGoTo={onGoTo}
+            />
           </div>
         </main>
 
-        {/* ─── RIGHT: RIVALS + LIBRARY ─── */}
-        <aside className="floorplan-sidebar" style={{
-          display: 'flex', flexDirection: 'column', gap: 20,
-        }}>
+        <aside className="floorplan-sidebar hq-sidebar right">
           <RivalsPanel
             game={game}
             onOpenMarket={() => onGoTo('market')}
             onOpenHistory={() => onGoTo('history')}
             onOpenContent={() => onGoTo('content')}
           />
+          <TonightBoard runsBySlot={runsBySlot} programs={programs} onGoTo={() => onGoTo('schedule')} />
         </aside>
       </div>
     </div>
   )
 }
 
-/* ─── ATOMIC COMPONENTS ─── */
-
-function FloorplanHeader() {
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div className="section-title" style={{
-        fontSize: 24, color: '#fff', letterSpacing: 2,
-      }}>
-        Headquarters
-      </div>
-      <div style={{ fontSize: 11, color: R.textDim, marginTop: 2 }}>
-        Click any room to manage · Advance the month when ready
-      </div>
-    </div>
-  )
+function Metric({ label, value, tone }) {
+  return <div className="hq-metric"><span>{label}</span><strong style={{ color: tone }}>{value}</strong></div>
 }
 
-/** Generic room card */
-function Room({ iconClass, label, onClick, sublines, statusChip }) {
+function CrewBoard({ writers, talent, executives, onGoTo }) {
   return (
-    <div className="room-card" onClick={onClick}>
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
-        <span className="brass-plaque">
-          <i className={iconClass} style={{ fontSize: 14 }} />
-          <span>{label}</span>
-        </span>
+    <button className="hq-mini-panel" onClick={() => onGoTo('operations')}>
+      <div className="hq-mini-title"><i className="fa-solid fa-users" /> Workforce</div>
+      <div className="hq-crew-grid">
+        <CrewStat label="Writers" value={writers} />
+        <CrewStat label="Talent" value={talent} />
+        <CrewStat label="Execs" value={executives} />
       </div>
-      <div className="room-card-inner">
-        {(sublines || []).map((s, i) => (
-          <div key={i} style={{
-            fontSize: s.size || 11,
-            color: s.color || R.text,
-            fontWeight: s.bold ? 900 : 400,
-            fontFamily: s.mono ? 'monospace' : 'inherit',
-            lineHeight: 1.1,
-            letterSpacing: s.size > 20 ? -0.5 : 0.2,
-          }}>
-            {s.text}
+      <div className="hq-mini-link">OPEN STAFF ROSTER →</div>
+    </button>
+  )
+}
+function CrewStat({ label, value }) { return <div><strong>{value}</strong><span>{label}</span></div> }
+
+function DepartmentRoom({ kind, icon, title, eyebrow, primary, secondary, people = 2, warning, onClick }) {
+  return (
+    <button className={`hq-room hq-room-${kind}`} onClick={onClick}>
+      <div className="hq-room-wall">
+        <div className="hq-room-sign"><i className={icon} /> {title}</div>
+        <div className="hq-room-window">
+          <div className="hq-room-desks">
+            {Array.from({ length: Math.min(6, people) }).map((_, i) => <PersonToken key={i} index={i} />)}
           </div>
-        ))}
-      </div>
-      {statusChip && (
-        <div style={{ textAlign: 'center', marginTop: 8 }}>
-          <span style={{
-            fontSize: 9, padding: '2px 8px',
-            background: `${statusChip.color}22`,
-            color: statusChip.color,
-            borderRadius: 999,
-            letterSpacing: 1.5,
-            fontFamily: 'monospace',
-          }}>
-            {statusChip.text}
-          </span>
+          <div className="hq-room-prop"><i className={icon} /></div>
         </div>
-      )}
-    </div>
+      </div>
+      <div className="hq-room-info">
+        <span>{eyebrow}</span>
+        <strong>{primary}</strong>
+        <small>{secondary}</small>
+        {warning && <em><i className="fa-solid fa-triangle-exclamation" /> {warning}</em>}
+      </div>
+    </button>
   )
 }
 
-/** Studio room — shows a producing program's status if one exists. */
-function StudioRoom({ name, producing, shelfCount, airingCount, onClick }) {
-  const status = producing
-    ? { text: `FILMING · ${Math.round(((producing.prodMonthsTotal - producing.prodMonthsRemaining) / producing.prodMonthsTotal) * 100)}%`, color: R.rank }
-    : { text: 'STUDIO IDLE · READY', color: R.cash }
+function PersonToken({ index }) {
+  return <span className="hq-person" style={{ '--delay': `${index * 0.17}s` }}><i /><b /></span>
+}
+
+function SoundStage({ index, program, onClick }) {
+  const labels = ['ALPHA', 'BETA', 'GAMMA']
+  const total = Math.max(1, program?.prodMonthsTotal || 1)
+  const remain = program?.prodMonthsRemaining ?? total
+  const pct = program ? Math.max(4, Math.min(100, ((total - remain) / total) * 100)) : 0
+  const cat = CATEGORIES.find(c => c.id === program?.category)
 
   return (
-    <div className="room-card" onClick={onClick}>
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-        <span className="brass-plaque">
-          <i className="fa-solid fa-video" style={{ fontSize: 14 }} />
-          <span>{name}</span>
-        </span>
+    <button className={`hq-stage ${program ? 'busy' : 'idle'}`} onClick={onClick}>
+      <div className="hq-stage-header">
+        <span>SOUNDSTAGE {labels[index]}</span>
+        <b>{program ? '● RECORDING' : '○ AVAILABLE'}</b>
       </div>
-
-      <div className="room-card-inner" style={{ gap: 8 }}>
-        {producing ? (
+      <div className="hq-stage-space">
+        {program ? (
           <>
-            <ProgramArt program={producing} compact showTitle={false} style={{ width: '100%', height: 68 }} />
-            <div style={{
-              fontSize: 12, color: '#fff', fontWeight: 700, lineHeight: 1.2,
-              padding: '0 4px', textAlign: 'center',
-            }}>
-              {producing.name}
-            </div>
-            <div style={{
-              fontSize: 10, color: R.textDim, fontFamily: 'monospace',
-            }}>
-              {producing.prodMonthsRemaining}/{producing.prodMonthsTotal} mo remaining
+            <ProgramArt program={program} compact showTitle={false} style={{ width: '48%', minWidth: 110, height: 104 }} />
+            <div className="hq-stage-set">
+              <div className="hq-camera"><i className="fa-solid fa-video" /></div>
+              <div className="hq-stage-crew"><PersonToken index={0}/><PersonToken index={1}/><PersonToken index={2}/></div>
+              <div className="hq-set-flat" />
             </div>
           </>
         ) : (
-          <>
-            <i className="fa-solid fa-video-slash" style={{ fontSize: 22, color: R.textMuted }} />
-            <div style={{ fontSize: 10, color: R.textDim, marginTop: 4 }}>
-              No production in progress
-            </div>
-          </>
+          <div className="hq-empty-stage">
+            <i className="fa-solid fa-plus" />
+            <strong>Start a production</strong>
+            <span>Stage capacity is being wasted</span>
+          </div>
         )}
       </div>
+      <div className="hq-stage-footer">
+        {program ? (
+          <>
+            <div className="hq-stage-copy"><strong>{program.name}</strong><span>{cat?.label || program.category || 'Program'} · {remain} mo left</span></div>
+            <div className="hq-progress"><i style={{ width: `${pct}%` }} /></div>
+          </>
+        ) : <span>CLICK TO OPEN PRODUCTION BUILDER</span>}
+      </div>
+    </button>
+  )
+}
 
-      <div style={{ textAlign: 'center', marginTop: 8 }}>
-        <span style={{
-          fontSize: 9, padding: '2px 8px',
-          background: `${status.color}22`,
-          color: status.color,
-          borderRadius: 999,
-          letterSpacing: 1.5,
-          fontFamily: 'monospace',
-        }}>
-          {status.text}
-        </span>
+function PipelineBoard({ scripts, producing, ready, airing, onGoTo }) {
+  const stages = [
+    { label: 'Development', value: scripts.filter(s => s.status === 'drafting').length, icon: 'fa-pen-nib', go: 'scripting' },
+    { label: 'Greenlit', value: scripts.filter(s => s.status === 'ready').length, icon: 'fa-file-circle-check', go: 'scripting' },
+    { label: 'Filming', value: producing.length, icon: 'fa-clapperboard', go: 'studio-alpha' },
+    { label: 'Ready', value: ready.length, icon: 'fa-box-archive', go: 'content' },
+    { label: 'On Air', value: airing.length, icon: 'fa-tower-broadcast', go: 'schedule' },
+  ]
+  return (
+    <div className="hq-pipeline">
+      <div className="hq-pipeline-title">CONTENT PIPELINE</div>
+      <div className="hq-pipeline-flow">
+        {stages.map((s, i) => (
+          <button key={s.label} onClick={() => onGoTo(s.go)} className={s.value ? 'active' : ''}>
+            <i className={`fa-solid ${s.icon}`} />
+            <strong>{s.value}</strong>
+            <span>{s.label}</span>
+            {i < stages.length - 1 && <b>›</b>}
+          </button>
+        ))}
       </div>
     </div>
   )
 }
 
-function PipelineStat({ label, value, color }) {
+function TonightBoard({ runsBySlot, programs, onGoTo }) {
+  const entries = Object.entries(runsBySlot || {}).filter(([, v]) => v)
+  const top = entries.slice(0, 3)
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-      <span style={{
-        fontSize: 16, fontWeight: 900, color, fontFamily: 'monospace',
-        lineHeight: 1,
-      }}>
-        {value}
-      </span>
-      <span style={{ fontSize: 10, color: R.textDim, textTransform: 'uppercase', letterSpacing: 1 }}>
-        {label}
-      </span>
-    </div>
+    <button className="hq-mini-panel tonight" onClick={onGoTo}>
+      <div className="hq-mini-title"><i className="fa-solid fa-tower-broadcast" /> Broadcast board</div>
+      {top.length ? top.map(([slot, run]) => {
+        const id = run?.programId || run?.showId || run?.id
+        const p = programs.find(x => x.id === id)
+        return <div className="hq-tonight-row" key={slot}><span>{slot}</span><strong>{p?.name || run?.name || 'Scheduled program'}</strong></div>
+      }) : <div className="hq-empty-copy">No programs placed on the current grid.</div>}
+      <div className="hq-mini-link">OPEN PROGRAMMING CONTROL →</div>
+    </button>
   )
-}
-
-/* ─── DATA HELPERS ─── */
-function talentCount(station) {
-  if (!station) return 0
-  return (station.hiredWriters || []).length
-       + (station.hiredDirectors || []).length
-       + (station.hiredStars || []).length
-       + (station.hiredStaff || []).length
 }
 
 function countScheduledSlots(runsBySlot) {
   if (!runsBySlot) return 0
-  // runsBySlot is a plain object keyed by slot index (from App.jsx useMemo),
-  // NOT an array — use Object.values to iterate.
-  const vals = Array.isArray(runsBySlot) ? runsBySlot : Object.values(runsBySlot)
-  return vals.filter(r => r && r.programId).length
-}
-
-function countAvailableResearch(research) {
-  if (!research) return 0
-  // Best-effort: any research node that has cost and isn't unlocked
-  const unlocked = new Set(research.unlocked || [])
-  const all = research.available || []
-  return all.filter(n => !unlocked.has(n.id)).length
-}
-
-function countUnlockedResearch(research) {
-  if (!research) return 0
-  return (research.unlocked || []).length
-}
-
-function researchInProgress(research) {
-  if (!research) return false
-  return !!(research.inProgress && research.inProgress.id)
+  return Object.values(runsBySlot).filter(Boolean).length
 }
